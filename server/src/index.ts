@@ -1,0 +1,54 @@
+import 'dotenv/config';
+import cors from 'cors';
+import express from 'express';
+import { testConnection } from './config/db';
+import authRoutes from './routes/auth.routes';
+import collectionsRoutes from './routes/collections.routes';
+import customersRoutes from './routes/customers.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import driversRoutes from './routes/drivers.routes';
+import invoicesRoutes from './routes/invoices.routes';
+import ownersRoutes from './routes/owners.routes';
+import reportsRoutes from './routes/reports.routes';
+import settingsRoutes from './routes/settings.routes';
+import settlementsRoutes from './routes/settlements.routes';
+import tripsRoutes from './routes/trips.routes';
+import vehiclesRoutes from './routes/vehicles.routes';
+
+const app = express();
+const port = Number(process.env.PORT || 3001);
+
+app.use(cors());
+app.use(express.json());
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.use('/api/auth', authRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/trips', tripsRoutes);
+app.use('/api/drivers', driversRoutes);
+app.use('/api/vehicles', vehiclesRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/owners', ownersRoutes);
+app.use('/api/invoices', invoicesRoutes);
+app.use('/api/collections', collectionsRoutes);
+app.use('/api/settlements', settlementsRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/settings', settingsRoutes);
+
+app.use('/api', (_req, res) => {
+  res.status(404).json({ message: 'API route not found.' });
+});
+
+void testConnection()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`TravelERP backend listening on http://localhost:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Database connection failed:', error);
+    process.exit(1);
+  });

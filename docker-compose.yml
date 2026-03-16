@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: travelerp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: travelerp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - travelerp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d travelerp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  travelerp_pgdata:

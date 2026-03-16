@@ -241,6 +241,8 @@ export interface DriverSettlement {
   total_trips: number;
   total_km: number;
   total_allowance: number;
+  advances?: number;
+  deductions?: number;
   net_amount: number;
   payment_mode: string | null;
   status: string;
@@ -261,6 +263,8 @@ export interface OwnerSettlement {
   total_trips: number;
   total_km: number;
   total_amount: number;
+  tds_amount?: number;
+  other_deductions?: number;
   net_amount: number;
   payment_mode: string | null;
   status: string;

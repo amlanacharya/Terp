@@ -143,16 +143,43 @@ export function CustomerList() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-          <input value={formState.customer_code} onChange={(event) => setFormState((current) => ({ ...current, customer_code: event.target.value }))} placeholder="Customer code" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} placeholder="Customer name" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input value={formState.contact_person} onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))} placeholder="Contact person" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} placeholder="Email" type="email" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State" className="rounded-2xl border border-slate-300 px-4 py-3" />
+          <label className="text-sm font-semibold text-slate-800">
+            Customer Code
+            <input value={formState.customer_code} onChange={(event) => setFormState((current) => ({ ...current, customer_code: event.target.value }))} placeholder="Customer code, e.g. CUST-001" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Customer Name
+            <input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} placeholder="Customer name, e.g. Acme Logistics" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Contact Person
+            <input value={formState.contact_person} onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))} placeholder="Contact person, e.g. Rajesh Shah" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Phone Number
+            <input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number, e.g. 9876543210" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Billing Email
+            <input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} placeholder="Billing email, e.g. accounts@client.com" type="email" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            City
+            <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City, e.g. Mumbai" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            State
+            <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State, e.g. Maharashtra" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
           <div className="flex gap-3">
-            <input value={formState.credit_limit} onChange={(event) => setFormState((current) => ({ ...current, credit_limit: event.target.value }))} placeholder="Credit limit" type="number" min="0" className="flex-1 rounded-2xl border border-slate-300 px-4 py-3" />
-            <input value={formState.credit_days} onChange={(event) => setFormState((current) => ({ ...current, credit_days: event.target.value }))} placeholder="Days" type="number" min="0" className="w-28 rounded-2xl border border-slate-300 px-4 py-3" />
+            <label className="flex-1 text-sm font-semibold text-slate-800">
+              Credit Limit
+              <input value={formState.credit_limit} onChange={(event) => setFormState((current) => ({ ...current, credit_limit: event.target.value }))} placeholder="Credit limit in INR, e.g. 50000" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
+            <label className="w-36 text-sm font-semibold text-slate-800">
+              Credit Days
+              <input value={formState.credit_days} onChange={(event) => setFormState((current) => ({ ...current, credit_days: event.target.value }))} placeholder="Days, e.g. 30" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
             <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
             {editingId ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
           </div>

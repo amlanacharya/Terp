@@ -136,61 +136,85 @@ export function DriverList() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-          <input
-            value={formState.driver_code}
-            onChange={(event) => setFormState((current) => ({ ...current, driver_code: event.target.value }))}
-            placeholder="Driver code"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <input
-            value={formState.name}
-            onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
-            placeholder="Driver name"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <input
-            value={formState.phone}
-            onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
-            placeholder="Phone"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <input
-            value={formState.email}
-            onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-            placeholder="Email"
-            type="email"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          />
-          <input
-            value={formState.city}
-            onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
-            placeholder="City"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          />
-          <input
-            value={formState.state}
-            onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))}
-            placeholder="State"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          />
-          <input
-            value={formState.license_number}
-            onChange={(event) => setFormState((current) => ({ ...current, license_number: event.target.value }))}
-            placeholder="License number"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <div className="flex gap-3">
+          <label className="text-sm font-semibold text-slate-800">
+            Driver Code
             <input
-              type="date"
-              value={formState.license_expiry}
-              onChange={(event) => setFormState((current) => ({ ...current, license_expiry: event.target.value }))}
-              className="flex-1 rounded-2xl border border-slate-300 px-4 py-3"
+              value={formState.driver_code}
+              onChange={(event) => setFormState((current) => ({ ...current, driver_code: event.target.value }))}
+              placeholder="Driver code, e.g. DRV-001"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Driver Name
+            <input
+              value={formState.name}
+              onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Driver name, e.g. Suresh Patil"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Phone Number
+            <input
+              value={formState.phone}
+              onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
+              placeholder="Phone number, e.g. 9876543210"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Email
+            <input
+              value={formState.email}
+              onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
+              placeholder="Email, e.g. driver@company.com"
+              type="email"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            City
+            <input
+              value={formState.city}
+              onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
+              placeholder="City, e.g. Pune"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            State
+            <input
+              value={formState.state}
+              onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))}
+              placeholder="State, e.g. Maharashtra"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            License Number
+            <input
+              value={formState.license_number}
+              onChange={(event) => setFormState((current) => ({ ...current, license_number: event.target.value }))}
+              placeholder="License number, e.g. MH1420230001234"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <div className="flex gap-3">
+            <label className="flex-1 text-sm font-semibold text-slate-800">
+              License Expiry
+              <input
+                type="date"
+                value={formState.license_expiry}
+                onChange={(event) => setFormState((current) => ({ ...current, license_expiry: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              />
+            </label>
             <button
               type="submit"
               disabled={saving}

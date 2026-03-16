@@ -13,6 +13,8 @@ interface OwnerSettlementFormState {
   total_trips: string;
   total_km: string;
   total_amount: string;
+  tds_amount: string;
+  other_deductions: string;
   net_amount: string;
   payment_mode: string;
   status: string;
@@ -27,6 +29,8 @@ const initialForm: OwnerSettlementFormState = {
   total_trips: '0',
   total_km: '0',
   total_amount: '0',
+  tds_amount: '0',
+  other_deductions: '0',
   net_amount: '0',
   payment_mode: 'bank_transfer',
   status: 'pending',
@@ -39,6 +43,7 @@ export function OwnerSettlements() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [formState, setFormState] = useState<OwnerSettlementFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showFieldHelp, setShowFieldHelp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -81,6 +86,8 @@ export function OwnerSettlements() {
       total_trips: String(settlement.total_trips),
       total_km: String(settlement.total_km),
       total_amount: String(settlement.total_amount),
+      tds_amount: String(settlement.tds_amount ?? 0),
+      other_deductions: String(settlement.other_deductions ?? 0),
       net_amount: String(settlement.net_amount),
       payment_mode: settlement.payment_mode ?? 'bank_transfer',
       status: settlement.status,
@@ -104,6 +111,8 @@ export function OwnerSettlements() {
         total_trips: Number(formState.total_trips),
         total_km: Number(formState.total_km),
         total_amount: Number(formState.total_amount),
+        tds_amount: Number(formState.tds_amount),
+        other_deductions: Number(formState.other_deductions),
         net_amount: Number(formState.net_amount),
       };
 
@@ -169,39 +178,107 @@ export function OwnerSettlements() {
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-3xl border border-slate-200 bg-white px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Need help with these fields?</p>
+              <p className="text-xs text-slate-500">Open the guide to see what each vendor billing field means.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFieldHelp((current) => !current)}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+            >
+              {showFieldHelp ? 'Hide Info' : 'i Info'}
+            </button>
+          </div>
+          {showFieldHelp ? (
+            <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Vendor Invoice field guide</p>
+              <p className="mt-2"><strong>Total trips:</strong> number of trips covered by this vendor bill.</p>
+              <p><strong>Total KM:</strong> total distance covered by the vendor vehicle in this period.</p>
+              <p><strong>Gross amount:</strong> bill value before deductions.</p>
+              <p><strong>TDS amount:</strong> tax deducted at source from the vendor payment.</p>
+              <p><strong>Other deductions:</strong> penalty, recovery, shortage, or any manual adjustment.</p>
+              <p><strong>Net payable:</strong> final amount to pay after deductions.</p>
+              <p className="mt-2 font-medium text-slate-900">Formula: Net payable = Gross amount - TDS - Other deductions</p>
+            </div>
+          ) : null}
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-          <input value={formState.settlement_number} onChange={(event) => setFormState((current) => ({ ...current, settlement_number: event.target.value }))} placeholder="Settlement number" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <select value={formState.owner_id} onChange={(event) => setFormState((current) => ({ ...current, owner_id: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" required>
-            <option value="">Select owner</option>
-            {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
-          </select>
-          <select value={formState.vehicle_id} onChange={(event) => setFormState((current) => ({ ...current, vehicle_id: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3">
-            <option value="">Select vehicle</option>
-            {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}
-          </select>
-          <input type="date" value={formState.period_from} onChange={(event) => setFormState((current) => ({ ...current, period_from: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input type="date" value={formState.period_to} onChange={(event) => setFormState((current) => ({ ...current, period_to: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input value={formState.total_trips} onChange={(event) => setFormState((current) => ({ ...current, total_trips: event.target.value }))} placeholder="Trips" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.total_km} onChange={(event) => setFormState((current) => ({ ...current, total_km: event.target.value }))} placeholder="Total km" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.total_amount} onChange={(event) => setFormState((current) => ({ ...current, total_amount: event.target.value }))} placeholder="Gross amount" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <input value={formState.net_amount} onChange={(event) => setFormState((current) => ({ ...current, net_amount: event.target.value }))} placeholder="Net amount" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <select value={formState.payment_mode} onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3">
-            <option value="cash">Cash</option>
-            <option value="cheque">Cheque</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-          </select>
-          <div className="flex gap-3">
-            <select value={formState.status} onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value }))} className="flex-1 rounded-2xl border border-slate-300 px-4 py-3">
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
+          <label className="text-sm font-semibold text-slate-800">
+            Vendor Invoice Number
+            <input value={formState.settlement_number} onChange={(event) => setFormState((current) => ({ ...current, settlement_number: event.target.value }))} placeholder="e.g. VEN-0012" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Vendor
+            <select value={formState.owner_id} onChange={(event) => setFormState((current) => ({ ...current, owner_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
+              <option value="">Select vendor for this invoice</option>
+              {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
             </select>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
-            {editingId ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Vehicle
+            <select value={formState.vehicle_id} onChange={(event) => setFormState((current) => ({ ...current, vehicle_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+              <option value="">Select vendor vehicle if applicable</option>
+              {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Period From
+            <input type="date" value={formState.period_from} onChange={(event) => setFormState((current) => ({ ...current, period_from: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Period To
+            <input type="date" value={formState.period_to} onChange={(event) => setFormState((current) => ({ ...current, period_to: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Total Trips
+            <input value={formState.total_trips} onChange={(event) => setFormState((current) => ({ ...current, total_trips: event.target.value }))} placeholder="e.g. 8" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Total KM
+            <input value={formState.total_km} onChange={(event) => setFormState((current) => ({ ...current, total_km: event.target.value }))} placeholder="e.g. 2100" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Gross Amount
+            <input value={formState.total_amount} onChange={(event) => setFormState((current) => ({ ...current, total_amount: event.target.value }))} placeholder="Bill amount before deductions" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            TDS Amount
+            <input value={formState.tds_amount} onChange={(event) => setFormState((current) => ({ ...current, tds_amount: event.target.value }))} placeholder="Tax deducted at source" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Other Deductions
+            <input value={formState.other_deductions} onChange={(event) => setFormState((current) => ({ ...current, other_deductions: event.target.value }))} placeholder="Recovery / penalty / manual adjustment" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Net Payable
+            <input value={formState.net_amount} onChange={(event) => setFormState((current) => ({ ...current, net_amount: event.target.value }))} placeholder="Final amount payable to vendor" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Payment Mode
+            <select value={formState.payment_mode} onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+            </select>
+          </label>
+          <div className="flex gap-3">
+            <label className="flex-1 text-sm font-semibold text-slate-800">
+              Status
+              <select value={formState.status} onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="paid">Paid</option>
+              </select>
+            </label>
+            <button type="submit" disabled={saving} className="self-end rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
+            {editingId ? <button type="button" onClick={resetForm} className="self-end rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
           </div>
         </form>
+        </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         {settlements.map((settlement) => (
@@ -234,6 +311,14 @@ export function OwnerSettlements() {
               <div>
                 <dt className="font-medium text-slate-500">Gross amount</dt>
                 <dd>{formatCurrency(settlement.total_amount)}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-500">TDS</dt>
+                <dd>{formatCurrency(settlement.tds_amount)}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-500">Other deductions</dt>
+                <dd>{formatCurrency(settlement.other_deductions)}</dd>
               </div>
               <div>
                 <dt className="font-medium text-slate-500">Net amount</dt>

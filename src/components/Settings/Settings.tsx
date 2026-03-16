@@ -68,16 +68,20 @@ export function Settings() {
                 <p className="mt-2 text-xs text-slate-400">Updated {formatDate(setting.updated_at)}</p>
               </div>
               <div className="flex w-full max-w-xl gap-3">
-                <input
-                  value={formValues[setting.setting_key] ?? setting.setting_value}
-                  onChange={(event) =>
-                    setFormValues((current) => ({
-                      ...current,
-                      [setting.setting_key]: event.target.value,
-                    }))
-                  }
-                  className="flex-1 rounded-2xl border border-slate-300 px-4 py-3"
-                />
+                <label className="flex-1 text-sm font-semibold text-slate-800">
+                  {setting.description ?? setting.setting_key}
+                  <input
+                    value={formValues[setting.setting_key] ?? setting.setting_value}
+                    onChange={(event) =>
+                      setFormValues((current) => ({
+                        ...current,
+                        [setting.setting_key]: event.target.value,
+                      }))
+                    }
+                    placeholder={setting.description ?? `Enter ${setting.setting_key}`}
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => {

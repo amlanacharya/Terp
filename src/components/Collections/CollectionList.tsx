@@ -107,65 +107,87 @@ export function CollectionList() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-          <input
-            value={formState.collection_number}
-            onChange={(event) => setFormState((current) => ({ ...current, collection_number: event.target.value }))}
-            placeholder="Collection number"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <input
-            type="date"
-            value={formState.collection_date}
-            onChange={(event) => setFormState((current) => ({ ...current, collection_date: event.target.value }))}
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <select
-            value={formState.invoice_id}
-            onChange={(event) => setFormState((current) => ({ ...current, invoice_id: event.target.value }))}
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          >
-            <option value="">Select invoice</option>
-            {invoices.map((invoice) => (
-              <option key={invoice.id} value={invoice.id}>
-                {invoice.invoice_number} - {invoice.customer.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={formState.amount}
-            onChange={(event) => setFormState((current) => ({ ...current, amount: event.target.value }))}
-            placeholder="Amount received"
-            type="number"
-            min="0"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-            required
-          />
-          <select
-            value={formState.payment_mode}
-            onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))}
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          >
-            <option value="cash">Cash</option>
-            <option value="cheque">Cheque</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-          </select>
-          <input
-            value={formState.reference_number}
-            onChange={(event) => setFormState((current) => ({ ...current, reference_number: event.target.value }))}
-            placeholder="Reference number"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          />
-          <input
-            value={formState.bank_name}
-            onChange={(event) => setFormState((current) => ({ ...current, bank_name: event.target.value }))}
-            placeholder="Bank name"
-            className="rounded-2xl border border-slate-300 px-4 py-3"
-          />
+          <label className="text-sm font-semibold text-slate-800">
+            Receipt Number
+            <input
+              value={formState.collection_number}
+              onChange={(event) => setFormState((current) => ({ ...current, collection_number: event.target.value }))}
+              placeholder="Receipt number, e.g. RCPT-00021"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Receipt Date
+            <input
+              type="date"
+              value={formState.collection_date}
+              onChange={(event) => setFormState((current) => ({ ...current, collection_date: event.target.value }))}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              placeholder="Receipt date"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Customer Invoice
+            <select
+              value={formState.invoice_id}
+              onChange={(event) => setFormState((current) => ({ ...current, invoice_id: event.target.value }))}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            >
+              <option value="">Select invoice to receive payment against</option>
+              {invoices.map((invoice) => (
+                <option key={invoice.id} value={invoice.id}>
+                  {invoice.invoice_number} - {invoice.customer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Amount Received
+            <input
+              value={formState.amount}
+              onChange={(event) => setFormState((current) => ({ ...current, amount: event.target.value }))}
+              placeholder="Amount received in INR, e.g. 15000"
+              type="number"
+              min="0"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Payment Mode
+            <select
+              value={formState.payment_mode}
+              onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            >
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Reference Number
+            <input
+              value={formState.reference_number}
+              onChange={(event) => setFormState((current) => ({ ...current, reference_number: event.target.value }))}
+              placeholder="UTR / cheque no. / transaction ref."
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Bank Name
+            <input
+              value={formState.bank_name}
+              onChange={(event) => setFormState((current) => ({ ...current, bank_name: event.target.value }))}
+              placeholder="Bank name, e.g. HDFC Bank"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
           <button
             type="submit"
             disabled={saving}

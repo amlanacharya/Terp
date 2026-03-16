@@ -196,14 +196,26 @@ export function InvoiceList() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-          <input value={formState.invoice_number} onChange={(event) => setFormState((current) => ({ ...current, invoice_number: event.target.value }))} placeholder="Invoice number" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input type="date" value={formState.invoice_date} onChange={(event) => setFormState((current) => ({ ...current, invoice_date: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <select value={formState.customer_id} onChange={(event) => setFormState((current) => ({ ...current, customer_id: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" required>
-            <option value="">Select customer</option>
-            {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
-          </select>
-          <input value={formState.subtotal} onChange={(event) => applyGst(event.target.value, formState.is_inter_state)} placeholder="Subtotal" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-700">
+          <label className="text-sm font-semibold text-slate-800">
+            Invoice Number
+            <input value={formState.invoice_number} onChange={(event) => setFormState((current) => ({ ...current, invoice_number: event.target.value }))} placeholder="Invoice number, e.g. INV-00045" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Invoice Date
+            <input type="date" value={formState.invoice_date} onChange={(event) => setFormState((current) => ({ ...current, invoice_date: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Customer
+            <select value={formState.customer_id} onChange={(event) => setFormState((current) => ({ ...current, customer_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
+              <option value="">Select billed customer</option>
+              {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Subtotal
+            <input value={formState.subtotal} onChange={(event) => applyGst(event.target.value, formState.is_inter_state)} placeholder="Subtotal in INR, e.g. 25000" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+          </label>
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800">
             <input
               type="checkbox"
               checked={formState.is_inter_state}
@@ -215,17 +227,35 @@ export function InvoiceList() {
             />
             Inter-state invoice
           </label>
-          <input value={formState.cgst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="CGST" />
-          <input value={formState.sgst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="SGST" />
-          <input value={formState.igst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="IGST" />
-          <input value={formState.total_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="Total amount" />
-          <input type="date" value={formState.due_date} onChange={(event) => setFormState((current) => ({ ...current, due_date: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" />
-          <select value={formState.payment_status} onChange={(event) => setFormState((current) => ({ ...current, payment_status: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3">
-            <option value="pending">Pending</option>
-            <option value="partial">Partial</option>
-            <option value="completed">Completed</option>
-            <option value="overdue">Overdue</option>
-          </select>
+          <label className="text-sm font-semibold text-slate-800">
+            CGST
+            <input value={formState.cgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated CGST" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            SGST
+            <input value={formState.sgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated SGST" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            IGST
+            <input value={formState.igst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated IGST" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Grand Total
+            <input value={formState.total_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Grand total after tax" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Due Date
+            <input type="date" value={formState.due_date} onChange={(event) => setFormState((current) => ({ ...current, due_date: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Payment Status
+            <select value={formState.payment_status} onChange={(event) => setFormState((current) => ({ ...current, payment_status: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+              <option value="pending">Pending</option>
+              <option value="partial">Partial</option>
+              <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </label>
           <div className="flex gap-3">
             <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
             {editingId ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}

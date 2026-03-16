@@ -265,93 +265,120 @@ export function TripList() {
       {canManage ? (
         <div className="space-y-4">
           <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
-            <input
-              value={formState.trip_number}
-              onChange={(event) => setFormState((current) => ({ ...current, trip_number: event.target.value }))}
-              placeholder="Trip number"
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            />
-            <select
-              value={formState.customer_id}
-              onChange={(event) => setFormState((current) => ({ ...current, customer_id: event.target.value }))}
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            >
-              <option value="">Select customer</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={formState.driver_id}
-              onChange={(event) => setFormState((current) => ({ ...current, driver_id: event.target.value }))}
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            >
-              <option value="">Select driver</option>
-              {drivers.map((driver) => (
-                <option key={driver.id} value={driver.id}>
-                  {driver.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={formState.vehicle_id}
-              onChange={(event) => setFormState((current) => ({ ...current, vehicle_id: event.target.value }))}
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            >
-              <option value="">Select vehicle</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.vehicle_number}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={formState.trip_date}
-              onChange={(event) => setFormState((current) => ({ ...current, trip_date: event.target.value }))}
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            />
-            <input
-              value={formState.from_location}
-              onChange={(event) => setFormState((current) => ({ ...current, from_location: event.target.value }))}
-              placeholder="From"
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            />
-            <input
-              value={formState.to_location}
-              onChange={(event) => setFormState((current) => ({ ...current, to_location: event.target.value }))}
-              placeholder="To"
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-              required
-            />
-            <select
-              value={formState.status}
-              onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value }))}
-              className="rounded-2xl border border-slate-300 px-4 py-3"
-            >
-              <option value="scheduled">Scheduled</option>
-              <option value="in_progress">In progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <div className="flex gap-3">
+            <label className="text-sm font-semibold text-slate-800">
+              Trip Number
               <input
-                value={formState.trip_amount}
-                onChange={(event) => setFormState((current) => ({ ...current, trip_amount: event.target.value }))}
-                placeholder="Trip amount"
-                type="number"
-                min="0"
-                className="flex-1 rounded-2xl border border-slate-300 px-4 py-3"
+                value={formState.trip_number}
+                onChange={(event) => setFormState((current) => ({ ...current, trip_number: event.target.value }))}
+                placeholder="Trip number, e.g. TRP-00012"
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
                 required
               />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Customer
+              <select
+                value={formState.customer_id}
+                onChange={(event) => setFormState((current) => ({ ...current, customer_id: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              >
+                <option value="">Select customer account</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Driver
+              <select
+                value={formState.driver_id}
+                onChange={(event) => setFormState((current) => ({ ...current, driver_id: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              >
+                <option value="">Select assigned driver</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Vehicle
+              <select
+                value={formState.vehicle_id}
+                onChange={(event) => setFormState((current) => ({ ...current, vehicle_id: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              >
+                <option value="">Select assigned vehicle</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {vehicle.vehicle_number}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Trip Date
+              <input
+                type="date"
+                value={formState.trip_date}
+                onChange={(event) => setFormState((current) => ({ ...current, trip_date: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              From Location
+              <input
+                value={formState.from_location}
+                onChange={(event) => setFormState((current) => ({ ...current, from_location: event.target.value }))}
+                placeholder="From location, e.g. Mumbai Airport"
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              To Location
+              <input
+                value={formState.to_location}
+                onChange={(event) => setFormState((current) => ({ ...current, to_location: event.target.value }))}
+                placeholder="To location, e.g. Pune Station"
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                required
+              />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Trip Status
+              <select
+                value={formState.status}
+                onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value }))}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              >
+                <option value="scheduled">Scheduled</option>
+                <option value="in_progress">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+            <div className="flex gap-3">
+              <label className="flex-1 text-sm font-semibold text-slate-800">
+                Trip Amount
+                <input
+                  value={formState.trip_amount}
+                  onChange={(event) => setFormState((current) => ({ ...current, trip_amount: event.target.value }))}
+                  placeholder="Trip amount in INR, e.g. 18500"
+                  type="number"
+                  min="0"
+                  className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                  required
+                />
+              </label>
               <button
                 type="submit"
                 disabled={saving}
@@ -378,39 +405,51 @@ export function TripList() {
                 <h3 className="mt-2 text-xl font-semibold text-slate-900">Trip expenses</h3>
               </div>
               <form onSubmit={handleExpenseSubmit} className="grid gap-4 lg:grid-cols-4">
-                <select
-                  value={expenseForm.expense_type}
-                  onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))}
-                  className="rounded-2xl border border-slate-300 px-4 py-3"
-                >
-                  <option value="fuel">Fuel</option>
-                  <option value="toll">Toll</option>
-                  <option value="parking">Parking</option>
-                  <option value="food">Food</option>
-                  <option value="other">Other</option>
-                </select>
-                <input
-                  value={expenseForm.amount}
-                  onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
-                  placeholder="Amount"
-                  type="number"
-                  min="0"
-                  className="rounded-2xl border border-slate-300 px-4 py-3"
-                  required
-                />
-                <input
-                  value={expenseForm.receipt_number}
-                  onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))}
-                  placeholder="Receipt number"
-                  className="rounded-2xl border border-slate-300 px-4 py-3"
-                />
-                <div className="flex gap-3">
+                <label className="text-sm font-semibold text-slate-800">
+                  Expense Type
+                  <select
+                    value={expenseForm.expense_type}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))}
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                  >
+                    <option value="fuel">Fuel expense</option>
+                    <option value="toll">Toll expense</option>
+                    <option value="parking">Parking expense</option>
+                    <option value="food">Food expense</option>
+                    <option value="other">Other expense</option>
+                  </select>
+                </label>
+                <label className="text-sm font-semibold text-slate-800">
+                  Expense Amount
                   <input
-                    value={expenseForm.description}
-                    onChange={(event) => setExpenseForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Description"
-                    className="flex-1 rounded-2xl border border-slate-300 px-4 py-3"
+                    value={expenseForm.amount}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+                    placeholder="Expense amount in INR, e.g. 1500"
+                    type="number"
+                    min="0"
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                    required
                   />
+                </label>
+                <label className="text-sm font-semibold text-slate-800">
+                  Receipt Reference
+                  <input
+                    value={expenseForm.receipt_number}
+                    onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))}
+                    placeholder="Receipt number, bill no., or UTR"
+                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                  />
+                </label>
+                <div className="flex gap-3">
+                  <label className="flex-1 text-sm font-semibold text-slate-800">
+                    Description
+                    <input
+                      value={expenseForm.description}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="Expense note, e.g. diesel refill at Pune"
+                      className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                    />
+                  </label>
                   <button type="submit" disabled={expenseSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
                     {expenseSaving ? 'Saving...' : editingExpenseId ? 'Update' : 'Add'}
                   </button>

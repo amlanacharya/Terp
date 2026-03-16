@@ -222,30 +222,42 @@ export function Reports() {
           <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Reports</p>
           <h2 className="mt-2 text-3xl font-semibold text-slate-900">MIS and financial reporting</h2>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           {showDateFilter ? (
             <>
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm" />
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm" />
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                From Date
+                <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="mt-2 rounded-2xl border border-slate-300 px-4 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                To Date
+                <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="mt-2 rounded-2xl border border-slate-300 px-4 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
+              </label>
             </>
           ) : null}
           {showStatusFilter ? (
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm">
-              <option value="">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
-            </select>
+            <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+              Status
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="mt-2 rounded-2xl border border-slate-300 px-4 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="paid">Paid</option>
+              </select>
+            </label>
           ) : null}
           {showPaymentModeFilter ? (
-            <select value={paymentModeFilter} onChange={(event) => setPaymentModeFilter(event.target.value)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm">
-              <option value="">All payment modes</option>
-              <option value="cash">Cash</option>
-              <option value="cheque">Cheque</option>
-              <option value="bank_transfer">Bank transfer</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-            </select>
+            <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+              Payment Mode
+              <select value={paymentModeFilter} onChange={(event) => setPaymentModeFilter(event.target.value)} className="mt-2 rounded-2xl border border-slate-300 px-4 py-2 text-sm font-normal normal-case tracking-normal text-slate-900">
+                <option value="">All payment modes</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+              </select>
+            </label>
           ) : null}
           <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(''); setPaymentModeFilter(''); }} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm text-slate-700">
             Reset filters

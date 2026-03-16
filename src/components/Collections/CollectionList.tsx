@@ -79,6 +79,21 @@ export function CollectionList() {
     }
   }
 
+  async function handleDelete(collection: Collection) {
+    const confirmed = window.confirm(`Delete collection ${collection.collection_number}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/collections/${collection.id}`);
+      await loadCollections();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete collection.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading collections...</p>;
   }
@@ -86,8 +101,8 @@ export function CollectionList() {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Collections</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Receipts and recoveries</h2>
+        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Payment Receipts</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Receipt register</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
@@ -170,6 +185,7 @@ export function CollectionList() {
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Mode</th>
               <th className="px-4 py-3">Amount</th>
+              {canManage ? <th className="px-4 py-3">Action</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
@@ -181,6 +197,13 @@ export function CollectionList() {
                 <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
                 <td className="px-4 py-3">{collection.payment_mode}</td>
                 <td className="px-4 py-3">{formatCurrency(collection.amount)}</td>
+                {canManage ? (
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => void handleDelete(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
+                      Delete
+                    </button>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

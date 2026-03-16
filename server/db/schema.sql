@@ -307,6 +307,9 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('company_address', 'Mumbai, Maharashtra', 'Company Address'),
   ('company_gstin', '27ABCDE1234F1Z5', 'Company GSTIN'),
   ('company_pan', 'ABCDE1234F', 'Company PAN'),
+  ('bank_name', '', 'Company Bank Name'),
+  ('bank_account', '', 'Company Bank Account'),
+  ('bank_ifsc', '', 'Company Bank IFSC'),
   ('invoice_prefix', 'INV', 'Invoice Number Prefix'),
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')

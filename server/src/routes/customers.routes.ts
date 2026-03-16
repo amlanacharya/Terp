@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
+import { getDeleteErrorMessage } from '../utils/db-errors';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 
 const router = Router();
@@ -110,7 +111,7 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
     res.status(204).send();
   } catch (error) {
     console.error('Deleting customer failed:', error);
-    res.status(500).json({ message: 'Unable to delete customer.' });
+    res.status(500).json({ message: getDeleteErrorMessage('customer', error) });
   }
 });
 

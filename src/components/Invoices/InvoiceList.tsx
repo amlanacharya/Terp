@@ -1,17 +1,21 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Customer, Invoice } from '../../lib/types';
+import { Customer, GstRate, Invoice } from '../../lib/types';
 
 interface InvoiceFormState {
   invoice_number: string;
   invoice_date: string;
   customer_id: string;
   subtotal: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
   total_amount: string;
   due_date: string;
   payment_status: string;
+  is_inter_state: boolean;
 }
 
 const initialForm: InvoiceFormState = {
@@ -19,15 +23,24 @@ const initialForm: InvoiceFormState = {
   invoice_date: '',
   customer_id: '',
   subtotal: '',
-  total_amount: '',
+  cgst_amount: '0',
+  sgst_amount: '0',
+  igst_amount: '0',
+  total_amount: '0',
   due_date: '',
   payment_status: 'pending',
+  is_inter_state: false,
 };
+
+function roundCurrency(value: number): string {
+  return (Math.round(value * 100) / 100).toFixed(2);
+}
 
 export function InvoiceList() {
   const { profile } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [gstRates, setGstRates] = useState<GstRate[]>([]);
   const [formState, setFormState] = useState<InvoiceFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,12 +50,35 @@ export function InvoiceList() {
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
 
   async function loadInvoices() {
-    const [invoiceRows, customerRows] = await Promise.all([
+    const [invoiceRows, customerRows, gstRateRows] = await Promise.all([
       api.get<Invoice[]>('/invoices'),
       api.get<Customer[]>('/customers'),
+      api.get<GstRate[]>('/gst/rates'),
     ]);
     setInvoices(invoiceRows);
     setCustomers(customerRows);
+    setGstRates(gstRateRows);
+  }
+
+  function applyGst(subtotalInput: string, isInterState: boolean) {
+    const subtotal = Number(subtotalInput || 0);
+    const primaryRate = gstRates[0];
+    const cgstRate = Number(primaryRate?.cgst_rate ?? 2.5);
+    const sgstRate = Number(primaryRate?.sgst_rate ?? 2.5);
+    const igstRate = Number(primaryRate?.igst_rate ?? 5);
+    const cgstAmount = isInterState ? 0 : (subtotal * cgstRate) / 100;
+    const sgstAmount = isInterState ? 0 : (subtotal * sgstRate) / 100;
+    const igstAmount = isInterState ? (subtotal * igstRate) / 100 : 0;
+    const totalAmount = subtotal + cgstAmount + sgstAmount + igstAmount;
+
+    setFormState((current) => ({
+      ...current,
+      subtotal: subtotalInput,
+      cgst_amount: roundCurrency(cgstAmount),
+      sgst_amount: roundCurrency(sgstAmount),
+      igst_amount: roundCurrency(igstAmount),
+      total_amount: roundCurrency(totalAmount),
+    }));
   }
 
   useEffect(() => {
@@ -66,9 +102,13 @@ export function InvoiceList() {
       invoice_date: invoice.invoice_date?.slice(0, 10) ?? '',
       customer_id: invoice.customer.id,
       subtotal: String(invoice.subtotal),
+      cgst_amount: String(invoice.cgst_amount ?? 0),
+      sgst_amount: String(invoice.sgst_amount ?? 0),
+      igst_amount: String(invoice.igst_amount ?? 0),
       total_amount: String(invoice.total_amount),
       due_date: invoice.due_date?.slice(0, 10) ?? '',
       payment_status: invoice.payment_status,
+      is_inter_state: Number(invoice.igst_amount ?? 0) > 0,
     });
   }
 
@@ -86,6 +126,9 @@ export function InvoiceList() {
       const payload = {
         ...formState,
         subtotal: Number(formState.subtotal),
+        cgst_amount: Number(formState.cgst_amount),
+        sgst_amount: Number(formState.sgst_amount),
+        igst_amount: Number(formState.igst_amount),
         total_amount: Number(formState.total_amount),
         due_date: formState.due_date || null,
       };
@@ -105,6 +148,41 @@ export function InvoiceList() {
     }
   }
 
+  async function handleDelete(invoice: Invoice) {
+    const confirmed = window.confirm(`Delete invoice ${invoice.invoice_number}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/invoices/${invoice.id}`);
+      if (editingId === invoice.id) {
+        resetForm();
+      }
+      await loadInvoices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete invoice.');
+    }
+  }
+
+  async function handleDownloadPdf(invoice: Invoice) {
+    try {
+      setError('');
+      const blob = await downloadBlob(`/invoices/${invoice.id}/pdf`);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${invoice.invoice_number}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to download invoice PDF.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading invoices...</p>;
   }
@@ -112,8 +190,8 @@ export function InvoiceList() {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Invoices</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Billing register</h2>
+        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Customer Invoices</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer billing register</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
@@ -124,8 +202,23 @@ export function InvoiceList() {
             <option value="">Select customer</option>
             {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
           </select>
-          <input value={formState.subtotal} onChange={(event) => setFormState((current) => ({ ...current, subtotal: event.target.value }))} placeholder="Subtotal" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" required />
-          <input value={formState.total_amount} onChange={(event) => setFormState((current) => ({ ...current, total_amount: event.target.value }))} placeholder="Total amount" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" required />
+          <input value={formState.subtotal} onChange={(event) => applyGst(event.target.value, formState.is_inter_state)} placeholder="Subtotal" type="number" min="0" className="rounded-2xl border border-slate-300 px-4 py-3" required />
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={formState.is_inter_state}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setFormState((current) => ({ ...current, is_inter_state: checked }));
+                applyGst(formState.subtotal, checked);
+              }}
+            />
+            Inter-state invoice
+          </label>
+          <input value={formState.cgst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="CGST" />
+          <input value={formState.sgst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="SGST" />
+          <input value={formState.igst_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="IGST" />
+          <input value={formState.total_amount} readOnly className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3" placeholder="Total amount" />
           <input type="date" value={formState.due_date} onChange={(event) => setFormState((current) => ({ ...current, due_date: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3" />
           <select value={formState.payment_status} onChange={(event) => setFormState((current) => ({ ...current, payment_status: event.target.value }))} className="rounded-2xl border border-slate-300 px-4 py-3">
             <option value="pending">Pending</option>
@@ -149,6 +242,7 @@ export function InvoiceList() {
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Amount</th>
+              <th className="px-4 py-3">PDF</th>
               {canManage ? <th className="px-4 py-3">Action</th> : null}
             </tr>
           </thead>
@@ -161,9 +255,26 @@ export function InvoiceList() {
                 <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
                 <td className="px-4 py-3">{invoice.payment_status}</td>
                 <td className="px-4 py-3">{formatCurrency(invoice.total_amount)}</td>
-                {canManage ? <td className="px-4 py-3"><button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button></td> : null}
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
+                    PDF
+                  </button>
+                </td>
+                {canManage ? (
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>
+                    <button type="button" onClick={() => void handleDelete(invoice)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
+                  </td>
+                ) : null}
               </tr>
             ))}
+            {invoices.length === 0 ? (
+              <tr>
+                <td colSpan={canManage ? 8 : 7} className="px-4 py-6 text-center text-slate-500">
+                  No invoices available.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

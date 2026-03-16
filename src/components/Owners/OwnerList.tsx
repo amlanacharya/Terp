@@ -107,6 +107,24 @@ export function OwnerList() {
     }
   }
 
+  async function handleDelete(owner: Owner) {
+    const confirmed = window.confirm(`Delete owner ${owner.name}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/owners/${owner.id}`);
+      if (editingId === owner.id) {
+        resetForm();
+      }
+      await loadOwners();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete owner.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading owners...</p>;
   }
@@ -114,8 +132,8 @@ export function OwnerList() {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Owners</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Owner and vendor master</h2>
+        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vendors</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vendor master</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
@@ -204,13 +222,20 @@ export function OwnerList() {
               </span>
             </div>
             {canManage ? (
-              <div className="mt-3">
+              <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   onClick={() => startEdit(owner)}
                   className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
                 >
                   Edit owner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(owner)}
+                  className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700"
+                >
+                  Delete
                 </button>
               </div>
             ) : null}

@@ -112,6 +112,24 @@ export function VehicleList() {
     }
   }
 
+  async function handleDelete(vehicle: Vehicle) {
+    const confirmed = window.confirm(`Delete vehicle ${vehicle.vehicle_number}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/vehicles/${vehicle.id}`);
+      if (editingId === vehicle.id) {
+        resetForm();
+      }
+      await loadVehicles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete vehicle.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading vehicles...</p>;
   }
@@ -165,7 +183,7 @@ export function VehicleList() {
                 {vehicle.vehicle_type}
               </span>
             </div>
-            {canManage ? <div className="mt-3"><button type="button" onClick={() => startEdit(vehicle)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit vehicle</button></div> : null}
+            {canManage ? <div className="mt-3 flex gap-2"><button type="button" onClick={() => startEdit(vehicle)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit vehicle</button><button type="button" onClick={() => void handleDelete(vehicle)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button></div> : null}
             <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
               <div>
                 <dt className="font-medium text-slate-500">Seating</dt>

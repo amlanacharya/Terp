@@ -3,9 +3,35 @@ import { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 
 const router = Router();
+const defaultSettings: Array<{ key: string; value: string; description: string }> = [
+  { key: 'company_name', value: 'Travel ERP', description: 'Company Name' },
+  { key: 'company_address', value: 'Mumbai, Maharashtra', description: 'Company Address' },
+  { key: 'company_gstin', value: '27ABCDE1234F1Z5', description: 'Company GSTIN' },
+  { key: 'company_pan', value: 'ABCDE1234F', description: 'Company PAN' },
+  { key: 'invoice_prefix', value: 'INV', description: 'Invoice Number Prefix' },
+  { key: 'trip_prefix', value: 'TRP', description: 'Trip Number Prefix' },
+  { key: 'financial_year_start', value: '04', description: 'Financial Year Start Month' },
+  { key: 'bank_name', value: '', description: 'Company Bank Name' },
+  { key: 'bank_account', value: '', description: 'Company Bank Account' },
+  { key: 'bank_ifsc', value: '', description: 'Company Bank IFSC' },
+];
+
+async function ensureDefaultSettings(): Promise<void> {
+  for (const setting of defaultSettings) {
+    await query(
+      `
+        INSERT INTO system_settings (setting_key, setting_value, description)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (setting_key) DO NOTHING
+      `,
+      [setting.key, setting.value, setting.description]
+    );
+  }
+}
 
 router.get('/', authRequired, async (_req, res) => {
   try {
+    await ensureDefaultSettings();
     const result = await query('SELECT * FROM system_settings ORDER BY setting_key ASC');
     res.json(result.rows);
   } catch (error) {

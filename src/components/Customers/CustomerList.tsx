@@ -112,6 +112,24 @@ export function CustomerList() {
     }
   }
 
+  async function handleDelete(customer: Customer) {
+    const confirmed = window.confirm(`Delete customer ${customer.name}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/customers/${customer.id}`);
+      if (editingId === customer.id) {
+        resetForm();
+      }
+      await loadCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete customer.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading customers...</p>;
   }
@@ -170,6 +188,7 @@ export function CustomerList() {
                 {canManage ? (
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>
+                    <button type="button" onClick={() => void handleDelete(customer)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
                   </td>
                 ) : null}
               </tr>

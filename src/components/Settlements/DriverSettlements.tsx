@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, DriverSettlement } from '../../lib/types';
@@ -115,6 +115,41 @@ export function DriverSettlements() {
     }
   }
 
+  async function handleDelete(settlement: DriverSettlement) {
+    const confirmed = window.confirm(`Delete settlement ${settlement.settlement_number}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError('');
+      await api.delete(`/settlements/drivers/${settlement.id}`);
+      if (editingId === settlement.id) {
+        resetForm();
+      }
+      await loadPage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete driver settlement.');
+    }
+  }
+
+  async function handleDownloadPdf(settlement: DriverSettlement) {
+    try {
+      setError('');
+      const blob = await downloadBlob(`/settlements/drivers/${settlement.id}/pdf`);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${settlement.settlement_number}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to download driver settlement PDF.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading driver settlements...</p>;
   }
@@ -122,8 +157,8 @@ export function DriverSettlements() {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Driver Settlements</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Driver payout summary</h2>
+        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Salary Slips</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Driver payroll summary</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
@@ -169,7 +204,11 @@ export function DriverSettlements() {
                 {settlement.status}
               </span>
             </div>
-            {canManage ? <div className="mt-3"><button type="button" onClick={() => startEdit(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit settlement</button></div> : null}
+            <div className="mt-3 flex gap-2">
+              {canManage ? <button type="button" onClick={() => startEdit(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit settlement</button> : null}
+              <button type="button" onClick={() => void handleDownloadPdf(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">PDF</button>
+              {canManage ? <button type="button" onClick={() => void handleDelete(settlement)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
+            </div>
             <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
               <div>
                 <dt className="font-medium text-slate-500">Period</dt>

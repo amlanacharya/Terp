@@ -11,6 +11,7 @@ export type PageKey =
   | 'vehicle-categories'
   | 'rate-charts'
   | 'annexures'
+  | 'tax-config'
   | 'customers'
   | 'owners'
   | 'invoices'
@@ -61,6 +62,78 @@ export interface GstRate {
   cgst_rate: number;
   sgst_rate: number;
   igst_rate: number;
+}
+
+export type TaxApplicationScope = 'intra_state' | 'inter_state' | 'all';
+
+export interface TaxComponent {
+  id: string;
+  component_code: string;
+  name: string;
+  rate: number | null;
+  is_percentage: boolean;
+  flat_amount: number | null;
+  applies_to: TaxApplicationScope;
+  hsn_code: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface InvoiceTaxComponent {
+  id?: string;
+  invoice_id?: string;
+  invoice_item_id?: string;
+  component_code: string;
+  component_name: string;
+  applies_to: TaxApplicationScope;
+  hsn_code: string | null;
+  taxable_base: number;
+  rate: number | null;
+  is_percentage: boolean;
+  flat_amount: number | null;
+  tax_amount: number;
+  sort_order: number;
+  created_at?: string;
+}
+
+export interface TaxPreviewItem {
+  taxable_base: number;
+  hsn_code?: string | null;
+}
+
+export interface TaxPreviewItemResult {
+  taxable_base: number;
+  hsn_code: string | null;
+  lines: InvoiceTaxComponent[];
+  legacy: {
+    cgst_rate: number;
+    sgst_rate: number;
+    igst_rate: number;
+    cgst_amount: number;
+    sgst_amount: number;
+    igst_amount: number;
+  };
+  total_tax_amount: number;
+  total_amount: number;
+}
+
+export interface TaxPreviewResponse {
+  applies_to: Exclude<TaxApplicationScope, 'all'>;
+  subtotal: number;
+  tax_components: InvoiceTaxComponent[];
+  items: TaxPreviewItemResult[];
+  legacy: {
+    cgst_rate: number;
+    sgst_rate: number;
+    igst_rate: number;
+    cgst_amount: number;
+    sgst_amount: number;
+    igst_amount: number;
+  };
+  total_tax_amount: number;
+  total_amount: number;
 }
 
 export interface Customer {
@@ -545,6 +618,7 @@ export interface Invoice {
   annexure_item_count?: number;
   billing_address?: string | null;
   customer_gstin?: string | null;
+  tax_components?: InvoiceTaxComponent[];
   customer: InvoiceCustomerSummary;
 }
 
@@ -576,9 +650,11 @@ export interface InvoiceItem {
   annexure_number?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  tax_components?: InvoiceTaxComponent[];
 }
 
 export interface InvoiceDetail extends Invoice {
+  tax_components: InvoiceTaxComponent[];
   items: InvoiceItem[];
 }
 
@@ -783,6 +859,7 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
 
 
 

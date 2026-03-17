@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import { testConnection } from './config/db';
@@ -15,6 +15,7 @@ import ownersRoutes from './routes/owners.routes';
 import rateChartsRoutes from './routes/rate-charts.routes';
 import reportsRoutes from './routes/reports.routes';
 import settingsRoutes from './routes/settings.routes';
+import taxComponentsRoutes from './routes/tax-components.routes';
 import settlementsRoutes from './routes/settlements.routes';
 import tripsRoutes from './routes/trips.routes';
 import vehicleCategoriesRoutes from './routes/vehicle-categories.routes';
@@ -47,6 +48,7 @@ app.use('/api/collections', collectionsRoutes);
 app.use('/api/settlements', settlementsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/tax-components', taxComponentsRoutes);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
@@ -62,6 +64,7 @@ void testConnection()
     console.error('Database connection failed:', error);
     process.exit(1);
   });
+
 
 
 

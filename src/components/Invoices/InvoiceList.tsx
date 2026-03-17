@@ -1,8 +1,8 @@
-﻿import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Customer, GstRate, Invoice } from '../../lib/types';
+import { Customer, Invoice, TaxPreviewResponse } from '../../lib/types';
 
 interface InvoiceFormState {
   invoice_number: string;
@@ -15,7 +15,6 @@ interface InvoiceFormState {
   total_amount: string;
   due_date: string;
   payment_status: string;
-  is_inter_state: boolean;
 }
 
 const initialForm: InvoiceFormState = {
@@ -23,24 +22,28 @@ const initialForm: InvoiceFormState = {
   invoice_date: '',
   customer_id: '',
   subtotal: '',
-  cgst_amount: '0',
-  sgst_amount: '0',
-  igst_amount: '0',
-  total_amount: '0',
+  cgst_amount: '0.00',
+  sgst_amount: '0.00',
+  igst_amount: '0.00',
+  total_amount: '0.00',
   due_date: '',
   payment_status: 'pending',
-  is_inter_state: false,
 };
 
 function roundCurrency(value: number): string {
   return (Math.round(value * 100) / 100).toFixed(2);
 }
 
+function formatTaxScope(scope: TaxPreviewResponse['applies_to']): string {
+  return scope === 'inter_state' ? 'Inter-State' : 'Intra-State';
+}
+
 export function InvoiceList() {
   const { profile } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [gstRates, setGstRates] = useState<GstRate[]>([]);
+  const [preview, setPreview] = useState<TaxPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [formState, setFormState] = useState<InvoiceFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,34 +53,34 @@ export function InvoiceList() {
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
 
   async function loadInvoices() {
-    const [invoiceRows, customerRows, gstRateRows] = await Promise.all([
+    const [invoiceRows, customerRows] = await Promise.all([
       api.get<Invoice[]>('/invoices'),
       api.get<Customer[]>('/customers'),
-      api.get<GstRate[]>('/gst/rates'),
     ]);
     setInvoices(invoiceRows);
     setCustomers(customerRows);
-    setGstRates(gstRateRows);
   }
 
-  function applyGst(subtotalInput: string, isInterState: boolean) {
+  function syncLegacyFields(subtotalInput: string, nextPreview: TaxPreviewResponse | null) {
     const subtotal = Number(subtotalInput || 0);
-    const primaryRate = gstRates[0];
-    const cgstRate = Number(primaryRate?.cgst_rate ?? 2.5);
-    const sgstRate = Number(primaryRate?.sgst_rate ?? 2.5);
-    const igstRate = Number(primaryRate?.igst_rate ?? 5);
-    const cgstAmount = isInterState ? 0 : (subtotal * cgstRate) / 100;
-    const sgstAmount = isInterState ? 0 : (subtotal * sgstRate) / 100;
-    const igstAmount = isInterState ? (subtotal * igstRate) / 100 : 0;
-    const totalAmount = subtotal + cgstAmount + sgstAmount + igstAmount;
+
+    if (!nextPreview) {
+      setFormState((current) => ({
+        ...current,
+        cgst_amount: '0.00',
+        sgst_amount: '0.00',
+        igst_amount: '0.00',
+        total_amount: roundCurrency(subtotal),
+      }));
+      return;
+    }
 
     setFormState((current) => ({
       ...current,
-      subtotal: subtotalInput,
-      cgst_amount: roundCurrency(cgstAmount),
-      sgst_amount: roundCurrency(sgstAmount),
-      igst_amount: roundCurrency(igstAmount),
-      total_amount: roundCurrency(totalAmount),
+      cgst_amount: roundCurrency(nextPreview.legacy.cgst_amount),
+      sgst_amount: roundCurrency(nextPreview.legacy.sgst_amount),
+      igst_amount: roundCurrency(nextPreview.legacy.igst_amount),
+      total_amount: roundCurrency(nextPreview.total_amount),
     }));
   }
 
@@ -94,6 +97,35 @@ export function InvoiceList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    async function loadPreview() {
+      const subtotal = Number(formState.subtotal || 0);
+      if (!formState.customer_id || !Number.isFinite(subtotal) || subtotal < 0) {
+        setPreview(null);
+        syncLegacyFields(formState.subtotal, null);
+        return;
+      }
+
+      try {
+        setPreviewLoading(true);
+        const nextPreview = await api.post<TaxPreviewResponse>('/tax-components/preview', {
+          customer_id: formState.customer_id,
+          items: [{ taxable_base: subtotal }],
+        });
+        setPreview(nextPreview);
+        syncLegacyFields(formState.subtotal, nextPreview);
+      } catch (err) {
+        setPreview(null);
+        syncLegacyFields(formState.subtotal, null);
+        setError(err instanceof Error ? err.message : 'Unable to preview tax components.');
+      } finally {
+        setPreviewLoading(false);
+      }
+    }
+
+    void loadPreview();
+  }, [formState.customer_id, formState.subtotal]);
 
   function startEdit(invoice: Invoice) {
     if (invoice.source_type && invoice.source_type !== 'manual') {
@@ -112,12 +144,12 @@ export function InvoiceList() {
       total_amount: String(invoice.total_amount),
       due_date: invoice.due_date?.slice(0, 10) ?? '',
       payment_status: invoice.payment_status,
-      is_inter_state: Number(invoice.igst_amount ?? 0) > 0,
     });
   }
 
   function resetForm() {
     setEditingId(null);
+    setPreview(null);
     setFormState(initialForm);
   }
 
@@ -218,20 +250,33 @@ export function InvoiceList() {
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Subtotal
-            <input value={formState.subtotal} onChange={(event) => applyGst(event.target.value, formState.is_inter_state)} placeholder="Subtotal in INR, e.g. 25000" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+            <input value={formState.subtotal} onChange={(event) => setFormState((current) => ({ ...current, subtotal: event.target.value }))} placeholder="Subtotal in INR, e.g. 25000" type="number" min="0" step="0.01" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
           </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800">
-            <input
-              type="checkbox"
-              checked={formState.is_inter_state}
-              onChange={(event) => {
-                const checked = event.target.checked;
-                setFormState((current) => ({ ...current, is_inter_state: checked }));
-                applyGst(formState.subtotal, checked);
-              }}
-            />
-            Inter-state invoice
-          </label>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Tax Preview</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {preview ? `Scope: ${formatTaxScope(preview.applies_to)}` : 'Select a customer and subtotal to resolve tax components.'}
+                </p>
+              </div>
+              {previewLoading ? <p className="text-sm text-slate-500">Resolving tax preview...</p> : null}
+            </div>
+            {preview ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {preview.tax_components.map((component) => (
+                  <div key={`${component.component_code}-${component.sort_order}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{component.component_code}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{component.component_name}</p>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {component.is_percentage ? `${component.rate ?? 0}% of ${formatCurrency(component.taxable_base)}` : `Flat ${formatCurrency(component.flat_amount ?? 0)}`}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(component.tax_amount)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <label className="text-sm font-semibold text-slate-800">
             CGST
             <input value={formState.cgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
@@ -285,30 +330,34 @@ export function InvoiceList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {invoices.map((invoice) => (
-              <tr key={invoice.id}>
-                <td className="px-4 py-3 font-medium text-slate-900">{invoice.invoice_number}</td>
-                <td className="px-4 py-3">{invoice.customer.name}</td>
-                <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
-                <td className="px-4 py-3">{invoice.duty_slip_number ?? '-'}</td>
-                <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
-                <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
-                <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
-                <td className="px-4 py-3">{invoice.payment_status}</td>
-                <td className="px-4 py-3">{formatCurrency(invoice.total_amount)}</td>
-                <td className="px-4 py-3">
-                  <button type="button" onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                    PDF
-                  </button>
-                </td>
-                {canManage ? (
+            {invoices.map((invoice) => {
+              const isManualInvoice = !invoice.source_type || invoice.source_type === 'manual';
+
+              return (
+                <tr key={invoice.id}>
+                  <td className="px-4 py-3 font-medium text-slate-900">{invoice.invoice_number}</td>
+                  <td className="px-4 py-3">{invoice.customer.name}</td>
+                  <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
+                  <td className="px-4 py-3">{invoice.duty_slip_number ?? '-'}</td>
+                  <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
+                  <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
+                  <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
+                  <td className="px-4 py-3">{invoice.payment_status}</td>
+                  <td className="px-4 py-3">{formatCurrency(invoice.total_amount)}</td>
                   <td className="px-4 py-3">
-                    {invoice.source_type === 'manual' || !invoice.source_type ? <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
-                    <button type="button" onClick={() => void handleDelete(invoice)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
+                    <button type="button" onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
+                      PDF
+                    </button>
                   </td>
-                ) : null}
-              </tr>
-            ))}
+                  {canManage ? (
+                    <td className="px-4 py-3">
+                      {isManualInvoice ? <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
+                      {isManualInvoice ? <button type="button" onClick={() => void handleDelete(invoice)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
             {invoices.length === 0 ? (
               <tr>
                 <td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">

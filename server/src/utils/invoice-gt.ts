@@ -1,4 +1,8 @@
-﻿import { calculateGst } from './gst';
+import {
+  calculateInvoiceTaxes,
+  persistInvoiceTaxSnapshots,
+  resolveInvoiceTaxScope,
+} from './tax-engine';
 import { Queryable } from './rate-engine';
 
 export interface GtInvoiceSettings {
@@ -36,6 +40,7 @@ export interface GtInvoiceItemInput {
   annexure_id?: string | null;
   description: string;
   amount: number;
+  hsn_code?: string | null;
 }
 
 export interface CreatedGtInvoice {
@@ -46,13 +51,6 @@ export interface CreatedGtInvoice {
   sgst_amount: number;
   igst_amount: number;
   total_amount: number;
-}
-
-interface GstRateRow {
-  hsn_code: string;
-  cgst_rate: string;
-  sgst_rate: string;
-  igst_rate: string;
 }
 
 function toNumber(value: number | string | null | undefined): number {
@@ -79,11 +77,7 @@ function addDays(dateOnly: string, days: number | null): string | null {
 }
 
 export function isInterState(companyGstin: string | undefined, customerGstin: string | null): boolean {
-  if (!companyGstin || !customerGstin) {
-    return false;
-  }
-
-  return companyGstin.slice(0, 2) !== customerGstin.slice(0, 2);
+  return resolveInvoiceTaxScope(companyGstin ?? null, customerGstin) === 'inter_state';
 }
 
 export function formatDutyTypeLabel(dutyType: string | null | undefined): string | null {
@@ -138,25 +132,6 @@ export async function getGtInvoiceSettings(db: Queryable): Promise<GtInvoiceSett
   };
 }
 
-async function getActiveGstRate(db: Queryable): Promise<GstRateRow> {
-  const result = await db.query<GstRateRow>(
-    `
-      SELECT hsn_code, cgst_rate::text, sgst_rate::text, igst_rate::text
-      FROM gst_rates
-      WHERE is_active = true
-      ORDER BY CASE WHEN hsn_code = '9964' THEN 0 ELSE 1 END, created_at DESC
-      LIMIT 1
-    `
-  );
-
-  return result.rows[0] ?? {
-    hsn_code: '9964',
-    cgst_rate: '2.5',
-    sgst_rate: '2.5',
-    igst_rate: '5',
-  };
-}
-
 async function generateInvoiceNumber(db: Queryable, prefix: string): Promise<string> {
   const result = await db.query<{ count: string }>(
     'SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1',
@@ -175,32 +150,19 @@ export async function createGtInvoice(
     throw new Error('At least one invoice item is required.');
   }
 
-  const [settings, gstRate] = await Promise.all([getGtInvoiceSettings(db), getActiveGstRate(db)]);
+  const settings = await getGtInvoiceSettings(db);
   const invoiceNumber = await generateInvoiceNumber(db, settings.invoice_prefix);
-  const isInvoiceInterState = isInterState(settings.company_gstin, header.customer_gstin);
-
-  const normalizedItems = items.map((item) => {
-    const amount = roundCurrency(toNumber(item.amount));
-    const gst = calculateGst({
-      subtotal: amount,
-      isInterState: isInvoiceInterState,
-      cgstRate: Number(gstRate.cgst_rate),
-      sgstRate: Number(gstRate.sgst_rate),
-      igstRate: Number(gstRate.igst_rate),
-    });
-
-    return {
-      ...item,
-      amount,
-      gst,
-    };
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    amount: roundCurrency(toNumber(item.amount)),
+    hsn_code: item.hsn_code ?? null,
+  }));
+  const taxCalculation = await calculateInvoiceTaxes(db, {
+    items: normalizedItems.map((item) => ({ taxable_base: item.amount, hsn_code: item.hsn_code })),
+    companyGstin: settings.company_gstin,
+    customerGstin: header.customer_gstin,
   });
 
-  const subtotal = roundCurrency(normalizedItems.reduce((sum, item) => sum + item.amount, 0));
-  const cgstAmount = roundCurrency(normalizedItems.reduce((sum, item) => sum + item.gst.cgst_amount, 0));
-  const sgstAmount = roundCurrency(normalizedItems.reduce((sum, item) => sum + item.gst.sgst_amount, 0));
-  const igstAmount = roundCurrency(normalizedItems.reduce((sum, item) => sum + item.gst.igst_amount, 0));
-  const totalAmount = roundCurrency(normalizedItems.reduce((sum, item) => sum + item.gst.total_amount, 0));
   const paymentTermsDays = header.payment_terms_days ?? null;
   const dueDate = addDays(header.invoice_date, paymentTermsDays);
   const interestNote = header.interest_note ?? buildInterestNote(paymentTermsDays);
@@ -238,11 +200,11 @@ export async function createGtInvoice(
       header.total_hours,
       paymentTermsDays,
       interestNote,
-      subtotal,
-      cgstAmount,
-      sgstAmount,
-      igstAmount,
-      totalAmount,
+      taxCalculation.subtotal,
+      taxCalculation.legacy.cgst_amount,
+      taxCalculation.legacy.sgst_amount,
+      taxCalculation.legacy.igst_amount,
+      taxCalculation.total_amount,
       'pending',
       dueDate,
       header.remarks,
@@ -251,9 +213,11 @@ export async function createGtInvoice(
   );
 
   const invoiceId = invoiceResult.rows[0].id;
+  const createdItems: Array<{ invoiceItemId: string; tax: (typeof taxCalculation.items)[number] }> = [];
 
-  for (const item of normalizedItems) {
-    await db.query(
+  for (const [index, item] of normalizedItems.entries()) {
+    const taxItem = taxCalculation.items[index];
+    const itemResult = await db.query<{ id: string }>(
       `
         INSERT INTO invoice_items (
           invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
@@ -262,34 +226,43 @@ export async function createGtInvoice(
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14, $15
         )
+        RETURNING id
       `,
       [
         invoiceId,
         item.trip_id,
         item.annexure_id ?? null,
         item.description,
-        gstRate.hsn_code,
+        taxItem.hsn_code,
         1,
         item.amount,
         item.amount,
-        Number(gstRate.cgst_rate),
-        Number(gstRate.sgst_rate),
-        Number(gstRate.igst_rate),
-        item.gst.cgst_amount,
-        item.gst.sgst_amount,
-        item.gst.igst_amount,
-        item.gst.total_amount,
+        taxItem.legacy.cgst_rate,
+        taxItem.legacy.sgst_rate,
+        taxItem.legacy.igst_rate,
+        taxItem.legacy.cgst_amount,
+        taxItem.legacy.sgst_amount,
+        taxItem.legacy.igst_amount,
+        taxItem.total_amount,
       ]
     );
+
+    createdItems.push({ invoiceItemId: itemResult.rows[0].id, tax: taxItem });
   }
+
+  await persistInvoiceTaxSnapshots(db, {
+    invoiceId,
+    items: createdItems,
+    taxComponents: taxCalculation.tax_components,
+  });
 
   return {
     id: invoiceId,
     invoice_number: invoiceNumber,
-    subtotal,
-    cgst_amount: cgstAmount,
-    sgst_amount: sgstAmount,
-    igst_amount: igstAmount,
-    total_amount: totalAmount,
+    subtotal: taxCalculation.subtotal,
+    cgst_amount: taxCalculation.legacy.cgst_amount,
+    sgst_amount: taxCalculation.legacy.sgst_amount,
+    igst_amount: taxCalculation.legacy.igst_amount,
+    total_amount: taxCalculation.total_amount,
   };
 }

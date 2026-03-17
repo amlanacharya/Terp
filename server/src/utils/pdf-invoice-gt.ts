@@ -1,4 +1,4 @@
-﻿import PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
@@ -12,6 +12,11 @@ export interface GtInvoicePdfItem {
   annexure_number?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+}
+
+export interface GtInvoicePdfTaxComponent {
+  component_name: string;
+  tax_amount: number;
 }
 
 export interface GtInvoicePdfData {
@@ -36,6 +41,7 @@ export interface GtInvoicePdfData {
   billing_address: string | null;
   customer_gstin: string | null;
   remarks: string | null;
+  tax_components: GtInvoicePdfTaxComponent[];
   items: GtInvoicePdfItem[];
 }
 
@@ -189,11 +195,19 @@ function drawTotalsBox(doc: PdfDoc, data: GtInvoicePdfData): void {
   const boxWidth = 240;
   const x = doc.page.width - doc.page.margins.right - boxWidth;
   const y = doc.y;
-  const rows = [
+  const taxRows: Array<{ label: string; value: string; emphasized?: boolean }> = data.tax_components.length > 0
+    ? data.tax_components.map((component) => ({
+        label: component.component_name,
+        value: formatCurrency(component.tax_amount),
+      }))
+    : [
+        { label: 'CGST', value: formatCurrency(data.cgst_amount) },
+        { label: 'SGST', value: formatCurrency(data.sgst_amount) },
+        { label: 'IGST', value: formatCurrency(data.igst_amount) },
+      ];
+  const rows: Array<{ label: string; value: string; emphasized?: boolean }> = [
     { label: 'Subtotal', value: formatCurrency(data.subtotal) },
-    { label: 'CGST', value: formatCurrency(data.cgst_amount) },
-    { label: 'SGST', value: formatCurrency(data.sgst_amount) },
-    { label: 'IGST', value: formatCurrency(data.igst_amount) },
+    ...taxRows,
     { label: 'Grand Total', value: formatCurrency(data.total_amount), emphasized: true },
   ];
   const height = 20 + rows.length * 20;
@@ -340,3 +354,7 @@ export function buildGtInvoicePdf(data: GtInvoicePdfData, settings: Record<strin
     doc.end();
   });
 }
+
+
+
+

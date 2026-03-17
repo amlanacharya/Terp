@@ -14,6 +14,11 @@ interface InvoicePdfItem {
   total_amount: number;
 }
 
+interface InvoicePdfTaxComponent {
+  component_name: string;
+  tax_amount: number;
+}
+
 interface InvoicePdfData {
   invoice_number: string;
   invoice_date: string;
@@ -26,6 +31,7 @@ interface InvoicePdfData {
   customer_name: string;
   billing_address: string | null;
   customer_gstin: string | null;
+  tax_components: InvoicePdfTaxComponent[];
   items: InvoicePdfItem[];
 }
 
@@ -271,11 +277,20 @@ export function buildInvoicePdf(
 
     drawInvoiceTable(doc, items);
 
+    const taxRows = invoice.tax_components.length > 0
+      ? invoice.tax_components.map((component) => ({
+          label: component.component_name,
+          value: formatCurrency(component.tax_amount),
+        }))
+      : [
+          { label: 'CGST', value: formatCurrency(invoice.cgst_amount) },
+          { label: 'SGST', value: formatCurrency(invoice.sgst_amount) },
+          { label: 'IGST', value: formatCurrency(invoice.igst_amount) },
+        ];
+
     drawTotalsBox(doc, [
       { label: 'Subtotal', value: formatCurrency(invoice.subtotal) },
-      { label: 'CGST', value: formatCurrency(invoice.cgst_amount) },
-      { label: 'SGST', value: formatCurrency(invoice.sgst_amount) },
-      { label: 'IGST', value: formatCurrency(invoice.igst_amount) },
+      ...taxRows,
       { label: 'Grand Total', value: formatCurrency(invoice.total_amount), emphasized: true },
     ]);
 
@@ -297,3 +312,5 @@ export function buildInvoicePdf(
     doc.end();
   });
 }
+
+

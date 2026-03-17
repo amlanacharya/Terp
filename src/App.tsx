@@ -3,9 +3,11 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Login } from './components/Auth/Login';
 import { Dashboard } from './components/Dashboard/Dashboard';
+import { LeadList } from './components/Leads/LeadList';
 import { TripList } from './components/Trips/TripList';
 import { DriverList } from './components/Drivers/DriverList';
 import { VehicleList } from './components/Vehicles/VehicleList';
+import { VehicleCategoryList } from './components/VehicleCategories/VehicleCategoryList';
 import { CustomerList } from './components/Customers/CustomerList';
 import { InvoiceList } from './components/Invoices/InvoiceList';
 import { CollectionList } from './components/Collections/CollectionList';
@@ -31,12 +33,16 @@ function AppContent() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
+      case 'leads':
+        return <ProtectedRoute><LeadList /></ProtectedRoute>;
       case 'trips':
         return <ProtectedRoute><TripList /></ProtectedRoute>;
       case 'drivers':
         return <ProtectedRoute><DriverList /></ProtectedRoute>;
       case 'vehicles':
         return <ProtectedRoute><VehicleList /></ProtectedRoute>;
+      case 'vehicle-categories':
+        return <ProtectedRoute><VehicleCategoryList /></ProtectedRoute>;
       case 'customers':
         return <ProtectedRoute><CustomerList /></ProtectedRoute>;
       case 'owners':

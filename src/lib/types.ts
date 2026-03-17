@@ -1,10 +1,14 @@
 export type UserRole = 'admin' | 'manager' | 'accountant' | 'operator' | 'viewer';
 
+export type DutyType = 'local' | 'outstation' | 'drop_pickup' | 'station_drop' | 'long';
+
 export type PageKey =
   | 'dashboard'
+  | 'leads'
   | 'trips'
   | 'drivers'
   | 'vehicles'
+  | 'vehicle-categories'
   | 'customers'
   | 'owners'
   | 'invoices'
@@ -70,7 +74,68 @@ export interface Customer {
   gstin?: string | null;
   credit_limit: number;
   credit_days: number;
+  default_duty_start_time: string | null;
+  default_duty_end_time: string | null;
+  default_duty_hours: number | null;
   is_active: boolean;
+}
+
+export interface LeadCustomerSummary {
+  id: string;
+  customer_code: string;
+  name: string;
+}
+
+export interface LeadAssigneeSummary {
+  id: string;
+  full_name: string;
+  role: UserRole;
+}
+
+export interface Lead {
+  id: string;
+  lead_number: string;
+  lead_date: string;
+  source: string;
+  customer_id: string | null;
+  prospect_name: string | null;
+  prospect_phone: string;
+  prospect_email: string | null;
+  prospect_company: string | null;
+  trip_type: string;
+  from_location: string;
+  to_location: string | null;
+  travel_date: string;
+  return_date: string | null;
+  pax_count: number;
+  vehicle_preference: string | null;
+  num_vehicles: number;
+  special_requirements: string | null;
+  estimated_amount: number | null;
+  status: string;
+  assigned_to: string | null;
+  priority: string;
+  lost_reason: string | null;
+  converted_booking_id: string | null;
+  remarks: string | null;
+  customer: LeadCustomerSummary | null;
+  assigned_user: LeadAssigneeSummary | null;
+  last_follow_up_date: string | null;
+  next_follow_up: string | null;
+  last_follow_up_summary: string | null;
+  follow_up_count: number;
+}
+
+export interface LeadFollowUp {
+  id: string;
+  lead_id: string;
+  follow_up_date: string;
+  next_follow_up: string | null;
+  contact_mode: string;
+  summary: string;
+  quoted_amount: number | null;
+  created_at: string;
+  created_by_user: LeadAssigneeSummary | null;
 }
 
 export interface Owner {
@@ -96,7 +161,18 @@ export interface Driver {
   state: string | null;
   license_number: string;
   license_expiry: string;
+  default_vehicle_id: string | null;
+  night_halt_rate: number | null;
+  ot_per_hour: number | null;
   is_active: boolean;
+}
+
+export interface VehicleCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  vehicle_count?: number;
 }
 
 export interface VehicleOwnerSummary {
@@ -117,6 +193,7 @@ export interface Vehicle {
   is_owned: boolean;
   is_active: boolean;
   owner: VehicleOwnerSummary | null;
+  vehicle_category: VehicleCategory | null;
 }
 
 export interface TripCustomerSummary {
@@ -414,3 +491,5 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
+

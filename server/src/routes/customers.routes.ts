@@ -18,8 +18,15 @@ const customerFields = [
   'gstin',
   'credit_limit',
   'credit_days',
+  'default_duty_start_time',
+  'default_duty_end_time',
+  'default_duty_hours',
   'is_active',
 ] as const;
+
+function isNegativeNumber(value: unknown): boolean {
+  return value !== null && value !== undefined && Number(value) < 0;
+}
 
 router.get('/', authRequired, async (_req, res) => {
   try {
@@ -38,15 +45,22 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
     return;
   }
 
+  if (isNegativeNumber(payload.default_duty_hours)) {
+    res.status(400).json({ message: 'Default duty hours cannot be negative.' });
+    return;
+  }
+
   try {
     const result = await query(
       `
         INSERT INTO customers (
           customer_code, name, contact_person, phone, email, address, city, state,
-          pincode, gstin, credit_limit, credit_days, is_active
+          pincode, gstin, credit_limit, credit_days, default_duty_start_time,
+          default_duty_end_time, default_duty_hours, is_active
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13
+          $9, $10, $11, $12, $13,
+          $14, $15, $16
         )
         RETURNING *
       `,
@@ -63,6 +77,9 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
         payload.gstin ?? null,
         payload.credit_limit ?? 0,
         payload.credit_days ?? 0,
+        payload.default_duty_start_time ?? null,
+        payload.default_duty_end_time ?? null,
+        payload.default_duty_hours ?? null,
         payload.is_active ?? true,
       ]
     );
@@ -78,6 +95,11 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, re
   const payload = pickDefinedFields(req.body as Record<string, unknown>, customerFields);
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No customer fields supplied for update.' });
+    return;
+  }
+
+  if (isNegativeNumber(payload.default_duty_hours)) {
+    res.status(400).json({ message: 'Default duty hours cannot be negative.' });
     return;
   }
 

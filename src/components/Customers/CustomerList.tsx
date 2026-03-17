@@ -14,6 +14,9 @@ interface CustomerFormState {
   state: string;
   credit_limit: string;
   credit_days: string;
+  default_duty_start_time: string;
+  default_duty_end_time: string;
+  default_duty_hours: string;
   is_active: boolean;
 }
 
@@ -27,8 +30,19 @@ const initialForm: CustomerFormState = {
   state: '',
   credit_limit: '0',
   credit_days: '0',
+  default_duty_start_time: '',
+  default_duty_end_time: '',
+  default_duty_hours: '',
   is_active: true,
 };
+
+function toTimeInputValue(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : '';
+}
+
+function formatDutyTime(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : '-';
+}
 
 export function CustomerList() {
   const { profile } = useAuth();
@@ -71,6 +85,9 @@ export function CustomerList() {
       state: customer.state ?? '',
       credit_limit: String(customer.credit_limit ?? 0),
       credit_days: String(customer.credit_days ?? 0),
+      default_duty_start_time: toTimeInputValue(customer.default_duty_start_time),
+      default_duty_end_time: toTimeInputValue(customer.default_duty_end_time),
+      default_duty_hours: customer.default_duty_hours == null ? '' : String(customer.default_duty_hours),
       is_active: customer.is_active,
     });
   }
@@ -95,6 +112,9 @@ export function CustomerList() {
         state: formState.state || null,
         credit_limit: Number(formState.credit_limit),
         credit_days: Number(formState.credit_days),
+        default_duty_start_time: formState.default_duty_start_time || null,
+        default_duty_end_time: formState.default_duty_end_time || null,
+        default_duty_hours: formState.default_duty_hours === '' ? null : Number(formState.default_duty_hours),
       };
 
       if (editingId) {
@@ -165,27 +185,39 @@ export function CustomerList() {
           </label>
           <label className="text-sm font-semibold text-slate-800">
             City
-            <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City, e.g. Mumbai" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City, e.g. Bhubaneswar" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             State
-            <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State, e.g. Maharashtra" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State, e.g. Odisha" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
-          <div className="flex gap-3">
+          <label className="text-sm font-semibold text-slate-800">
+            Credit Limit
+            <input value={formState.credit_limit} onChange={(event) => setFormState((current) => ({ ...current, credit_limit: event.target.value }))} placeholder="Credit limit in INR" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Credit Days
+            <input value={formState.credit_days} onChange={(event) => setFormState((current) => ({ ...current, credit_days: event.target.value }))} placeholder="Days, e.g. 30" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Default Duty Start Time
+            <input type="time" value={formState.default_duty_start_time} onChange={(event) => setFormState((current) => ({ ...current, default_duty_start_time: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Default Duty End Time
+            <input type="time" value={formState.default_duty_end_time} onChange={(event) => setFormState((current) => ({ ...current, default_duty_end_time: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <div className="flex gap-3 lg:col-span-2">
             <label className="flex-1 text-sm font-semibold text-slate-800">
-              Credit Limit
-              <input value={formState.credit_limit} onChange={(event) => setFormState((current) => ({ ...current, credit_limit: event.target.value }))} placeholder="Credit limit in INR, e.g. 50000" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+              Default Duty Hours
+              <input value={formState.default_duty_hours} onChange={(event) => setFormState((current) => ({ ...current, default_duty_hours: event.target.value }))} placeholder="e.g. 8.5" type="number" min="0" step="0.25" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
             </label>
-            <label className="w-36 text-sm font-semibold text-slate-800">
-              Credit Days
-              <input value={formState.credit_days} onChange={(event) => setFormState((current) => ({ ...current, credit_days: event.target.value }))} placeholder="Days, e.g. 30" type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-            </label>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
-            {editingId ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
+            <button type="submit" disabled={saving} className="self-end rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
+            {editingId ? <button type="button" onClick={resetForm} className="self-end rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
           </div>
         </form>
       ) : null}
-      <div className="overflow-hidden rounded-3xl border border-slate-200">
+      <div className="overflow-x-auto rounded-3xl border border-slate-200">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr>
@@ -195,6 +227,7 @@ export function CustomerList() {
               <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Credit Limit</th>
               <th className="px-4 py-3">Credit Days</th>
+              <th className="px-4 py-3">Duty Defaults</th>
               {canManage ? <th className="px-4 py-3">Action</th> : null}
             </tr>
           </thead>
@@ -212,6 +245,16 @@ export function CustomerList() {
                 </td>
                 <td className="px-4 py-3">{formatCurrency(customer.credit_limit)}</td>
                 <td className="px-4 py-3">{customer.credit_days}</td>
+                <td className="px-4 py-3">
+                  <div>
+                    {customer.default_duty_start_time || customer.default_duty_end_time
+                      ? `${formatDutyTime(customer.default_duty_start_time)} to ${formatDutyTime(customer.default_duty_end_time)}`
+                      : '-'}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {customer.default_duty_hours == null ? 'Hours not set' : `${customer.default_duty_hours} hrs`}
+                  </div>
+                </td>
                 {canManage ? (
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>

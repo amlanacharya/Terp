@@ -6,7 +6,11 @@ CREATE TYPE trip_status AS ENUM ('scheduled', 'in_progress', 'completed', 'cance
 CREATE TYPE payment_status AS ENUM ('pending', 'partial', 'completed', 'overdue');
 CREATE TYPE payment_mode AS ENUM ('cash', 'cheque', 'bank_transfer', 'upi', 'card');
 CREATE TYPE vehicle_type AS ENUM ('bus', 'mini_bus', 'van', 'car', 'truck');
+CREATE TYPE duty_type AS ENUM ('local', 'outstation', 'drop_pickup', 'station_drop', 'long');
 CREATE TYPE settlement_status AS ENUM ('pending', 'approved', 'paid');
+CREATE TYPE lead_status AS ENUM ('new', 'contacted', 'quoted', 'negotiating', 'converted', 'lost', 'on_hold');
+CREATE TYPE lead_source AS ENUM ('walk_in', 'phone', 'email', 'whatsapp', 'website', 'referral', 'repeat_customer', 'agent', 'other');
+CREATE TYPE lead_priority AS ENUM ('low', 'medium', 'high', 'urgent');
 
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -34,6 +38,9 @@ CREATE TABLE IF NOT EXISTS customers (
   gstin text,
   credit_limit numeric(15,2) DEFAULT 0,
   credit_days integer DEFAULT 0,
+  default_duty_start_time time,
+  default_duty_end_time time,
+  default_duty_hours numeric(5,2) CHECK (default_duty_hours IS NULL OR default_duty_hours >= 0),
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -79,6 +86,8 @@ CREATE TABLE IF NOT EXISTS drivers (
   bank_name text,
   bank_account text,
   ifsc_code text,
+  night_halt_rate numeric(12,2) DEFAULT 0 CHECK (night_halt_rate IS NULL OR night_halt_rate >= 0),
+  ot_per_hour numeric(12,2) DEFAULT 0 CHECK (ot_per_hour IS NULL OR ot_per_hour >= 0),
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -116,6 +125,27 @@ CREATE TABLE IF NOT EXISTS vehicles (
   updated_at timestamptz DEFAULT now()
 );
 
+ALTER TABLE drivers
+  ADD COLUMN IF NOT EXISTS default_vehicle_id uuid REFERENCES vehicles(id);
+
+CREATE TABLE IF NOT EXISTS vehicle_categories (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  description text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS vehicle_category_mappings (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  vehicle_category_id uuid NOT NULL REFERENCES vehicle_categories(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(vehicle_id)
+);
+
 CREATE TABLE IF NOT EXISTS gst_rates (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   hsn_code text UNIQUE NOT NULL,
@@ -124,6 +154,49 @@ CREATE TABLE IF NOT EXISTS gst_rates (
   sgst_rate numeric(5,2) NOT NULL,
   igst_rate numeric(5,2) NOT NULL,
   is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS leads (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  lead_number text UNIQUE NOT NULL,
+  lead_date timestamptz NOT NULL DEFAULT now(),
+  source lead_source NOT NULL,
+  customer_id uuid REFERENCES customers(id),
+  prospect_name text,
+  prospect_phone text NOT NULL,
+  prospect_email text,
+  prospect_company text,
+  trip_type text NOT NULL,
+  from_location text NOT NULL,
+  to_location text,
+  travel_date date NOT NULL,
+  return_date date,
+  pax_count integer NOT NULL,
+  vehicle_preference vehicle_type,
+  num_vehicles integer DEFAULT 1,
+  special_requirements text,
+  estimated_amount numeric(12,2),
+  status lead_status NOT NULL DEFAULT 'new',
+  assigned_to uuid REFERENCES profiles(id),
+  priority lead_priority NOT NULL DEFAULT 'medium',
+  lost_reason text,
+  converted_booking_id uuid,
+  remarks text,
+  created_by uuid REFERENCES profiles(id),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS lead_follow_ups (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  lead_id uuid REFERENCES leads(id) ON DELETE CASCADE,
+  follow_up_date timestamptz NOT NULL,
+  next_follow_up timestamptz,
+  contact_mode text NOT NULL,
+  summary text NOT NULL,
+  quoted_amount numeric(12,2),
+  created_by uuid REFERENCES profiles(id),
   created_at timestamptz DEFAULT now()
 );
 
@@ -285,6 +358,11 @@ CREATE TABLE IF NOT EXISTS system_settings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
+CREATE INDEX IF NOT EXISTS idx_leads_customer ON leads(customer_id);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_assigned ON leads(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_leads_date ON leads(lead_date);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_lead ON lead_follow_ups(lead_id);
 CREATE INDEX IF NOT EXISTS idx_trips_customer ON trips(customer_id);
 CREATE INDEX IF NOT EXISTS idx_trips_vehicle ON trips(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_trips_driver ON trips(driver_id);
@@ -292,7 +370,9 @@ CREATE INDEX IF NOT EXISTS idx_trips_date ON trips(trip_date);
 CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date);
-CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(payment_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_categories_name_unique ON vehicle_categories (LOWER(name));
+CREATE INDEX IF NOT EXISTS idx_vehicle_categories_active ON vehicle_categories(is_active);
+CREATE INDEX IF NOT EXISTS idx_vehicle_category_mappings_category ON vehicle_category_mappings(vehicle_category_id);
 CREATE INDEX IF NOT EXISTS idx_collections_invoice ON collections(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_driver_settlements_driver ON driver_settlements(driver_id);
 CREATE INDEX IF NOT EXISTS idx_owner_settlements_owner ON owner_settlements(owner_id);
@@ -310,7 +390,13 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('bank_name', '', 'Company Bank Name'),
   ('bank_account', '', 'Company Bank Account'),
   ('bank_ifsc', '', 'Company Bank IFSC'),
+  ('lead_prefix', 'LEAD', 'Lead Number Prefix'),
+  ('booking_prefix', 'BK', 'Booking Number Prefix'),
   ('invoice_prefix', 'INV', 'Invoice Number Prefix'),
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
+
+
+
+

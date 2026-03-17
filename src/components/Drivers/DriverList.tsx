@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatDate } from '../../lib/format';
+import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Driver } from '../../lib/types';
+import { Driver, Vehicle } from '../../lib/types';
 
 interface DriverFormState {
   driver_code: string;
@@ -13,6 +13,9 @@ interface DriverFormState {
   state: string;
   license_number: string;
   license_expiry: string;
+  default_vehicle_id: string;
+  night_halt_rate: string;
+  ot_per_hour: string;
   is_active: boolean;
 }
 
@@ -25,12 +28,16 @@ const initialForm: DriverFormState = {
   state: '',
   license_number: '',
   license_expiry: '',
+  default_vehicle_id: '',
+  night_halt_rate: '',
+  ot_per_hour: '',
   is_active: true,
 };
 
 export function DriverList() {
   const { profile } = useAuth();
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [formState, setFormState] = useState<DriverFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +47,13 @@ export function DriverList() {
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
   async function loadDrivers() {
-    setDrivers(await api.get<Driver[]>('/drivers'));
+    const [driverRows, vehicleRows] = await Promise.all([
+      api.get<Driver[]>('/drivers'),
+      api.get<Vehicle[]>('/vehicles'),
+    ]);
+
+    setDrivers(driverRows);
+    setVehicles(vehicleRows);
   }
 
   useEffect(() => {
@@ -57,6 +70,15 @@ export function DriverList() {
     void hydrate();
   }, []);
 
+  function getVehicleLabel(vehicleId: string | null | undefined) {
+    if (!vehicleId) {
+      return '-';
+    }
+
+    const vehicle = vehicles.find((item) => item.id === vehicleId);
+    return vehicle ? vehicle.vehicle_number : vehicleId;
+  }
+
   function startEdit(driver: Driver) {
     setEditingId(driver.id);
     setFormState({
@@ -68,6 +90,9 @@ export function DriverList() {
       state: driver.state ?? '',
       license_number: driver.license_number,
       license_expiry: driver.license_expiry?.slice(0, 10) ?? '',
+      default_vehicle_id: driver.default_vehicle_id ?? '',
+      night_halt_rate: driver.night_halt_rate == null ? '' : String(driver.night_halt_rate),
+      ot_per_hour: driver.ot_per_hour == null ? '' : String(driver.ot_per_hour),
       is_active: driver.is_active,
     });
   }
@@ -88,6 +113,9 @@ export function DriverList() {
         email: formState.email || null,
         city: formState.city || null,
         state: formState.state || null,
+        default_vehicle_id: formState.default_vehicle_id || null,
+        night_halt_rate: formState.night_halt_rate === '' ? null : Number(formState.night_halt_rate),
+        ot_per_hour: formState.ot_per_hour === '' ? null : Number(formState.ot_per_hour),
       };
 
       if (editingId) {
@@ -126,6 +154,10 @@ export function DriverList() {
   if (loading) {
     return <p className="text-sm text-slate-500">Loading drivers...</p>;
   }
+
+  const selectableVehicles = vehicles.filter(
+    (vehicle) => vehicle.is_active || vehicle.id === formState.default_vehicle_id
+  );
 
   return (
     <section className="space-y-4">
@@ -181,7 +213,7 @@ export function DriverList() {
             <input
               value={formState.city}
               onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
-              placeholder="City, e.g. Pune"
+              placeholder="City, e.g. Cuttack"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
@@ -190,7 +222,7 @@ export function DriverList() {
             <input
               value={formState.state}
               onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))}
-              placeholder="State, e.g. Maharashtra"
+              placeholder="State, e.g. Odisha"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
@@ -199,26 +231,63 @@ export function DriverList() {
             <input
               value={formState.license_number}
               onChange={(event) => setFormState((current) => ({ ...current, license_number: event.target.value }))}
-              placeholder="License number, e.g. MH1420230001234"
+              placeholder="License number"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             />
           </label>
-          <div className="flex gap-3">
+          <label className="text-sm font-semibold text-slate-800">
+            License Expiry
+            <input
+              type="date"
+              value={formState.license_expiry}
+              onChange={(event) => setFormState((current) => ({ ...current, license_expiry: event.target.value }))}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+              required
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Default Vehicle
+            <select
+              value={formState.default_vehicle_id}
+              onChange={(event) => setFormState((current) => ({ ...current, default_vehicle_id: event.target.value }))}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            >
+              <option value="">Select default vehicle</option>
+              {selectableVehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Night Halt Rate
+            <input
+              value={formState.night_halt_rate}
+              onChange={(event) => setFormState((current) => ({ ...current, night_halt_rate: event.target.value }))}
+              placeholder="e.g. 500"
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <div className="flex gap-3 lg:col-span-2">
             <label className="flex-1 text-sm font-semibold text-slate-800">
-              License Expiry
+              OT Per Hour
               <input
-                type="date"
-                value={formState.license_expiry}
-                onChange={(event) => setFormState((current) => ({ ...current, license_expiry: event.target.value }))}
+                value={formState.ot_per_hour}
+                onChange={(event) => setFormState((current) => ({ ...current, ot_per_hour: event.target.value }))}
+                placeholder="e.g. 150"
+                type="number"
+                min="0"
+                step="0.01"
                 className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-                required
               />
             </label>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
+              className="self-end rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
             >
               {saving ? 'Saving...' : editingId ? 'Update' : 'Add'}
             </button>
@@ -226,7 +295,7 @@ export function DriverList() {
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700"
+                className="self-end rounded-2xl border border-slate-300 px-5 py-3 text-slate-700"
               >
                 Cancel
               </button>
@@ -234,7 +303,7 @@ export function DriverList() {
           </div>
         </form>
       ) : null}
-      <div className="overflow-hidden rounded-3xl border border-slate-200">
+      <div className="overflow-x-auto rounded-3xl border border-slate-200">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr>
@@ -242,7 +311,9 @@ export function DriverList() {
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">License</th>
+              <th className="px-4 py-3">Default Vehicle</th>
+              <th className="px-4 py-3">Night Halt</th>
+              <th className="px-4 py-3">OT/Hour</th>
               <th className="px-4 py-3">Expiry</th>
               <th className="px-4 py-3">Status</th>
               {canManage ? <th className="px-4 py-3">Action</th> : null}
@@ -257,7 +328,9 @@ export function DriverList() {
                 <td className="px-4 py-3">
                   {driver.city ?? '-'}, {driver.state ?? '-'}
                 </td>
-                <td className="px-4 py-3">{driver.license_number}</td>
+                <td className="px-4 py-3">{getVehicleLabel(driver.default_vehicle_id)}</td>
+                <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : formatCurrency(driver.night_halt_rate)}</td>
+                <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : formatCurrency(driver.ot_per_hour)}</td>
                 <td className="px-4 py-3">{formatDate(driver.license_expiry)}</td>
                 <td className="px-4 py-3">{driver.is_active ? 'Active' : 'Inactive'}</td>
                 {canManage ? (

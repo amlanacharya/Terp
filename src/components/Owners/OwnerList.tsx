@@ -47,7 +47,7 @@ export function OwnerList() {
       try {
         await loadOwners();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unable to load owners.');
+        setError(err instanceof Error ? err.message : 'Unable to load vehicle owners.');
       } finally {
         setLoading(false);
       }
@@ -101,14 +101,14 @@ export function OwnerList() {
       resetForm();
       await loadOwners();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save owner.');
+      setError(err instanceof Error ? err.message : 'Unable to save vehicle owner.');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(owner: Owner) {
-    const confirmed = window.confirm(`Delete owner ${owner.name}?`);
+    const confirmed = window.confirm(`Delete vehicle owner ${owner.name}?`);
     if (!confirmed) {
       return;
     }
@@ -121,39 +121,39 @@ export function OwnerList() {
       }
       await loadOwners();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete owner.');
+      setError(err instanceof Error ? err.message : 'Unable to delete vehicle owner.');
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading owners...</p>;
+    return <p className="text-sm text-slate-500">Loading vehicle owners...</p>;
   }
 
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vendors</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vendor master</h2>
+        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicle Owners</p>
+        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vehicle owner master</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
           <label className="text-sm font-semibold text-slate-800">
-            Vendor Code
+            Owner Code
             <input
               value={formState.code}
               onChange={(event) => setFormState((current) => ({ ...current, code: event.target.value }))}
-              placeholder="Vendor code, e.g. VND-001"
+              placeholder="Owner code, e.g. OWN-001"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             />
           </label>
           <label className="text-sm font-semibold text-slate-800">
-            Vendor Name
+            Owner Name
             <input
               value={formState.name}
               onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Vendor name, e.g. Sai Tours"
+              placeholder="Owner name, e.g. Sai Tours"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             />
@@ -181,7 +181,7 @@ export function OwnerList() {
             <input
               value={formState.email}
               onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-              placeholder="Email, e.g. vendor@company.com"
+              placeholder="Email, e.g. owner@company.com"
               type="email"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
@@ -191,7 +191,7 @@ export function OwnerList() {
             <input
               value={formState.city}
               onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
-              placeholder="City, e.g. Nashik"
+              placeholder="City, e.g. Cuttack"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
@@ -200,7 +200,7 @@ export function OwnerList() {
             <input
               value={formState.state}
               onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))}
-              placeholder="State, e.g. Maharashtra"
+              placeholder="State, e.g. Odisha"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
@@ -210,7 +210,7 @@ export function OwnerList() {
               <input
                 value={formState.gstin}
                 onChange={(event) => setFormState((current) => ({ ...current, gstin: event.target.value }))}
-                placeholder="GSTIN, e.g. 27ABCDE1234F1Z5"
+                placeholder="GSTIN, e.g. 21ABCDE1234F1Z5"
                 className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               />
             </label>

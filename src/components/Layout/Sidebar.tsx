@@ -14,11 +14,13 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'leads', label: 'Leads' },
   { key: 'trips', label: 'Trips' },
   { key: 'drivers', label: 'Drivers' },
   { key: 'vehicles', label: 'Vehicles' },
+  { key: 'vehicle-categories', label: 'Vehicle Categories' },
   { key: 'customers', label: 'Customers' },
-  { key: 'owners', label: 'Vendors' },
+  { key: 'owners', label: 'Vehicle Owners' },
   { key: 'invoices', label: 'Customer Invoices', roles: ['admin', 'manager', 'accountant'] },
   { key: 'collections', label: 'Payment Receipts', roles: ['admin', 'manager', 'accountant'] },
   { key: 'driver-settlements', label: 'Salary Slips', roles: ['admin', 'manager', 'accountant'] },

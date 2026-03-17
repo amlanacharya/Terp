@@ -9,6 +9,7 @@ export type PageKey =
   | 'drivers'
   | 'vehicles'
   | 'vehicle-categories'
+  | 'rate-charts'
   | 'customers'
   | 'owners'
   | 'invoices'
@@ -175,6 +176,118 @@ export interface VehicleCategory {
   vehicle_count?: number;
 }
 
+export interface RateChartCustomerSummary {
+  id: string;
+  name: string;
+  customer_code: string;
+}
+
+export interface RateChartSummary {
+  id: string;
+  customer_id: string;
+  name: string;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  customer: RateChartCustomerSummary;
+  item_count: number;
+  fixed_route_count: number;
+}
+
+export interface RateChartItem {
+  id: string;
+  rate_chart_id: string;
+  vehicle_category_id: string;
+  duty_type: DutyType;
+  package_code: string;
+  package_label: string;
+  sort_order: number;
+  is_default: boolean;
+  base_hours: number | null;
+  base_km: number | null;
+  base_amount: number | null;
+  extra_km_rate: number | null;
+  extra_hr_rate: number | null;
+  fuel_divisor: number | null;
+  fuel_price_per_unit: number | null;
+  night_halt_rate: number | null;
+  fixed_amount: number | null;
+  use_higher_of_km_hr: boolean;
+  per_km_rate: number | null;
+  ot_rate: number | null;
+  long_km_threshold: number | null;
+  no_km_limit_cap_km: number | null;
+  long_day_hours: number | null;
+  long_night_halt_hours: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  vehicle_category: VehicleCategory;
+}
+
+export interface RateChartFixedRoute {
+  id: string;
+  rate_chart_id: string;
+  vehicle_category_id: string;
+  duty_type: DutyType;
+  from_location: string;
+  to_location: string;
+  from_location_key: string;
+  to_location_key: string;
+  fixed_amount: number;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  vehicle_category: VehicleCategory;
+}
+
+export interface RateChart {
+  id: string;
+  customer_id: string;
+  name: string;
+  effective_from: string;
+  effective_to: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  customer: RateChartCustomerSummary;
+  items: RateChartItem[];
+  fixed_routes: RateChartFixedRoute[];
+}
+
+export interface RateCalculationLineItem {
+  code: string;
+  label: string;
+  amount: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface RateCalculationResult {
+  rate_chart_id: string;
+  rate_chart_item_id: string | null;
+  package_code: string | null;
+  package_label: string | null;
+  requested_duty_type: DutyType;
+  applied_duty_type: DutyType;
+  applied_fixed_route_id: string | null;
+  line_items: RateCalculationLineItem[];
+  totals: {
+    base_charge: number;
+    extra_km_charge: number;
+    extra_hr_charge: number;
+    fuel_charge: number;
+    night_halt_charge: number;
+    ot_charge: number;
+    fixed_amount: number;
+    final_amount: number;
+  };
+  warnings: string[];
+}
 export interface VehicleOwnerSummary {
   id: string;
   name: string;
@@ -491,5 +604,6 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
 
 

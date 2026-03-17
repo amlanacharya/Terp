@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
+import { RateEngineError, loadActiveRateChartDetail } from '../utils/rate-engine';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 
 const router = Router();
@@ -37,6 +38,31 @@ router.get('/', authRequired, async (_req, res) => {
     res.status(500).json({ message: 'Unable to fetch customers.' });
   }
 });
+router.get('/:id/rate-chart', authRequired, async (req, res) => {
+  const selectedDate = typeof req.query.date === 'string' && req.query.date.length > 0
+    ? req.query.date
+    : undefined;
+
+  try {
+    const rateChart = await loadActiveRateChartDetail(String(req.params.id), selectedDate, { query });
+
+    if (!rateChart) {
+      res.status(404).json({ message: 'No active rate chart found for this customer and date.' });
+      return;
+    }
+
+    res.json(rateChart);
+  } catch (error) {
+    if (error instanceof RateEngineError && error.code === 'RATE_CHART_CONFLICT') {
+      res.status(409).json({ message: 'Multiple active rate charts exist for this customer and date.' });
+      return;
+    }
+
+    console.error('Fetching active customer rate chart failed:', error);
+    res.status(500).json({ message: 'Unable to fetch active customer rate chart.' });
+  }
+});
+
 
 router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, customerFields);
@@ -138,3 +164,7 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+
+
+

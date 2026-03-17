@@ -11,6 +11,7 @@ import gstRoutes from './routes/gst.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import leadsRoutes from './routes/leads.routes';
 import ownersRoutes from './routes/owners.routes';
+import rateChartsRoutes from './routes/rate-charts.routes';
 import reportsRoutes from './routes/reports.routes';
 import settingsRoutes from './routes/settings.routes';
 import settlementsRoutes from './routes/settlements.routes';
@@ -38,6 +39,7 @@ app.use('/api/vehicles', vehiclesRoutes);
 app.use('/api/vehicle-categories', vehicleCategoriesRoutes);
 app.use('/api/customers', customersRoutes);
 app.use('/api/owners', ownersRoutes);
+app.use('/api', rateChartsRoutes);
 app.use('/api/invoices', invoicesRoutes);
 app.use('/api/collections', collectionsRoutes);
 app.use('/api/settlements', settlementsRoutes);
@@ -58,3 +60,5 @@ void testConnection()
     console.error('Database connection failed:', error);
     process.exit(1);
   });
+
+

@@ -8,6 +8,7 @@ import { TripList } from './components/Trips/TripList';
 import { DriverList } from './components/Drivers/DriverList';
 import { VehicleList } from './components/Vehicles/VehicleList';
 import { VehicleCategoryList } from './components/VehicleCategories/VehicleCategoryList';
+import { RateChartList } from './components/RateCharts/RateChartList';
 import { CustomerList } from './components/Customers/CustomerList';
 import { InvoiceList } from './components/Invoices/InvoiceList';
 import { CollectionList } from './components/Collections/CollectionList';
@@ -43,6 +44,8 @@ function AppContent() {
         return <ProtectedRoute><VehicleList /></ProtectedRoute>;
       case 'vehicle-categories':
         return <ProtectedRoute><VehicleCategoryList /></ProtectedRoute>;
+      case 'rate-charts':
+        return <ProtectedRoute><RateChartList /></ProtectedRoute>;
       case 'customers':
         return <ProtectedRoute><CustomerList /></ProtectedRoute>;
       case 'owners':
@@ -86,3 +89,4 @@ function App() {
 }
 
 export default App;
+

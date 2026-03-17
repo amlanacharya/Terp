@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import path from 'path';
 import { testConnection } from './config/db';
 import authRoutes from './routes/auth.routes';
 import annexuresRoutes from './routes/annexures.routes';
@@ -52,6 +53,13 @@ app.use('/api/tax-components', taxComponentsRoutes);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
+});
+
+// Serve React frontend in production
+const staticPath = path.join(__dirname, '../../dist');
+app.use(express.static(staticPath));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(staticPath, 'index.html'));
 });
 
 void testConnection()

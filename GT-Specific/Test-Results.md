@@ -185,12 +185,89 @@ Phase 1 established the core DB schema (customers, vehicles, drivers, routes, tr
 
 ---
 
+---
+
+## Phase 4 — GT Invoice Helpers (`invoice-gt.test.ts`)
+
+**Modules:** `server/src/utils/invoice-gt.ts`, `server/src/utils/annexure-builder.ts`, `server/src/utils/gst.ts`
+
+**Fixtures:** `server/src/utils/invoice-gt.fixtures.ts`
+
+**Total:** 32 tests — ✅ 32 passed
+
+### Group 1 — `isInterState` (GSTIN state-code comparison)
+
+| #  | Test Case                                              | Inputs                              | Expected | Result |
+| -- | ------------------------------------------------------ | ----------------------------------- | -------- | ------ |
+| 1  | Same state (Odisha 21) — intra-state                   | company=21AABCT…, customer=21AABCU… | false    | ✅ Pass |
+| 2  | Different states — Odisha vs Maharashtra (27)          | company=21…, customer=27…           | true     | ✅ Pass |
+| 3  | Different states — Odisha vs Delhi (07)                | company=21…, customer=07…           | true     | ✅ Pass |
+| 4  | Different states — Odisha vs Karnataka (29)            | company=21…, customer=29…           | true     | ✅ Pass |
+| 5  | Null customer GSTIN — defaults to intra-state          | customer=null                       | false    | ✅ Pass |
+| 6  | Undefined company GSTIN — defaults to intra-state      | company=undefined                   | false    | ✅ Pass |
+| 7  | Both null/undefined                                    | both null                           | false    | ✅ Pass |
+| 8  | Same first-2-char prefix, different rest               | 21AAAAA…, 21BBBBB…                  | false    | ✅ Pass |
+
+### Group 2 — `formatDutyTypeLabel` (duty type to display label)
+
+| #  | Test Case                           | Input            | Expected       | Result |
+| -- | ----------------------------------- | ---------------- | -------------- | ------ |
+| 9  | local → Local                       | 'local'          | 'Local'        | ✅ Pass |
+| 10 | outstation → Outstation             | 'outstation'     | 'Outstation'   | ✅ Pass |
+| 11 | drop_pickup → Drop Pickup           | 'drop_pickup'    | 'Drop Pickup'  | ✅ Pass |
+| 12 | station_drop → Station Drop         | 'station_drop'   | 'Station Drop' | ✅ Pass |
+| 13 | long → Long                         | 'long'           | 'Long'         | ✅ Pass |
+| 14 | Null input → null                   | null             | null           | ✅ Pass |
+| 15 | Empty string → null                 | ''               | null           | ✅ Pass |
+
+### Group 3 — `buildInterestNote` (payment terms to interest note text)
+
+| #  | Test Case                             | Input     | Expected                                                        | Result |
+| -- | ------------------------------------- | --------- | --------------------------------------------------------------- | ------ |
+| 16 | 30-day terms                          | 30        | 'Interest @ 18% p.a. applies after 30 day(s) from invoice date.' | ✅ Pass |
+| 17 | 1-day terms                           | 1         | 'Interest @ 18% p.a. applies after 1 day(s) from invoice date.'  | ✅ Pass |
+| 18 | 0-day terms                           | 0         | 'Interest @ 18% p.a. applies after 0 day(s) from invoice date.'  | ✅ Pass |
+| 19 | null (no credit period) → null        | null      | null                                                            | ✅ Pass |
+| 20 | undefined → null                      | undefined | null                                                            | ✅ Pass |
+
+### Group 4 — `getDateDiffInDays` (calendar day difference)
+
+| #  | Test Case                                     | Inputs                        | Expected | Result |
+| -- | --------------------------------------------- | ----------------------------- | -------- | ------ |
+| 21 | Same-day — 0 nights                           | 2025-06-01 → 2025-06-01       | 0        | ✅ Pass |
+| 22 | 2-night outstation (Jun 1 → Jun 3)            | 2025-06-01 → 2025-06-03       | 2        | ✅ Pass |
+| 23 | End before start — floors to 0                | 2025-06-05 → 2025-06-01       | 0        | ✅ Pass |
+| 24 | Month boundary (May 30 → Jun 2 = 3 days)      | 2025-05-30 → 2025-06-02       | 3        | ✅ Pass |
+| 25 | Year boundary (Dec 30 → Jan 2 = 3 days)       | 2025-12-30 → 2026-01-02       | 3        | ✅ Pass |
+
+### Group 5 — `deriveNightHalts` (night halts from metric date span)
+
+| #  | Test Case                                           | Fixture              | Expected | Result |
+| -- | --------------------------------------------------- | -------------------- | -------- | ------ |
+| 26 | Empty metrics array                                 | `[]`                 | 0        | ✅ Pass |
+| 27 | Single-day local trip (same start and end date)     | `METRICS_SINGLE_DAY` | 0        | ✅ Pass |
+| 28 | 2-night outstation (Jun 1 → Jun 3)                  | `METRICS_TWO_NIGHT`  | 2        | ✅ Pass |
+| 29 | Last row open — falls back to last start_date       | `METRICS_LAST_OPEN`  | 0        | ✅ Pass |
+
+### Group 6 — `calculateGst` GT invoice tax scenarios
+
+| #  | Test Case                                           | Inputs                              | Expected                                | Result |
+| -- | --------------------------------------------------- | ----------------------------------- | --------------------------------------- | ------ |
+| 30 | Intra-state (CGST + SGST, no IGST)                  | subtotal=3000, intra, 2.5%/2.5%/5% | cgst=75, sgst=75, igst=0, total=3150    | ✅ Pass |
+| 31 | Inter-state (IGST only, no CGST/SGST)               | subtotal=3000, inter, 5%            | cgst=0, sgst=0, igst=150, total=3150    | ✅ Pass |
+| 32 | Multi-item grouped annexure invoice (intra-state)   | items=[2000,1500], 2.5%/2.5%        | cgst=87.5, sgst=87.5, total=3675        | ✅ Pass |
+| 33 | Zero amount — all taxes zero                        | subtotal=0                          | cgst=0, sgst=0, igst=0, total=0         | ✅ Pass |
+| 34 | Fractional paise rounding (2dp)                     | subtotal=3000.50, 2.5%              | cgst=75.01, sgst=75.01, total≈3150.52   | ✅ Pass |
+
+---
+
 ## Aggregate Summary
 
 | Phase     | File                             | Tests  | Passed | Failed |
 | --------- | -------------------------------- | ------ | ------ | ------ |
 | Phase 2   | `src/utils/rate-engine.test.ts`  | 23     | 23     | 0      |
 | Phase 3   | `src/utils/trip-metrics.test.ts` | 30     | 30     | 0      |
-| **Total** |                                  | **53** | **53** | **0**  |
+| Phase 4   | `src/utils/invoice-gt.test.ts`   | 34     | 34     | 0      |
+| **Total** |                                  | **87** | **87** | **0**  |
 
-All 53 automated tests pass as of 2026-03-17.
+All 87 automated tests pass as of 2026-03-17.

@@ -322,7 +322,7 @@ export function RateChartDetail({
                           <tr key={item.id}>
                             <td className="px-4 py-3">
                               <div className="font-medium text-slate-900">{item.package_label}</div>
-                              <div className="text-xs text-slate-500">{item.package_code}{item.is_default ? ' • default' : ''}</div>
+                              <div className="text-xs text-slate-500">{item.package_code}{item.is_default ? ' â€¢ default' : ''}</div>
                             </td>
                             <td className="px-4 py-3 text-slate-600">
                               <div>{toDisplayValue(item.base_hours)} hr / {toDisplayValue(item.base_km)} km</div>

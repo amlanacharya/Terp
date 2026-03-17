@@ -613,6 +613,12 @@ export interface Invoice {
   payment_status: string;
   due_date: string | null;
   remarks: string | null;
+  invoice_type: 'invoice' | 'credit_note';
+  reference_invoice_id: string | null;
+  invoice_status: 'active' | 'void' | 'written_off';
+  void_reason: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
   source_type?: InvoiceSourceType;
   item_count?: number;
   annexure_item_count?: number;
@@ -620,6 +626,8 @@ export interface Invoice {
   customer_gstin?: string | null;
   tax_components?: InvoiceTaxComponent[];
   customer: InvoiceCustomerSummary;
+  credit_note?: Partial<Invoice> | null;
+  reference_invoice?: Partial<Invoice> | null;
 }
 
 export interface InvoiceAnnexureSummary {
@@ -859,6 +867,8 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
+
 
 
 

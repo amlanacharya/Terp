@@ -255,12 +255,13 @@ GT-Plan.md phases remain unchanged. Scale phases follow after Phase 5.
 |---|---|---|
 | **4** — GT-Plan | Annexures + GT Invoice PDF | annexures table (in schema), pdf-invoice-gt.ts, pdf-annexure.ts |
 | **5** — GT-Plan | Dynamic tax components | tax_components table, tax config UI |
-| **6** — Scale | Charge Type Registry + Document Charge Config | charge_types, document_charge_configs, trip_charge_lines, Settings UI |
-| **7** — Scale | Settlement Calculation Engine | settlement_rules, settlement-engine.ts, auto-calculated settlements |
-| **8** — Scale | Pro-Rata Allocation + Number Series | charge_allocations, number_series, charge-allocator.ts |
-| **9** — Scale | Tax Engine Extensions | tax_applicability_overrides, compound/threshold/exemption config |
-| **10** — Future | Approval Workflow | approval_rules, approval_requests, email/notification triggers |
-| **11** — Future | GL Account Mapping | gl_accounts, gl_postings, accounting integration readiness |
+| **6** — GT-Plan ✅ Current | Invoice Lifecycle Management | invoice_type, invoice_status, credit notes, void with auto CN, write-off, mark-overdue, collections FK RESTRICT |
+| **7** — Scale | Charge Type Registry + Document Charge Config | charge_types, document_charge_configs, trip_charge_lines, Settings UI |
+| **8** — Scale | Settlement Calculation Engine | settlement_rules, settlement-engine.ts, auto-calculated settlements |
+| **9** — Scale | Pro-Rata Allocation + Number Series | charge_allocations, number_series, charge-allocator.ts |
+| **10** — Scale | Tax Engine Extensions | tax_applicability_overrides, compound/threshold/exemption config |
+| **11** — Future | Approval Workflow | approval_rules, approval_requests, email/notification triggers |
+| **12** — Future | GL Account Mapping | gl_accounts, gl_postings, accounting integration readiness |
 
 ---
 
@@ -322,4 +323,6 @@ src/components/Settings/NumberSeries.tsx
 
 ## Immediate Next Step
 
-Execute **GT-Plan Phase 4** (Annexures + GT Invoice PDF) — that is the current client deliverable. When implementing Phase 4 invoice line items, store the `charge_type_id` reference on `invoice_items` (already has `trip_id`/`annexure_id`). This single addition means Phase 6 normalization is a natural extension, not a rewrite of invoice generation.
+**GT-Plan Phase 6 (Invoice Lifecycle Management) is the current delivery.** Migration `006_void_invoices.sql` adds `invoice_type`, `invoice_status`, `reference_invoice_id` and fixes the collections FK to RESTRICT. Backend has void (with auto credit note), write-off, and mark-overdue endpoints. Frontend has status badges and action modals.
+
+Next up: **Phase 7** — Charge Type Registry. When implementing Phase 7 invoice line items, store the `charge_type_id` reference on `invoice_items` (already has `trip_id`/`annexure_id`). This single addition means Phase 7 normalization is a natural extension, not a rewrite of invoice generation.

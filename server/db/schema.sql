@@ -432,6 +432,14 @@ CREATE TABLE IF NOT EXISTS invoices (
   payment_status payment_status DEFAULT 'pending',
   due_date date,
   remarks text,
+  invoice_type text NOT NULL DEFAULT 'invoice'
+    CHECK (invoice_type IN ('invoice', 'credit_note')),
+  reference_invoice_id uuid REFERENCES invoices(id),
+  invoice_status text NOT NULL DEFAULT 'active'
+    CHECK (invoice_status IN ('active', 'void', 'written_off')),
+  void_reason text,
+  voided_at timestamptz,
+  voided_by uuid REFERENCES profiles(id),
   created_by uuid REFERENCES profiles(id),
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
@@ -533,7 +541,7 @@ CREATE TABLE IF NOT EXISTS collections (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   collection_number text UNIQUE NOT NULL,
   collection_date date NOT NULL,
-  invoice_id uuid REFERENCES invoices(id) NOT NULL,
+  invoice_id uuid NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
   amount numeric(15,2) NOT NULL,
   payment_mode payment_mode NOT NULL,
   reference_number text,
@@ -654,6 +662,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_chart_fixed_routes_unique ON rate_cha
 CREATE INDEX IF NOT EXISTS idx_rate_chart_fixed_routes_chart ON rate_chart_fixed_routes(rate_chart_id);
 CREATE INDEX IF NOT EXISTS idx_rate_chart_fixed_routes_category ON rate_chart_fixed_routes(vehicle_category_id);
 CREATE INDEX IF NOT EXISTS idx_collections_invoice ON collections(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_type_status ON invoices(invoice_type, invoice_status);
+CREATE INDEX IF NOT EXISTS idx_invoices_reference ON invoices(reference_invoice_id);
 CREATE INDEX IF NOT EXISTS idx_driver_settlements_driver ON driver_settlements(driver_id);
 CREATE INDEX IF NOT EXISTS idx_owner_settlements_owner ON owner_settlements(owner_id);
 
@@ -682,6 +692,7 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
+
 
 
 

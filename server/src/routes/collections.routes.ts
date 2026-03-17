@@ -16,6 +16,15 @@ const collectionFields = [
   'remarks',
 ] as const;
 
+async function ensureInvoiceCollectable(invoiceId: string): Promise<boolean> {
+  const result = await query<{ invoice_status: string }>('SELECT invoice_status FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
+  if (!result.rows[0]) {
+    throw new Error('Invoice not found.');
+  }
+
+  return result.rows[0].invoice_status === 'active';
+}
+
 async function syncInvoicePaymentStatus(invoiceId: string): Promise<void> {
   await query(
     `
@@ -34,7 +43,7 @@ async function syncInvoicePaymentStatus(invoiceId: string): Promise<void> {
         WHERE i.id = $1
         GROUP BY i.id
       ) AS summary
-      WHERE invoices.id = summary.id
+      WHERE invoices.id = summary.id AND invoices.invoice_status = 'active'
     `,
     [invoiceId]
   );
@@ -74,6 +83,11 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
   }
 
   try {
+    if (!(await ensureInvoiceCollectable(String(payload.invoice_id)))) {
+      res.status(409).json({ message: 'Collections are blocked for void invoices.' });
+      return;
+    }
+
     const result = await query(
       `
         INSERT INTO collections (
@@ -102,7 +116,9 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Creating collection failed:', error);
-    res.status(500).json({ message: 'Unable to create collection.' });
+    res.status(error instanceof Error && error.message === 'Invoice not found.' ? 404 : 500).json({
+      message: error instanceof Error ? error.message : 'Unable to create collection.',
+    });
   }
 });
 
@@ -124,6 +140,11 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), 
       return;
     }
 
+    if (payload.invoice_id && !(await ensureInvoiceCollectable(String(payload.invoice_id)))) {
+      res.status(409).json({ message: 'Collections are blocked for void invoices.' });
+      return;
+    }
+
     const update = buildUpdateClause(payload);
     const result = await query(
       `UPDATE collections SET ${update.clause} WHERE id = $${update.values.length + 1} RETURNING *`,
@@ -138,7 +159,9 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), 
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Updating collection failed:', error);
-    res.status(500).json({ message: 'Unable to update collection.' });
+    res.status(error instanceof Error && error.message === 'Invoice not found.' ? 404 : 500).json({
+      message: error instanceof Error ? error.message : 'Unable to update collection.',
+    });
   }
 });
 
@@ -159,3 +182,4 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+

@@ -54,7 +54,7 @@ function buildDateFilters(
 router.get('/', authRequired, async (_req, res) => {
   try {
     const [invoiceTotals, collectionTotals, driverTotals, ownerTotals, tripStatus] = await Promise.all([
-      query<{ total: string }>('SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM invoices'),
+      query<{ total: string }>('SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM invoices WHERE invoice_status = \'active\''),
       query<{ total: string }>('SELECT COALESCE(SUM(amount), 0)::text AS total FROM collections'),
       query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0)::text AS total FROM driver_settlements'),
       query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0)::text AS total FROM owner_settlements'),
@@ -94,7 +94,7 @@ router.get('/customer-outstanding', authRequired, async (_req, res) => {
           COALESCE(SUM(COALESCE(collections_by_invoice.collected_amount, 0)), 0) AS collected_amount,
           COALESCE(SUM(i.total_amount - COALESCE(collections_by_invoice.collected_amount, 0)), 0) AS outstanding_amount
         FROM customers c
-        JOIN invoices i ON i.customer_id = c.id
+        JOIN invoices i ON i.customer_id = c.id AND i.invoice_status = 'active'
         LEFT JOIN (
           SELECT invoice_id, COALESCE(SUM(amount), 0) AS collected_amount
           FROM collections
@@ -439,7 +439,7 @@ router.get('/collections', authRequired, async (req, res) => {
           col.reference_number,
           col.remarks
         FROM collections col
-        JOIN invoices inv ON inv.id = col.invoice_id
+        JOIN invoices inv ON inv.id = col.invoice_id AND inv.invoice_status = 'active'
         JOIN customers cust ON cust.id = inv.customer_id
         ${whereClause}
         ORDER BY col.collection_date DESC, col.created_at DESC
@@ -480,6 +480,9 @@ router.get('/customer-profitability', authRequired, async (req, res) => {
   const dateFrom = getQueryString(req.query.date_from);
   const dateTo = getQueryString(req.query.date_to);
   const invoiceFilter = buildDateFilters(dateFrom, dateTo, 'invoice_date');
+  const filteredInvoiceClause = invoiceFilter.clause
+    ? invoiceFilter.clause.replace(/^WHERE /, "WHERE invoice_status = 'active' AND ")
+    : "WHERE invoice_status = 'active'";
 
   try {
     const result = await query<{
@@ -496,7 +499,7 @@ router.get('/customer-profitability', authRequired, async (req, res) => {
         WITH filtered_invoices AS (
           SELECT *
           FROM invoices
-          ${invoiceFilter.clause}
+          ${filteredInvoiceClause}
         ),
         invoice_totals AS (
           SELECT customer_id, COALESCE(SUM(total_amount), 0) AS total_invoiced
@@ -551,3 +554,4 @@ router.get('/customer-profitability', authRequired, async (req, res) => {
 });
 
 export default router;
+

@@ -156,7 +156,7 @@ function getAnnexureSelect(whereClause = ''): string {
     JOIN customers c ON c.id = parent_t.customer_id
     JOIN vehicles v ON v.id = parent_t.vehicle_id
     LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
-    LEFT JOIN invoices inv ON inv.id = a.invoice_id
+    LEFT JOIN invoices inv ON inv.id = a.invoice_id AND inv.invoice_status = 'active'
     ${whereClause}
   `;
 }
@@ -736,5 +736,6 @@ router.delete('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'op
 });
 
 export default router;
+
 
 

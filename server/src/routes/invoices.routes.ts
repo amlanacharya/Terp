@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../config/db';
+import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { buildInterestNote, getGtInvoiceSettings } from '../utils/invoice-gt';
@@ -57,6 +57,12 @@ interface InvoiceListRow {
   payment_status: string;
   due_date: string | null;
   remarks: string | null;
+  invoice_type: 'invoice' | 'credit_note';
+  reference_invoice_id: string | null;
+  invoice_status: 'active' | 'void' | 'written_off';
+  void_reason: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
   source_type: 'manual' | 'trip' | 'annexures';
   item_count: string;
   annexure_item_count: string;
@@ -187,6 +193,12 @@ async function isSourceLinkedInvoice(invoiceId: string): Promise<boolean> {
   );
 
   return Boolean(linkedResult.rows[0]);
+}
+
+async function isVoidInvoice(invoiceId: string): Promise<boolean> {
+  const result = await query<{ invoice_status: string }>('SELECT invoice_status FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
+  if (!result.rows[0]) return false;
+  return result.rows[0].invoice_status !== 'active';
 }
 
 async function createOrUpdateManualInvoice(
@@ -346,8 +358,11 @@ async function createOrUpdateManualInvoice(
   return invoiceId;
 }
 
-router.get('/', authRequired, async (_req, res) => {
+router.get('/', authRequired, async (req, res) => {
   try {
+    const includeVoid = req.query.include_void === 'true';
+    const typeFilter = typeof req.query.type === 'string' ? req.query.type : null;
+
     const result = await query<InvoiceListRow>(
       `
         SELECT
@@ -362,8 +377,11 @@ router.get('/', authRequired, async (_req, res) => {
           (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) AS annexure_item_count
         FROM invoices i
         JOIN customers c ON c.id = i.customer_id
+        WHERE ($1 OR i.invoice_status = 'active')
+          AND ($2::text IS NULL OR i.invoice_type = $2)
         ORDER BY i.invoice_date DESC, i.created_at DESC
-      `
+      `,
+      [includeVoid, typeFilter]
     );
 
     res.json(result.rows.map(normalizeInvoiceRow));
@@ -555,9 +573,10 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
 });
 
 router.get('/:id', authRequired, async (req, res) => {
+  const invoiceId = String(req.params.id);
   try {
     const [invoice, itemResult, taxData] = await Promise.all([
-      loadInvoiceSummary(String(req.params.id)),
+      loadInvoiceSummary(invoiceId),
       query(
         `
           SELECT
@@ -579,14 +598,37 @@ router.get('/:id', authRequired, async (req, res) => {
           WHERE ii.invoice_id = $1
           ORDER BY ii.created_at ASC
         `,
-        [String(req.params.id)]
+        [invoiceId]
       ),
-      loadInvoiceTaxComponents(String(req.params.id)),
+      loadInvoiceTaxComponents(invoiceId),
     ]);
 
     if (!invoice) {
       res.status(404).json({ message: 'Invoice not found.' });
       return;
+    }
+
+    // Embed credit note or reference invoice
+    let creditNote: Record<string, unknown> | null = null;
+    let referenceInvoice: Record<string, unknown> | null = null;
+
+    if (invoice.invoice_type === 'credit_note' && invoice.reference_invoice_id) {
+      const refResult = await query<{ id: string; invoice_number: string; invoice_date: string; total_amount: string }>(
+        'SELECT id, invoice_number, invoice_date::text, total_amount::text FROM invoices WHERE id = $1 LIMIT 1',
+        [invoice.reference_invoice_id]
+      );
+      if (refResult.rows[0]) {
+        referenceInvoice = { ...refResult.rows[0], total_amount: Number(refResult.rows[0].total_amount) };
+      }
+    } else {
+      const cnResult = await query<{ id: string; invoice_number: string; invoice_date: string; total_amount: string }>(
+        `SELECT id, invoice_number, invoice_date::text, total_amount::text
+         FROM invoices WHERE reference_invoice_id = $1 AND invoice_type = 'credit_note' LIMIT 1`,
+        [invoiceId]
+      );
+      if (cnResult.rows[0]) {
+        creditNote = { ...cnResult.rows[0], total_amount: Number(cnResult.rows[0].total_amount) };
+      }
     }
 
     res.json({
@@ -606,6 +648,8 @@ router.get('/:id', authRequired, async (req, res) => {
         total_amount: Number(item.total_amount),
         tax_components: taxData.item_tax_components.get(item.id) ?? [],
       })),
+      credit_note: creditNote,
+      reference_invoice: referenceInvoice,
     });
   } catch (error) {
     console.error('Fetching invoice detail failed:', error);
@@ -626,21 +670,222 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
   }
 });
 
+router.post('/mark-overdue', authRequired, roleCheck(['admin', 'manager']), async (_req, res) => {
+  try {
+    const result = await query<{ id: string; invoice_number: string }>(
+      `UPDATE invoices
+       SET payment_status = 'overdue', updated_at = now()
+       WHERE invoice_status = 'active'
+         AND invoice_type = 'invoice'
+         AND due_date < CURRENT_DATE
+         AND payment_status IN ('pending', 'partial')
+       RETURNING id, invoice_number`
+    );
+    res.json({ count: result.rowCount ?? 0, invoices: result.rows });
+  } catch (error) {
+    console.error('Marking overdue failed:', error);
+    res.status(500).json({ message: 'Unable to mark overdue invoices.' });
+  }
+});
+
+router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
+  const invoiceId = String(req.params.id);
+  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim().length > 0
+    ? req.body.reason.trim()
+    : null;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const invoiceResult = await client.query<{
+      id: string;
+      invoice_number: string;
+      invoice_type: string;
+      invoice_status: string;
+      total_collected: string;
+    }>(
+      `SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_status,
+              COALESCE(SUM(c.amount), 0)::text AS total_collected
+       FROM invoices i
+       LEFT JOIN collections c ON c.invoice_id = i.id
+       WHERE i.id = $1
+       GROUP BY i.id
+       FOR UPDATE OF i`,
+      [invoiceId]
+    );
+
+    const inv = invoiceResult.rows[0];
+    if (!inv) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ message: 'Invoice not found.' });
+      return;
+    }
+
+    if (inv.invoice_type === 'credit_note') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ message: 'Credit notes cannot be voided.' });
+      return;
+    }
+
+    if (inv.invoice_status !== 'active') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ message: `Invoice is already ${inv.invoice_status}.` });
+      return;
+    }
+
+    let creditNoteId: string | null = null;
+
+    if (Number(inv.total_collected) > 0) {
+      const cnNumber = `${inv.invoice_number}-CN`;
+      const cnRemarks = `Credit note for voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
+
+      const cnResult = await client.query<{ id: string }>(
+        `INSERT INTO invoices (
+           invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
+           subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
+           payment_status, due_date, remarks,
+           invoice_type, reference_invoice_id, invoice_status, created_by
+         ) SELECT
+           $2, CURRENT_DATE, customer_id, billing_address, customer_gstin,
+           subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
+           'completed', CURRENT_DATE, $3,
+           'credit_note', id, 'active', $4
+         FROM invoices WHERE id = $1
+         RETURNING id`,
+        [invoiceId, cnNumber, cnRemarks, req.user?.id ?? null]
+      );
+      creditNoteId = cnResult.rows[0].id;
+
+      await client.query(
+        `INSERT INTO invoice_items (
+           invoice_id, description, hsn_code, quantity, rate, amount,
+           cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
+         ) SELECT
+           $2, description, hsn_code, quantity, rate, amount,
+           cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
+         FROM invoice_items WHERE invoice_id = $1`,
+        [invoiceId, creditNoteId]
+      );
+
+      await client.query(
+        `INSERT INTO invoice_tax_components (
+           invoice_id, tax_component_id, component_code, component_name,
+           applies_to, hsn_code, taxable_base, rate, is_percentage,
+           flat_amount, tax_amount, sort_order
+         ) SELECT
+           $2, tax_component_id, component_code, component_name,
+           applies_to, hsn_code, taxable_base, rate, is_percentage,
+           flat_amount, tax_amount, sort_order
+         FROM invoice_tax_components WHERE invoice_id = $1`,
+        [invoiceId, creditNoteId]
+      );
+    }
+
+    // Unlink annexures so they can be re-billed
+    const itemResult = await client.query<{ annexure_id: string | null }>(
+      'SELECT annexure_id FROM invoice_items WHERE invoice_id = $1',
+      [invoiceId]
+    );
+    const annexureIds = Array.from(new Set(
+      itemResult.rows.map((r) => r.annexure_id).filter((v): v is string => Boolean(v))
+    ));
+    if (annexureIds.length > 0) {
+      await client.query(
+        'UPDATE annexures SET is_billed = false, invoice_id = NULL, updated_at = now() WHERE id = ANY($1::uuid[])',
+        [annexureIds]
+      );
+    }
+
+    await client.query(
+      `UPDATE invoices
+       SET invoice_status = 'void', void_reason = $2, voided_at = now(), voided_by = $3, updated_at = now()
+       WHERE id = $1`,
+      [invoiceId, reason, req.user?.id ?? null]
+    );
+
+    await client.query('COMMIT');
+
+    const [invoice, creditNote] = await Promise.all([
+      loadInvoiceSummary(invoiceId),
+      creditNoteId ? loadInvoiceSummary(creditNoteId) : Promise.resolve(null),
+    ]);
+
+    res.json({
+      invoice: normalizeInvoiceRow(invoice as InvoiceListRow),
+      credit_note: creditNote ? normalizeInvoiceRow(creditNote as InvoiceListRow) : null,
+      released_annexure_count: annexureIds.length,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Voiding invoice failed:', error);
+    res.status(500).json({ message: 'Unable to void invoice.' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/write-off', authRequired, roleCheck(['admin']), async (req, res) => {
+  const invoiceId = String(req.params.id);
+  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim().length > 0
+    ? req.body.reason.trim()
+    : null;
+
+  try {
+    const existing = await query<{ invoice_status: string; invoice_type: string }>(
+      'SELECT invoice_status, invoice_type FROM invoices WHERE id = $1 LIMIT 1',
+      [invoiceId]
+    );
+    const inv = existing.rows[0];
+    if (!inv) {
+      res.status(404).json({ message: 'Invoice not found.' });
+      return;
+    }
+    if (inv.invoice_type === 'credit_note') {
+      res.status(409).json({ message: 'Credit notes cannot be written off.' });
+      return;
+    }
+    if (inv.invoice_status !== 'active') {
+      res.status(409).json({ message: `Invoice is already ${inv.invoice_status}.` });
+      return;
+    }
+
+    await query(
+      `UPDATE invoices
+       SET invoice_status = 'written_off', void_reason = $2, voided_at = now(), voided_by = $3, updated_at = now()
+       WHERE id = $1`,
+      [invoiceId, reason, req.user?.id ?? null]
+    );
+
+    const invoice = await loadInvoiceSummary(invoiceId);
+    res.json(normalizeInvoiceRow(invoice as InvoiceListRow));
+  } catch (error) {
+    console.error('Writing off invoice failed:', error);
+    res.status(500).json({ message: 'Unable to write off invoice.' });
+  }
+});
+
 router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, invoiceFields);
+  const invoiceId = String(req.params.id);
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No invoice fields supplied for update.' });
     return;
   }
 
   try {
-    if (await isSourceLinkedInvoice(String(req.params.id))) {
+    if (await isVoidInvoice(invoiceId)) {
+      res.status(409).json({ message: 'Void invoices cannot be edited.' });
+      return;
+    }
+
+    if (await isSourceLinkedInvoice(invoiceId)) {
       res.status(409).json({ message: 'Edit is blocked for GT source-linked invoices.' });
       return;
     }
 
-    const invoiceId = await createOrUpdateManualInvoice(payload, req.user?.id ?? null, String(req.params.id));
-    const invoice = await loadInvoiceSummary(invoiceId);
+    const savedInvoiceId = await createOrUpdateManualInvoice(payload, req.user?.id ?? null, invoiceId);
+    const invoice = await loadInvoiceSummary(savedInvoiceId);
     res.json(normalizeInvoiceRow(invoice as InvoiceListRow));
   } catch (error) {
     console.error('Updating invoice failed:', error);
@@ -649,13 +894,29 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), 
 });
 
 router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
+  const invoiceId = String(req.params.id);
+
   try {
-    if (await isSourceLinkedInvoice(String(req.params.id))) {
+    const collectionCheck = await query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM collections WHERE invoice_id = $1',
+      [invoiceId]
+    );
+    if (Number(collectionCheck.rows[0]?.count) > 0) {
+      res.status(400).json({ message: 'Invoice has collections recorded. Use void to cancel it instead.' });
+      return;
+    }
+
+    if (await isVoidInvoice(invoiceId)) {
+      res.status(409).json({ message: 'Void invoices cannot be deleted.' });
+      return;
+    }
+
+    if (await isSourceLinkedInvoice(invoiceId)) {
       res.status(409).json({ message: 'Delete is blocked for GT source-linked invoices.' });
       return;
     }
 
-    const result = await query('DELETE FROM invoices WHERE id = $1 RETURNING id', [String(req.params.id)]);
+    const result = await query('DELETE FROM invoices WHERE id = $1 RETURNING id', [invoiceId]);
     if (!result.rows[0]) {
       res.status(404).json({ message: 'Invoice not found.' });
       return;
@@ -669,4 +930,8 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+
+
+
 

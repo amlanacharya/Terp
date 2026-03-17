@@ -366,12 +366,13 @@ function getTripDetailSelect(): string {
       GROUP BY parent_trip_id
     ) AS annexure_summary ON annexure_summary.parent_trip_id = t.id
     LEFT JOIN (
-      SELECT DISTINCT ON (trip_id)
-        trip_id,
-        invoice_id AS direct_invoice_id
-      FROM invoice_items
-      WHERE trip_id IS NOT NULL AND annexure_id IS NULL
-      ORDER BY trip_id, created_at ASC, invoice_id ASC
+      SELECT DISTINCT ON (ii.trip_id)
+        ii.trip_id,
+        ii.invoice_id AS direct_invoice_id
+      FROM invoice_items ii
+      JOIN invoices inv ON inv.id = ii.invoice_id
+      WHERE ii.trip_id IS NOT NULL AND ii.annexure_id IS NULL AND inv.invoice_status = 'active'
+      ORDER BY ii.trip_id, ii.created_at ASC, ii.invoice_id ASC
     ) AS direct_invoice ON direct_invoice.trip_id = t.id
   `;
 }
@@ -678,7 +679,10 @@ function getRateEngineStatus(error: RateEngineError): number {
 }
 
 async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: string, userId: string | null): Promise<void> {
-  const existingItem = await client.query<{ id: string }>('SELECT id FROM invoice_items WHERE trip_id = $1 LIMIT 1', [tripId]);
+  const existingItem = await client.query<{ id: string }>(
+    `SELECT ii.id FROM invoice_items ii JOIN invoices inv ON inv.id = ii.invoice_id WHERE ii.trip_id = $1 AND inv.invoice_status = 'active' LIMIT 1`,
+    [tripId]
+  );
   if (existingItem.rows[0]) {
     return;
   }
@@ -1336,7 +1340,8 @@ router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountan
           (
             SELECT ii.invoice_id
             FROM invoice_items ii
-            WHERE ii.trip_id = t.id AND ii.annexure_id IS NULL
+            JOIN invoices inv ON inv.id = ii.invoice_id
+            WHERE ii.trip_id = t.id AND ii.annexure_id IS NULL AND inv.invoice_status = 'active'
             ORDER BY ii.created_at ASC, ii.invoice_id ASC
             LIMIT 1
           ) AS direct_invoice_id
@@ -1551,6 +1556,9 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+
+
 
 
 

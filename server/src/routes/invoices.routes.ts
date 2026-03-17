@@ -706,11 +706,13 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
       total_collected: string;
     }>(
       `SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_status,
-              COALESCE(SUM(c.amount), 0)::text AS total_collected
+              COALESCE((
+                SELECT SUM(c.amount)
+                FROM collections c
+                WHERE c.invoice_id = i.id
+              ), 0)::text AS total_collected
        FROM invoices i
-       LEFT JOIN collections c ON c.invoice_id = i.id
        WHERE i.id = $1
-       GROUP BY i.id
        FOR UPDATE OF i`,
       [invoiceId]
     );
@@ -930,6 +932,7 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
 
 
 

@@ -4,6 +4,7 @@ import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { calculateGst } from '../utils/gst';
+import { createGtInvoice, formatDutyTypeLabel } from '../utils/invoice-gt';
 import { buildDutySlipPdf } from '../utils/pdf-duty-slip';
 import {
   DutyType,
@@ -57,6 +58,11 @@ interface TripAutoInvoiceRow {
   customer_address: string | null;
   customer_gstin: string | null;
   customer_credit_days: number | null;
+  parent_trip_id: string | null;
+  duty_type: DutyType | null;
+  vehicle_category_id: string | null;
+  rate_chart_id: string | null;
+  annexure_count: string;
 }
 
 interface TripCustomerSummaryRow {
@@ -78,6 +84,10 @@ interface TripVehicleSummaryRow {
   id: string;
   vehicle_number: string;
   vehicle_type: string;
+}
+interface TripParentSummaryRow {
+  id: string;
+  trip_number: string;
 }
 
 interface TripVehicleCategorySummaryRow {
@@ -172,10 +182,14 @@ interface TripDetailRow {
   created_at: string;
   updated_at: string;
   total_expenses: number | string;
+  annexure_count: number | string;
+  billed_annexure_count: number | string;
+  direct_invoice_id: string | null;
   customer: TripCustomerSummaryRow;
   driver: TripDriverSummaryRow;
   vehicle: TripVehicleSummaryRow;
   vehicle_category: TripVehicleCategorySummaryRow | null;
+  parent_trip: TripParentSummaryRow | null;
   rate_chart: TripRateChartSummaryRow | null;
   rate_chart_item: TripRateChartItemSummaryRow | null;
   rate_chart_fixed_route: TripRateChartFixedRouteSummaryRow | null;
@@ -198,6 +212,28 @@ interface TripCalculationLockRow {
   trip_amount: number | string;
   calculated_amount: number | string | null;
   current_package_code: string | null;
+}
+
+interface TripDirectBillingRow {
+  id: string;
+  trip_number: string;
+  parent_trip_id: string | null;
+  trip_date: string;
+  duty_type: DutyType | null;
+  from_location: string;
+  to_location: string;
+  trip_amount: string;
+  actual_km: string | null;
+  total_hours: string | null;
+  customer_id: string;
+  customer_name: string;
+  customer_address: string | null;
+  customer_gstin: string | null;
+  customer_credit_days: number | null;
+  vehicle_number: string;
+  vehicle_type_label: string;
+  has_annexures: boolean;
+  direct_invoice_id: string | null;
 }
 
 function formatDateOnly(date: Date): string {
@@ -268,6 +304,9 @@ function getTripDetailSelect(): string {
     SELECT
       t.*,
       COALESCE(expense_summary.total_expenses, 0) AS total_expenses,
+      COALESCE(annexure_summary.annexure_count, 0) AS annexure_count,
+      COALESCE(annexure_summary.billed_annexure_count, 0) AS billed_annexure_count,
+      direct_invoice.direct_invoice_id,
       json_build_object(
         'id', c.id,
         'name', c.name,
@@ -281,6 +320,10 @@ function getTripDetailSelect(): string {
         WHEN vc.id IS NULL THEN NULL
         ELSE json_build_object('id', vc.id, 'name', vc.name, 'description', vc.description, 'is_active', vc.is_active)
       END AS vehicle_category,
+      CASE
+        WHEN parent_t.id IS NULL THEN NULL
+        ELSE json_build_object('id', parent_t.id, 'trip_number', parent_t.trip_number)
+      END AS parent_trip,
       CASE
         WHEN rc.id IS NULL THEN NULL
         ELSE json_build_object('id', rc.id, 'name', rc.name, 'effective_from', rc.effective_from::text, 'effective_to', rc.effective_to::text)
@@ -304,6 +347,7 @@ function getTripDetailSelect(): string {
     JOIN customers c ON c.id = t.customer_id
     JOIN drivers d ON d.id = t.driver_id
     JOIN vehicles v ON v.id = t.vehicle_id
+    LEFT JOIN trips parent_t ON parent_t.id = t.parent_trip_id
     LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
     LEFT JOIN rate_charts rc ON rc.id = t.rate_chart_id
     LEFT JOIN rate_chart_items rci ON rci.id = t.rate_chart_item_id
@@ -313,6 +357,22 @@ function getTripDetailSelect(): string {
       FROM trip_expenses
       GROUP BY trip_id
     ) AS expense_summary ON expense_summary.trip_id = t.id
+    LEFT JOIN (
+      SELECT
+        parent_trip_id,
+        COUNT(*) AS annexure_count,
+        COUNT(*) FILTER (WHERE is_billed = true) AS billed_annexure_count
+      FROM annexures
+      GROUP BY parent_trip_id
+    ) AS annexure_summary ON annexure_summary.parent_trip_id = t.id
+    LEFT JOIN (
+      SELECT DISTINCT ON (trip_id)
+        trip_id,
+        invoice_id AS direct_invoice_id
+      FROM invoice_items
+      WHERE trip_id IS NOT NULL AND annexure_id IS NULL
+      ORDER BY trip_id, created_at ASC, invoice_id ASC
+    ) AS direct_invoice ON direct_invoice.trip_id = t.id
   `;
 }
 
@@ -636,7 +696,12 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
         c.name AS customer_name,
         c.address AS customer_address,
         c.gstin AS customer_gstin,
-        c.credit_days AS customer_credit_days
+        c.credit_days AS customer_credit_days,
+        t.parent_trip_id,
+        t.duty_type,
+        t.vehicle_category_id,
+        t.rate_chart_id,
+        COALESCE((SELECT COUNT(*)::text FROM annexures a WHERE a.parent_trip_id = t.id), '0') AS annexure_count
       FROM trips t
       JOIN customers c ON c.id = t.customer_id
       WHERE t.id = $1
@@ -647,6 +712,15 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
 
   const trip = tripResult.rows[0];
   if (!trip) {
+    return;
+  }
+  if (
+    trip.parent_trip_id ||
+    Number(trip.annexure_count || 0) > 0 ||
+    trip.duty_type ||
+    trip.vehicle_category_id ||
+    trip.rate_chart_id
+  ) {
     return;
   }
 
@@ -1225,6 +1299,116 @@ router.post('/:id/calculate', authRequired, roleCheck(['admin', 'manager', 'oper
   }
 });
 
+router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountant', 'operator']), async (req, res) => {
+  const tripId = String(req.params.id);
+  const invoiceDate = typeof req.body.invoice_date === 'string' && req.body.invoice_date.trim().length > 0
+    ? req.body.invoice_date.trim()
+    : formatDateOnly(new Date());
+  const remarks = typeof req.body.remarks === 'string' && req.body.remarks.trim().length > 0
+    ? req.body.remarks.trim()
+    : null;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const tripResult = await client.query<TripDirectBillingRow>(
+      `
+        SELECT
+          t.id,
+          t.trip_number,
+          t.parent_trip_id,
+          t.trip_date::text,
+          t.duty_type,
+          t.from_location,
+          t.to_location,
+          t.trip_amount::text,
+          t.actual_km::text,
+          t.total_hours::text,
+          c.id AS customer_id,
+          c.name AS customer_name,
+          c.address AS customer_address,
+          c.gstin AS customer_gstin,
+          c.credit_days AS customer_credit_days,
+          v.vehicle_number,
+          COALESCE(vc.name, v.vehicle_type) AS vehicle_type_label,
+          EXISTS(SELECT 1 FROM annexures a WHERE a.parent_trip_id = t.id) AS has_annexures,
+          (
+            SELECT ii.invoice_id
+            FROM invoice_items ii
+            WHERE ii.trip_id = t.id AND ii.annexure_id IS NULL
+            ORDER BY ii.created_at ASC, ii.invoice_id ASC
+            LIMIT 1
+          ) AS direct_invoice_id
+        FROM trips t
+        JOIN customers c ON c.id = t.customer_id
+        JOIN vehicles v ON v.id = t.vehicle_id
+        LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
+        WHERE t.id = $1
+        LIMIT 1
+      `,
+      [tripId]
+    );
+    const trip = tripResult.rows[0];
+
+    if (!trip) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ message: 'Trip not found.' });
+      return;
+    }
+    if (trip.parent_trip_id) {
+      throw new Error('Annexure child trips cannot be billed directly.');
+    }
+    if (trip.has_annexures) {
+      throw new Error('This trip already has annexures. Use annexure billing instead of direct trip billing.');
+    }
+    if (trip.direct_invoice_id) {
+      throw new Error('This trip is already billed.');
+    }
+
+    const billedAmount = Number(trip.trip_amount || 0);
+    if (!(billedAmount > 0)) {
+      throw new Error('Trip amount must be greater than zero before billing.');
+    }
+
+    const invoice = await createGtInvoice(
+      client,
+      {
+        customer_id: trip.customer_id,
+        billing_address: trip.customer_address,
+        customer_gstin: trip.customer_gstin,
+        invoice_date: invoiceDate,
+        booking_date: trip.trip_date,
+        duty_type_label: formatDutyTypeLabel(trip.duty_type),
+        nature_of_journey: formatDutyTypeLabel(trip.duty_type),
+        vehicle_number: trip.vehicle_number,
+        vehicle_type_label: trip.vehicle_type_label,
+        duty_slip_number: trip.trip_number,
+        total_km: toNumber(trip.actual_km),
+        total_hours: toNumber(trip.total_hours),
+        payment_terms_days: trip.customer_credit_days,
+        interest_note: null,
+        remarks: remarks ?? `Direct billing for trip ${trip.trip_number}`,
+        created_by: req.user?.id ?? null,
+      },
+      [{
+        trip_id: trip.id,
+        description: `Duty slip ${trip.trip_number}: ${trip.from_location} to ${trip.to_location}`,
+        amount: billedAmount,
+      }]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json(invoice);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Direct trip billing failed:', error);
+    res.status(400).json({ message: error instanceof Error ? error.message : 'Unable to bill trip.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/:id/duty-slip-pdf', authRequired, async (req, res) => {
   try {
     const [trip, settings] = await Promise.all([getTripById({ query }, String(req.params.id)), getTripSettings()]);
@@ -1367,5 +1551,8 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+
+
 
 

@@ -1,4 +1,4 @@
-export interface TripTravelMetricRecord {
+﻿export interface TripTravelMetricRecord {
   id: string;
   trip_id: string;
   seq: number;
@@ -8,6 +8,7 @@ export interface TripTravelMetricRecord {
   end_date: string | null;
   end_time: string | null;
   end_km: number | string | null;
+  source_metric_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -190,6 +191,8 @@ export function aggregateTripTravelMetrics(
     end_km: lastCompletedMetric?.end_km ?? null,
   };
 }
+
+
 
 
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Login } from './components/Auth/Login';
@@ -9,6 +9,7 @@ import { DriverList } from './components/Drivers/DriverList';
 import { VehicleList } from './components/Vehicles/VehicleList';
 import { VehicleCategoryList } from './components/VehicleCategories/VehicleCategoryList';
 import { RateChartList } from './components/RateCharts/RateChartList';
+import { AnnexureList } from './components/Annexures/AnnexureList';
 import { CustomerList } from './components/Customers/CustomerList';
 import { InvoiceList } from './components/Invoices/InvoiceList';
 import { CollectionList } from './components/Collections/CollectionList';
@@ -46,6 +47,8 @@ function AppContent() {
         return <ProtectedRoute><VehicleCategoryList /></ProtectedRoute>;
       case 'rate-charts':
         return <ProtectedRoute><RateChartList /></ProtectedRoute>;
+      case 'annexures':
+        return <ProtectedRoute><AnnexureList /></ProtectedRoute>;
       case 'customers':
         return <ProtectedRoute><CustomerList /></ProtectedRoute>;
       case 'owners':
@@ -89,4 +92,5 @@ function App() {
 }
 
 export default App;
+
 

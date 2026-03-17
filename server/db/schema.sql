@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+﻿CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TYPE user_role AS ENUM ('admin', 'manager', 'accountant', 'operator', 'viewer');
@@ -361,6 +361,7 @@ CREATE TABLE IF NOT EXISTS trip_travel_metrics (
   end_date date,
   end_time time,
   end_km numeric(10,2),
+  source_metric_id uuid REFERENCES trip_travel_metrics(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (seq > 0),
@@ -389,6 +390,16 @@ CREATE TABLE IF NOT EXISTS invoices (
   customer_id uuid REFERENCES customers(id) NOT NULL,
   billing_address text,
   customer_gstin text,
+  booking_date date,
+  duty_type_label text,
+  nature_of_journey text,
+  vehicle_number text,
+  vehicle_type_label text,
+  duty_slip_number text,
+  total_km numeric(10,2),
+  total_hours numeric(8,2),
+  payment_terms_days integer,
+  interest_note text,
   subtotal numeric(15,2) NOT NULL,
   cgst_amount numeric(15,2) DEFAULT 0,
   sgst_amount numeric(15,2) DEFAULT 0,
@@ -399,13 +410,46 @@ CREATE TABLE IF NOT EXISTS invoices (
   remarks text,
   created_by uuid REFERENCES profiles(id),
   created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
+  updated_at timestamptz DEFAULT now(),
+  CHECK (total_km IS NULL OR total_km >= 0),
+  CHECK (total_hours IS NULL OR total_hours >= 0),
+  CHECK (payment_terms_days IS NULL OR payment_terms_days >= 0)
 );
-
+CREATE TABLE IF NOT EXISTS annexures (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  annexure_number text NOT NULL,
+  parent_trip_id uuid NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  trip_id uuid NOT NULL UNIQUE REFERENCES trips(id) ON DELETE CASCADE,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  start_km numeric(10,2) NOT NULL,
+  end_km numeric(10,2) NOT NULL,
+  total_km numeric(10,2) NOT NULL DEFAULT 0,
+  total_hours numeric(8,2) NOT NULL DEFAULT 0,
+  night_halts integer NOT NULL DEFAULT 0,
+  calculated_amount numeric(15,2) NOT NULL DEFAULT 0,
+  is_billed boolean NOT NULL DEFAULT false,
+  invoice_id uuid REFERENCES invoices(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (length(btrim(annexure_number)) > 0),
+  CHECK (end_date >= start_date),
+  CHECK (start_km >= 0),
+  CHECK (end_km >= start_km),
+  CHECK (total_km >= 0),
+  CHECK (total_hours >= 0),
+  CHECK (night_halts >= 0),
+  CHECK (calculated_amount >= 0),
+  CHECK (
+    (is_billed = false AND invoice_id IS NULL)
+    OR (is_billed = true AND invoice_id IS NOT NULL)
+  )
+);
 CREATE TABLE IF NOT EXISTS invoice_items (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   invoice_id uuid REFERENCES invoices(id) ON DELETE CASCADE,
   trip_id uuid REFERENCES trips(id),
+  annexure_id uuid REFERENCES annexures(id),
   description text NOT NULL,
   hsn_code text,
   quantity numeric(10,2) DEFAULT 1,
@@ -420,7 +464,6 @@ CREATE TABLE IF NOT EXISTS invoice_items (
   total_amount numeric(15,2) NOT NULL,
   created_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS collections (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   collection_number text UNIQUE NOT NULL,
@@ -518,8 +561,15 @@ CREATE INDEX IF NOT EXISTS idx_trips_rate_chart_fixed_route ON trips(rate_chart_
 CREATE INDEX IF NOT EXISTS idx_trips_parent_trip ON trips(parent_trip_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_travel_metrics_trip_seq ON trip_travel_metrics(trip_id, seq);
 CREATE INDEX IF NOT EXISTS idx_trip_travel_metrics_trip ON trip_travel_metrics(trip_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_travel_metrics_source_metric_unique ON trip_travel_metrics(source_metric_id) WHERE source_metric_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annexures_parent_number_unique ON annexures(parent_trip_id, annexure_number);
+CREATE INDEX IF NOT EXISTS idx_annexures_parent_trip ON annexures(parent_trip_id);
+CREATE INDEX IF NOT EXISTS idx_annexures_invoice ON annexures(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_annexures_billed ON annexures(is_billed);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_annexure ON invoice_items(annexure_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_items_annexure_unique ON invoice_items(annexure_id) WHERE annexure_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_categories_name_unique ON vehicle_categories (LOWER(name));
 CREATE INDEX IF NOT EXISTS idx_vehicle_categories_active ON vehicle_categories(is_active);
 CREATE INDEX IF NOT EXISTS idx_vehicle_category_mappings_category ON vehicle_category_mappings(vehicle_category_id);
@@ -555,6 +605,9 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
+
+
+
 
 
 

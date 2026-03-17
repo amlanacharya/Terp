@@ -16,6 +16,7 @@ import {
 } from '../../lib/types';
 import { DutySlipForm } from './DutySlipForm';
 import { TripCalculationBreakdown } from './TripCalculationBreakdown';
+import { AnnexureList } from '../Annexures/AnnexureList';
 
 interface ExpenseFormState {
   expense_type: string;
@@ -48,7 +49,9 @@ export function TripList() {
   const [metricSaving, setMetricSaving] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [expenseSaving, setExpenseSaving] = useState(false);
+  const [billing, setBilling] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -99,12 +102,15 @@ export function TripList() {
     setActiveCalculation(null);
     setEditingExpenseId(null);
     setExpenseForm(initialExpenseForm);
+    setNotice('');
+    setError('');
   }
 
-  async function startEdit(trip: Trip) {
+  async function openTripById(tripId: string) {
     try {
       setError('');
-      setSelectedTrip(await loadTripDetail(trip.id));
+      setNotice('');
+      setSelectedTrip(await loadTripDetail(tripId));
       setActiveCalculation(null);
       setEditingExpenseId(null);
       setExpenseForm(initialExpenseForm);
@@ -113,9 +119,14 @@ export function TripList() {
     }
   }
 
+  async function startEdit(trip: Trip) {
+    await openTripById(trip.id);
+  }
+
   async function handleSaveTrip(payload: Record<string, unknown>, tripId?: string) {
     setSaving(true);
     setError('');
+    setNotice('');
 
     try {
       const savedTrip = tripId
@@ -124,6 +135,7 @@ export function TripList() {
       setSelectedTrip(savedTrip);
       setActiveCalculation(null);
       setTrips(await loadTrips(statusFilter));
+      setNotice(tripId ? 'Trip updated.' : 'Trip created.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save trip.');
     } finally {
@@ -148,16 +160,34 @@ export function TripList() {
   async function handleCalculate(tripId: string, payload: { package_code?: string | null; force_sync_trip_amount?: boolean }) {
     setCalculating(true);
     setError('');
+    setNotice('');
 
     try {
       const response = await api.post<TripCalculationResponse>(`/trips/${tripId}/calculate`, payload);
       setSelectedTrip(response.trip);
       setActiveCalculation(response.calculation);
       setTrips(await loadTrips(statusFilter));
+      setNotice('Trip calculated.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to calculate trip.');
     } finally {
       setCalculating(false);
+    }
+  }
+
+  async function handleDirectBill(tripId: string) {
+    setBilling(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const invoice = await api.post<{ invoice_number: string }>(`/trips/${tripId}/bill`, {});
+      await Promise.all([refreshSelectedTrip(tripId), loadTrips(statusFilter).then(setTrips)]);
+      setNotice(`Invoice ${invoice.invoice_number} created.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to bill trip.');
+    } finally {
+      setBilling(false);
     }
   }
 
@@ -184,11 +214,13 @@ export function TripList() {
 
     try {
       setError('');
+      setNotice('');
       await api.delete(`/trips/${trip.id}`);
       if (selectedTrip?.id === trip.id) {
         resetSelection();
       }
       setTrips(await loadTrips(statusFilter));
+      setNotice('Trip deleted.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete trip.');
     }
@@ -202,6 +234,7 @@ export function TripList() {
 
     setExpenseSaving(true);
     setError('');
+    setNotice('');
 
     try {
       const payload = {
@@ -220,6 +253,7 @@ export function TripList() {
       setEditingExpenseId(null);
       setExpenseForm(initialExpenseForm);
       await Promise.all([refreshSelectedTrip(selectedTrip.id), loadTrips(statusFilter).then(setTrips)]);
+      setNotice(editingExpenseId ? 'Expense updated.' : 'Expense added.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save trip expense.');
     } finally {
@@ -249,12 +283,14 @@ export function TripList() {
 
     try {
       setError('');
+      setNotice('');
       await api.delete(`/trips/${selectedTrip.id}/expenses/${expense.id}`);
       if (editingExpenseId === expense.id) {
         setEditingExpenseId(null);
         setExpenseForm(initialExpenseForm);
       }
       await Promise.all([refreshSelectedTrip(selectedTrip.id), loadTrips(statusFilter).then(setTrips)]);
+      setNotice('Expense deleted.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete trip expense.');
     }
@@ -268,12 +304,34 @@ export function TripList() {
           <h2 className="mt-2 text-3xl font-semibold text-slate-900">Trip operations</h2>
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm text-slate-600">Status filter<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2"><option value="all">All</option><option value="scheduled">Scheduled</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
-          {canManage ? <button type="button" onClick={resetSelection} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">New GT Trip</button> : null}
+          <label className="text-sm text-slate-600">
+            Status filter
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2"
+            >
+              <option value="all">All</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="in_progress">In progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={resetSelection}
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+            >
+              New GT Trip
+            </button>
+          ) : null}
         </div>
       </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
+      {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">{notice}</div> : null}
 
       {canManage ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]">
@@ -300,17 +358,151 @@ export function TripList() {
             {selectedTrip ? (
               <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div>
+                  <p className="text-sm uppercase tracking-[0.22em] text-slate-500">Billing</p>
+                  <h3 className="mt-2 text-xl font-semibold text-slate-900">GT billing status</h3>
+                </div>
+
+                {selectedTrip.parent_trip ? (
+                  <p className="text-sm text-slate-600">
+                    This is an annexure child trip under <span className="font-semibold text-slate-900">{selectedTrip.parent_trip.trip_number}</span>. Bill it from the parent trip annexure panel.
+                  </p>
+                ) : (
+                  <div className="grid gap-4 text-sm text-slate-600 md:grid-cols-3">
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      Direct Invoice
+                      <div className="mt-1 font-semibold text-slate-900">{selectedTrip.direct_invoice_id ? 'Created' : 'Not billed'}</div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      Annexures
+                      <div className="mt-1 font-semibold text-slate-900">{selectedTrip.annexure_count ?? 0}</div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                      Billed Annexures
+                      <div className="mt-1 font-semibold text-slate-900">{selectedTrip.billed_annexure_count ?? 0}</div>
+                    </div>
+                  </div>
+                )}
+
+                {!selectedTrip.parent_trip && !selectedTrip.direct_invoice_id && Number(selectedTrip.annexure_count ?? 0) === 0 ? (
+                  <button
+                    type="button"
+                    disabled={billing || Number(selectedTrip.trip_amount ?? 0) <= 0}
+                    onClick={() => void handleDirectBill(selectedTrip.id)}
+                    className="rounded-2xl border border-sky-300 px-5 py-3 text-sm font-medium text-sky-700 disabled:opacity-60"
+                  >
+                    {billing ? 'Billing...' : 'Bill Trip'}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {selectedTrip && !selectedTrip.parent_trip ? (
+              <AnnexureList parentTrip={selectedTrip} embedded onOpenTrip={(tripId) => { void openTripById(tripId); }} />
+            ) : null}
+
+            {selectedTrip ? (
+              <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div>
                   <p className="text-sm uppercase tracking-[0.22em] text-slate-500">Expenses</p>
                   <h3 className="mt-2 text-xl font-semibold text-slate-900">Trip expenses</h3>
                 </div>
                 <form onSubmit={handleExpenseSubmit} className="grid gap-4 lg:grid-cols-4">
-                  <label className="text-sm font-semibold text-slate-800">Expense Type<select value={expenseForm.expense_type} onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"><option value="fuel">Fuel expense</option><option value="toll">Toll expense</option><option value="parking">Parking expense</option><option value="food">Food expense</option><option value="other">Other expense</option></select></label>
-                  <label className="text-sm font-semibold text-slate-800">Expense Amount<input value={expenseForm.amount} onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))} type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required /></label>
-                  <label className="text-sm font-semibold text-slate-800">Receipt Reference<input value={expenseForm.receipt_number} onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
-                  <div className="flex gap-3"><label className="flex-1 text-sm font-semibold text-slate-800">Description<input value={expenseForm.description} onChange={(event) => setExpenseForm((current) => ({ ...current, description: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label><button type="submit" disabled={expenseSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{expenseSaving ? 'Saving...' : editingExpenseId ? 'Update' : 'Add'}</button>{editingExpenseId ? <button type="button" onClick={() => { setEditingExpenseId(null); setExpenseForm(initialExpenseForm); }} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}</div>
+                  <label className="text-sm font-semibold text-slate-800">
+                    Expense Type
+                    <select
+                      value={expenseForm.expense_type}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))}
+                      className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                    >
+                      <option value="fuel">Fuel expense</option>
+                      <option value="toll">Toll expense</option>
+                      <option value="parking">Parking expense</option>
+                      <option value="food">Food expense</option>
+                      <option value="other">Other expense</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-semibold text-slate-800">
+                    Expense Amount
+                    <input
+                      value={expenseForm.amount}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+                      type="number"
+                      min="0"
+                      className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                      required
+                    />
+                  </label>
+                  <label className="text-sm font-semibold text-slate-800">
+                    Receipt Reference
+                    <input
+                      value={expenseForm.receipt_number}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))}
+                      className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                    />
+                  </label>
+                  <div className="flex gap-3">
+                    <label className="flex-1 text-sm font-semibold text-slate-800">
+                      Description
+                      <input
+                        value={expenseForm.description}
+                        onChange={(event) => setExpenseForm((current) => ({ ...current, description: event.target.value }))}
+                        className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                      />
+                    </label>
+                    <button type="submit" disabled={expenseSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
+                      {expenseSaving ? 'Saving...' : editingExpenseId ? 'Update' : 'Add'}
+                    </button>
+                    {editingExpenseId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingExpenseId(null);
+                          setExpenseForm(initialExpenseForm);
+                        }}
+                        className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                  </div>
                 </form>
                 <div className="overflow-hidden rounded-2xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-slate-600"><tr><th className="px-4 py-3">Type</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">Receipt</th><th className="px-4 py-3">Description</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-slate-100 bg-white">{selectedTrip.expenses.map((expense) => <tr key={expense.id}><td className="px-4 py-3">{expense.expense_type}</td><td className="px-4 py-3">{formatCurrency(expense.amount)}</td><td className="px-4 py-3">{expense.receipt_number ?? '-'}</td><td className="px-4 py-3">{expense.description ?? '-'}</td><td className="px-4 py-3"><button type="button" onClick={() => startExpenseEdit(expense)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button><button type="button" onClick={() => void handleDeleteExpense(expense)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button></td></tr>)}{selectedTrip.expenses.length === 0 ? <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No expenses recorded for this trip.</td></tr> : null}</tbody></table>
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">Type</th>
+                        <th className="px-4 py-3">Amount</th>
+                        <th className="px-4 py-3">Receipt</th>
+                        <th className="px-4 py-3">Description</th>
+                        <th className="px-4 py-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {selectedTrip.expenses.map((expense) => (
+                        <tr key={expense.id}>
+                          <td className="px-4 py-3">{expense.expense_type}</td>
+                          <td className="px-4 py-3">{formatCurrency(expense.amount)}</td>
+                          <td className="px-4 py-3">{expense.receipt_number ?? '-'}</td>
+                          <td className="px-4 py-3">{expense.description ?? '-'}</td>
+                          <td className="px-4 py-3">
+                            <button type="button" onClick={() => startExpenseEdit(expense)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
+                              Edit
+                            </button>
+                            <button type="button" onClick={() => void handleDeleteExpense(expense)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {selectedTrip.expenses.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                            No expenses recorded for this trip.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : null}
@@ -323,12 +515,69 @@ export function TripList() {
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600"><tr><th className="px-4 py-3">Trip</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Duty</th><th className="px-4 py-3">Vehicle</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Route</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Billed</th><th className="px-4 py-3">Calculated</th><th className="px-4 py-3">Expenses</th>{canManage ? <th className="px-4 py-3">Action</th> : null}</tr></thead>
-            <tbody className="divide-y divide-slate-100 bg-white">{trips.map((trip) => <tr key={trip.id}><td className="px-4 py-3 font-medium text-slate-900">{trip.trip_number}<div className="text-xs text-slate-500">{trip.vehicle_category?.name ?? 'No GT category'}</div></td><td className="px-4 py-3">{trip.customer.name}</td><td className="px-4 py-3">{trip.duty_type ?? 'manual'}{trip.is_long_trip ? <div className="text-xs text-amber-700">Long pricing</div> : null}</td><td className="px-4 py-3">{trip.vehicle.vehicle_number}<div className="text-xs text-slate-500">{trip.driver.name}</div></td><td className="px-4 py-3">{formatDate(trip.trip_date)}</td><td className="px-4 py-3">{trip.from_location} to {trip.to_location}</td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{trip.status}</span></td><td className="px-4 py-3">{formatCurrency(trip.trip_amount)}</td><td className="px-4 py-3">{trip.calculated_amount == null ? '-' : formatCurrency(trip.calculated_amount)}</td><td className="px-4 py-3">{formatCurrency(trip.total_expenses)}</td>{canManage ? <td className="px-4 py-3"><button type="button" onClick={() => void startEdit(trip)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button><button type="button" onClick={() => void handleDelete(trip)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button></td> : null}</tr>)}{trips.length === 0 ? <tr><td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">No trips found for this filter.</td></tr> : null}</tbody>
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Trip</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Duty</th>
+                <th className="px-4 py-3">Vehicle</th>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Route</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Billed</th>
+                <th className="px-4 py-3">Calculated</th>
+                <th className="px-4 py-3">Expenses</th>
+                {canManage ? <th className="px-4 py-3">Action</th> : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {trips.map((trip) => (
+                <tr key={trip.id}>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {trip.trip_number}
+                    <div className="text-xs text-slate-500">{trip.vehicle_category?.name ?? 'No GT category'}</div>
+                  </td>
+                  <td className="px-4 py-3">{trip.customer.name}</td>
+                  <td className="px-4 py-3">
+                    {trip.duty_type ?? 'manual'}
+                    {trip.is_long_trip ? <div className="text-xs text-amber-700">Long pricing</div> : null}
+                    {trip.parent_trip_id ? <div className="text-xs text-slate-500">Annexure child</div> : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    {trip.vehicle.vehicle_number}
+                    <div className="text-xs text-slate-500">{trip.driver.name}</div>
+                  </td>
+                  <td className="px-4 py-3">{formatDate(trip.trip_date)}</td>
+                  <td className="px-4 py-3">{trip.from_location} to {trip.to_location}</td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{trip.status}</span>
+                  </td>
+                  <td className="px-4 py-3">{formatCurrency(trip.trip_amount)}</td>
+                  <td className="px-4 py-3">{trip.calculated_amount == null ? '-' : formatCurrency(trip.calculated_amount)}</td>
+                  <td className="px-4 py-3">{formatCurrency(trip.total_expenses ?? 0)}</td>
+                  {canManage ? (
+                    <td className="px-4 py-3">
+                      <button type="button" onClick={() => void startEdit(trip)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => void handleDelete(trip)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
+                        Delete
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+              {trips.length === 0 ? (
+                <tr>
+                  <td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">
+                    No trips found for this filter.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
           </table>
         </div>
       )}
     </section>
   );
 }
-

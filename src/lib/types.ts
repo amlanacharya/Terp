@@ -10,6 +10,7 @@ export type PageKey =
   | 'vehicles'
   | 'vehicle-categories'
   | 'rate-charts'
+  | 'annexures'
   | 'customers'
   | 'owners'
   | 'invoices'
@@ -367,8 +368,14 @@ export interface TripTravelMetric {
   segment_km: number | null;
   segment_hours: number | null;
   is_complete: boolean;
+  source_metric_id?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface TripParentSummary {
+  id: string;
+  trip_number: string;
 }
 
 export interface Trip {
@@ -423,10 +430,14 @@ export interface Trip {
   created_at?: string;
   updated_at?: string;
   total_expenses?: number;
+  annexure_count?: number;
+  billed_annexure_count?: number;
+  direct_invoice_id?: string | null;
   customer: TripCustomerSummary;
   driver: TripDriverSummary;
   vehicle: TripVehicleSummary;
   vehicle_category: VehicleCategory | null;
+  parent_trip?: TripParentSummary | null;
   rate_chart: TripRateChartSummary | null;
   rate_chart_item: TripRateChartItemSummary | null;
   rate_chart_fixed_route: TripRateChartFixedRouteSummary | null;
@@ -452,16 +463,75 @@ export interface TripCalculationResponse {
   calculation: RateCalculationResult;
 }
 
+export interface AnnexureTripSummary {
+  id: string;
+  trip_number: string;
+  trip_date: string;
+  duty_type: DutyType | null;
+  trip_amount: number;
+  calculated_amount: number | null;
+  status: string;
+}
+
+export interface AnnexureParentTripDetail {
+  id: string;
+  trip_number: string;
+  trip_date: string;
+  duty_type: DutyType | null;
+  from_location: string;
+  to_location: string;
+}
+
+export interface Annexure {
+  id: string;
+  annexure_number: string;
+  parent_trip_id: string;
+  trip_id: string;
+  start_date: string;
+  end_date: string;
+  start_km: number;
+  end_km: number;
+  total_km: number;
+  total_hours: number;
+  night_halts: number;
+  calculated_amount: number;
+  is_billed: boolean;
+  invoice_id: string | null;
+  invoice_number: string | null;
+  created_at: string;
+  updated_at: string;
+  parent_trip: AnnexureParentTripDetail;
+  child_trip: AnnexureTripSummary;
+  customer: InvoiceCustomerSummary;
+  vehicle: TripVehicleSummary;
+  vehicle_category: VehicleCategory | null;
+  source_metric_ids: string[];
+}
+
+export interface AnnexureDetail extends Annexure {}
+
 export interface InvoiceCustomerSummary {
   id: string;
   name: string;
   customer_code: string;
 }
 
+export type InvoiceSourceType = 'manual' | 'trip' | 'annexures';
+
 export interface Invoice {
   id: string;
   invoice_number: string;
   invoice_date: string;
+  booking_date?: string | null;
+  duty_type_label?: string | null;
+  nature_of_journey?: string | null;
+  vehicle_number?: string | null;
+  vehicle_type_label?: string | null;
+  duty_slip_number?: string | null;
+  total_km?: number | null;
+  total_hours?: number | null;
+  payment_terms_days?: number | null;
+  interest_note?: string | null;
   cgst_amount: number;
   sgst_amount: number;
   igst_amount: number;
@@ -470,13 +540,26 @@ export interface Invoice {
   payment_status: string;
   due_date: string | null;
   remarks: string | null;
+  source_type?: InvoiceSourceType;
+  item_count?: number;
+  annexure_item_count?: number;
+  billing_address?: string | null;
+  customer_gstin?: string | null;
   customer: InvoiceCustomerSummary;
+}
+
+export interface InvoiceAnnexureSummary {
+  id: string;
+  annexure_number: string;
+  start_date: string;
+  end_date: string;
 }
 
 export interface InvoiceItem {
   id: string;
   invoice_id: string;
   trip_id: string | null;
+  annexure_id?: string | null;
   description: string;
   hsn_code: string | null;
   quantity: number;
@@ -489,11 +572,13 @@ export interface InvoiceItem {
   sgst_amount: number;
   igst_amount: number;
   total_amount: number;
+  annexure?: InvoiceAnnexureSummary | null;
+  annexure_number?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface InvoiceDetail extends Invoice {
-  billing_address?: string | null;
-  customer_gstin?: string | null;
   items: InvoiceItem[];
 }
 
@@ -698,6 +783,9 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
+
+
 
 
 

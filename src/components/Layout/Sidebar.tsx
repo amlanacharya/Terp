@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { key: 'vehicles', label: 'Vehicles' },
   { key: 'vehicle-categories', label: 'Vehicle Categories' },
   { key: 'rate-charts', label: 'Rate Charts' },
+  { key: 'annexures', label: 'Annexures' },
   { key: 'customers', label: 'Customers' },
   { key: 'owners', label: 'Vehicle Owners' },
   { key: 'invoices', label: 'Customer Invoices', roles: ['admin', 'manager', 'accountant'] },
@@ -64,4 +65,6 @@ export function Sidebar({ onNavigate, currentPage }: SidebarProps) {
     </aside>
   );
 }
+
+
 

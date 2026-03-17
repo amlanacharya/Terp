@@ -8,19 +8,18 @@
 
 **Test runner:** Vitest v4.1.0
 
-**Test suite summary:** 53 tests across 2 test files — all passing
+**Test suite summary:** 87 tests across 3 test files — all passing
 
 ---
 
 ## Overview
 
-| Phase   | Scope                                               | Test File              | Tests | Result                                           |
-| ------- | --------------------------------------------------- | ---------------------- | ----- | ------------------------------------------------ |
-| Phase 1 | DB schema, leads, basic trip CRUD                   | —                      | —     | No unit tests (CRUD coverage via manual testing) |
-| Phase 2 | Rate engine — chart resolution, pricing patterns    | `rate-engine.test.ts`  | 23    | ✅ All pass                                       |
-| Phase 3 | Travel metric aggregation — duty-slip segment logic | `trip-metrics.test.ts` | 30    | ✅ All pass                                       |
-
-> **Note on `dist/` suites:** Two compiled CJS artefacts (`dist/utils/rate-engine.test.js`, `dist/utils/trip-metrics.test.js`) show loader errors because the `dist/` output is CommonJS while Vitest requires ESM. These are stale build outputs — not authoritative test suites. The TypeScript source suites under `src/` are the canonical tests and all pass.
+| Phase   | Scope                                               | Test File                | Tests | Result                                           |
+| ------- | --------------------------------------------------- | ------------------------ | ----- | ------------------------------------------------ |
+| Phase 1 | DB schema, leads, basic trip CRUD                   | —                        | —     | No unit tests (CRUD coverage via manual testing) |
+| Phase 2 | Rate engine — chart resolution, pricing patterns    | `rate-engine.test.ts`    | 23    | ✅ All pass                                       |
+| Phase 3 | Travel metric aggregation — duty-slip segment logic | `trip-metrics.test.ts`   | 30    | ✅ All pass                                       |
+| Phase 4 | GT invoice helpers — GST routing, night halts       | `invoice-gt.test.ts`     | 32    | ✅ All pass                                       |
 
 ---
 

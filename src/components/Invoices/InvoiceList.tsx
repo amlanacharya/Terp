@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+﻿import { FormEvent, useEffect, useState } from 'react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
@@ -96,6 +96,10 @@ export function InvoiceList() {
   }, []);
 
   function startEdit(invoice: Invoice) {
+    if (invoice.source_type && invoice.source_type !== 'manual') {
+      return;
+    }
+
     setEditingId(invoice.id);
     setFormState({
       invoice_number: invoice.invoice_number,
@@ -194,6 +198,7 @@ export function InvoiceList() {
         <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer billing register</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
+      {canManage ? <p className="text-sm text-slate-500">Use this form only for legacy manual invoices. GT trip and annexure invoices should be created from the Trips or Annexures screens.</p> : null}
       {canManage ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
           <label className="text-sm font-semibold text-slate-800">
@@ -229,19 +234,19 @@ export function InvoiceList() {
           </label>
           <label className="text-sm font-semibold text-slate-800">
             CGST
-            <input value={formState.cgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated CGST" />
+            <input value={formState.cgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             SGST
-            <input value={formState.sgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated SGST" />
+            <input value={formState.sgst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             IGST
-            <input value={formState.igst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Auto-calculated IGST" />
+            <input value={formState.igst_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Grand Total
-            <input value={formState.total_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" placeholder="Grand total after tax" />
+            <input value={formState.total_amount} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Due Date
@@ -268,6 +273,9 @@ export function InvoiceList() {
             <tr>
               <th className="px-4 py-3">Invoice</th>
               <th className="px-4 py-3">Customer</th>
+              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Duty Slip</th>
+              <th className="px-4 py-3">Journey</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Status</th>
@@ -281,6 +289,9 @@ export function InvoiceList() {
               <tr key={invoice.id}>
                 <td className="px-4 py-3 font-medium text-slate-900">{invoice.invoice_number}</td>
                 <td className="px-4 py-3">{invoice.customer.name}</td>
+                <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
+                <td className="px-4 py-3">{invoice.duty_slip_number ?? '-'}</td>
+                <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
                 <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
                 <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
                 <td className="px-4 py-3">{invoice.payment_status}</td>
@@ -292,7 +303,7 @@ export function InvoiceList() {
                 </td>
                 {canManage ? (
                   <td className="px-4 py-3">
-                    <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>
+                    {invoice.source_type === 'manual' || !invoice.source_type ? <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
                     <button type="button" onClick={() => void handleDelete(invoice)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
                   </td>
                 ) : null}
@@ -300,7 +311,7 @@ export function InvoiceList() {
             ))}
             {invoices.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 8 : 7} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">
                   No invoices available.
                 </td>
               </tr>

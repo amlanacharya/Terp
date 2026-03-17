@@ -1,8 +1,9 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
 import { testConnection } from './config/db';
 import authRoutes from './routes/auth.routes';
+import annexuresRoutes from './routes/annexures.routes';
 import collectionsRoutes from './routes/collections.routes';
 import customersRoutes from './routes/customers.routes';
 import dashboardRoutes from './routes/dashboard.routes';
@@ -30,6 +31,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api', annexuresRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/trips', tripsRoutes);
@@ -60,5 +62,6 @@ void testConnection()
     console.error('Database connection failed:', error);
     process.exit(1);
   });
+
 
 

@@ -62,7 +62,7 @@ function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function addDays(dateOnly: string, days: number | null): string | null {
+export function addDays(dateOnly: string, days: number | null): string | null {
   if (!dateOnly || days == null) {
     return null;
   }

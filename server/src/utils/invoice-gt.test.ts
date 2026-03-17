@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isInterState, formatDutyTypeLabel, buildInterestNote } from './invoice-gt';
+import { isInterState, formatDutyTypeLabel, buildInterestNote, addDays } from './invoice-gt';
 import { getDateDiffInDays, deriveNightHalts } from './annexure-builder';
 import { calculateGst } from './gst';
 import {
@@ -218,5 +218,34 @@ describe('calculateGst — GT invoice tax scenarios', () => {
     expect(result.cgst_amount).toBe(75.01);
     expect(result.sgst_amount).toBe(75.01);
     expect(result.total_amount).toBeCloseTo(3150.52, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addDays
+// ---------------------------------------------------------------------------
+describe('addDays', () => {
+  it('returns the same date when adding 0 days', () => {
+    expect(addDays('2025-06-01', 0)).toBe('2025-06-01');
+  });
+
+  it('adds 30 days crossing a month boundary', () => {
+    expect(addDays('2025-06-01', 30)).toBe('2025-07-01');
+  });
+
+  it('adds days crossing a year boundary', () => {
+    expect(addDays('2025-12-20', 15)).toBe('2026-01-04');
+  });
+
+  it('returns null when days is null', () => {
+    expect(addDays('2025-06-01', null)).toBeNull();
+  });
+
+  it('returns null when date string is empty', () => {
+    expect(addDays('', 5)).toBeNull();
+  });
+
+  it('returns null for an invalid date string', () => {
+    expect(addDays('not-a-date', 5)).toBeNull();
   });
 });

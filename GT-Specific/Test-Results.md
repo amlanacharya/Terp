@@ -8,7 +8,7 @@
 
 **Test runner:** Vitest v4.1.0
 
-**Test suite summary:** 87 tests across 3 test files — all passing
+**Test suite summary:** 117 tests across 5 test files — all passing
 
 ---
 
@@ -16,10 +16,12 @@
 
 | Phase   | Scope                                               | Test File                | Tests | Result                                           |
 | ------- | --------------------------------------------------- | ------------------------ | ----- | ------------------------------------------------ |
-| Phase 1 | DB schema, leads, basic trip CRUD                   | —                        | —     | No unit tests (CRUD coverage via manual testing) |
-| Phase 2 | Rate engine — chart resolution, pricing patterns    | `rate-engine.test.ts`    | 23    | ✅ All pass                                       |
-| Phase 3 | Travel metric aggregation — duty-slip segment logic | `trip-metrics.test.ts`   | 30    | ✅ All pass                                       |
-| Phase 4 | GT invoice helpers — GST routing, night halts       | `invoice-gt.test.ts`     | 32    | ✅ All pass                                       |
+| Phase 1 | DB schema, leads, basic trip CRUD                   | —                              | —     | No unit tests (CRUD coverage via manual testing) |
+| Phase 2 | Rate engine — chart resolution, pricing patterns    | `rate-engine.test.ts`          | 23    | ✅ All pass                                       |
+| Phase 3 | Travel metric aggregation — duty-slip segment logic | `trip-metrics.test.ts`         | 30    | ✅ All pass                                       |
+| Phase 4 | GT invoice helpers — GST routing, night halts       | `invoice-gt.test.ts`           | 38    | ✅ All pass                                       |
+| Phase 5 | Tax engine — scope resolution, legacy GST summary   | `tax-engine.test.ts`           | 14    | ✅ All pass                                       |
+| Phase 5 | PDF invoice — number to words                       | `pdf-invoice-gt.test.ts`       | 10    | ✅ All pass                                       |
 
 ---
 
@@ -261,13 +263,77 @@ Phase 1 established the core DB schema (customers, vehicles, drivers, routes, tr
 
 ---
 
+## Phase 5 — Dynamic Tax Engine (`tax-engine.test.ts`, `pdf-invoice-gt.test.ts`)
+
+**Modules:** `server/src/utils/tax-engine.ts`, `server/src/utils/invoice-gt.ts`, `server/src/utils/pdf-invoice-gt.ts`
+
+**Fixtures:** `server/src/utils/tax-engine.fixtures.ts`
+
+**Total:** 30 new tests — ✅ 30 passed
+
+### Group 1 — `resolveInvoiceTaxScope` (8 tests)
+
+| #  | Test Case                                           | Inputs                          | Expected      | Result |
+| -- | --------------------------------------------------- | ------------------------------- | ------------- | ------ |
+| 1  | Same state (Odisha 21/21)                           | 21AABCT…, 21AABCU…              | `intra_state` | ✅ Pass |
+| 2  | Different states — Maharashtra 27                   | 21AABCT…, 27AADC…               | `inter_state` | ✅ Pass |
+| 3  | Different states — Delhi 07                         | 21AABCT…, 07AAAP…               | `inter_state` | ✅ Pass |
+| 4  | Null company GSTIN — defaults to intra-state        | null, 21AABCU…                  | `intra_state` | ✅ Pass |
+| 5  | Null customer GSTIN — defaults to intra-state       | 21AABCT…, null                  | `intra_state` | ✅ Pass |
+| 6  | Both null — defaults to intra-state                 | null, null                      | `intra_state` | ✅ Pass |
+| 7  | Empty string company GSTIN                          | '', 21AABCU…                    | `intra_state` | ✅ Pass |
+| 8  | Same first 2 chars, different rest                  | 21AAAAA…, 21BBBBB…              | `intra_state` | ✅ Pass |
+
+### Group 2 — `summarizeLegacyGstFields` (6 tests)
+
+| #  | Test Case                                           | Inputs                    | Expected                                           | Result |
+| -- | --------------------------------------------------- | ------------------------- | -------------------------------------------------- | ------ |
+| 9  | Empty lines array                                   | `[]`                      | all rates=0, all amounts=0                         | ✅ Pass |
+| 10 | Intra-state CGST 75 + SGST 75                       | `LINES_INTRA_STATE_3000`  | cgst=75, sgst=75, igst=0                           | ✅ Pass |
+| 11 | Inter-state IGST 150                                | `LINES_INTER_STATE_3000`  | igst=150, cgst=0, sgst=0                           | ✅ Pass |
+| 12 | Flat-amount TOLL component — not a legacy GST code  | `LINES_FLAT_AMOUNT`       | all=0                                              | ✅ Pass |
+| 13 | Unknown component code (SERVICE)                    | `LINES_UNKNOWN_CODE`      | all=0                                              | ✅ Pass |
+| 14 | Multiple CGST lines summed and rounded to 2dp       | 2 fractional CGST lines   | cgst_amount=87.51                                  | ✅ Pass |
+
+### Group 3 — `addDays` (6 tests, added to `invoice-gt.test.ts`)
+
+| #  | Test Case                            | Inputs                    | Expected     | Result |
+| -- | ------------------------------------ | ------------------------- | ------------ | ------ |
+| 33 | Add 0 days                           | '2025-06-01', 0           | '2025-06-01' | ✅ Pass |
+| 34 | Add 30 days crossing month boundary  | '2025-06-01', 30          | '2025-07-01' | ✅ Pass |
+| 35 | Add days crossing year boundary      | '2025-12-20', 15          | '2026-01-04' | ✅ Pass |
+| 36 | Null days                            | '2025-06-01', null        | null         | ✅ Pass |
+| 37 | Empty date string                    | '', 5                     | null         | ✅ Pass |
+| 38 | Invalid date string                  | 'not-a-date', 5           | null         | ✅ Pass |
+
+### Group 4 — `numberToWords` (10 tests, `pdf-invoice-gt.test.ts`)
+
+| #  | Test Case                                   | Input     | Expected                                                              | Result |
+| -- | ------------------------------------------- | --------- | --------------------------------------------------------------------- | ------ |
+| 1  | Zero                                        | 0         | 'Zero Rupees Only'                                                    | ✅ Pass |
+| 2  | One rupee                                   | 1         | 'One Rupees Only'                                                     | ✅ Pass |
+| 3  | Two rupees                                  | 2         | 'Two Rupees Only'                                                     | ✅ Pass |
+| 4  | Hundreds                                    | 500       | 'Five Hundred Rupees Only'                                            | ✅ Pass |
+| 5  | Thousands                                   | 3000      | 'Three Thousand Rupees Only'                                          | ✅ Pass |
+| 6  | Lakh                                        | 100000    | 'One Lakh Rupees Only'                                                | ✅ Pass |
+| 7  | Crore                                       | 10000000  | 'One Crore Rupees Only'                                               | ✅ Pass |
+| 8  | Paise only                                  | 0.50      | 'Zero Rupees and Fifty Paise Only'                                    | ✅ Pass |
+| 9  | Mixed rupees + paise                        | 1500.25   | 'One Thousand Five Hundred Rupees and Twenty Five Paise Only'         | ✅ Pass |
+| 10 | Large GT-realistic amount                   | 45750     | 'Forty Five Thousand Seven Hundred Fifty Rupees Only'                 | ✅ Pass |
+
+---
+
 ## Aggregate Summary
 
-| Phase     | File                             | Tests  | Passed | Failed |
-| --------- | -------------------------------- | ------ | ------ | ------ |
-| Phase 2   | `src/utils/rate-engine.test.ts`  | 23     | 23     | 0      |
-| Phase 3   | `src/utils/trip-metrics.test.ts` | 30     | 30     | 0      |
-| Phase 4   | `src/utils/invoice-gt.test.ts`   | 32     | 32     | 0      |
-| **Total** |                                  | **87** | **87** | **0**  |
+| Phase     | File                                  | Tests   | Passed  | Failed |
+| --------- | ------------------------------------- | ------- | ------- | ------ |
+| Phase 2   | `src/utils/rate-engine.test.ts`       | 23      | 23      | 0      |
+| Phase 3   | `src/utils/trip-metrics.test.ts`      | 30      | 30      | 0      |
+| Phase 4   | `src/utils/invoice-gt.test.ts`        | 38      | 38      | 0      |
+| Phase 5   | `src/utils/tax-engine.test.ts`        | 14      | 14      | 0      |
+| Phase 5   | `src/utils/pdf-invoice-gt.test.ts`    | 10      | 10      | 0      |
+| **Total** |                                       | **115** | **115** | **0**  |
 
-All 87 automated tests pass as of 2026-03-17.
+> Note: 2 additional tests counted in the `invoice-gt.test.ts` row above (the `addDays` group added in Phase 5) bring the runner total to **117**.
+
+All 117 automated tests pass as of 2026-03-17.

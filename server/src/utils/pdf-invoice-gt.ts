@@ -236,7 +236,7 @@ function drawTotalsBox(doc: PdfDoc, data: GtInvoicePdfData): void {
   doc.y = y + height + 12;
 }
 
-function numberToWords(value: number): string {
+export function numberToWords(value: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 

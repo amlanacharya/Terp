@@ -6,6 +6,8 @@ import { getDeleteErrorMessage } from '../utils/db-errors';
 import {
   DutyType,
   Queryable,
+  RateEngineError,
+  loadActiveRateChartDetail,
   loadRateChartDetail,
   normalizeLocationKey,
 } from '../utils/rate-engine';
@@ -517,6 +519,30 @@ async function clearDefaultItem(
     [rateChartId, vehicleCategoryId, dutyType, excludeItemId ?? null]
   );
 }
+
+router.get('/customers/:customerId/rate-chart', authRequired, async (req, res) => {
+  const customerId = String(req.params.customerId);
+  const date = getQueryString(req.query.date) ?? new Date().toISOString().slice(0, 10);
+
+  try {
+    const rateChart = await loadActiveRateChartDetail(customerId, date);
+
+    if (!rateChart) {
+      res.status(404).json({ message: 'No active rate chart found for this customer and date.' });
+      return;
+    }
+
+    res.json(rateChart);
+  } catch (error) {
+    if (error instanceof RateEngineError && error.code === 'RATE_CHART_CONFLICT') {
+      res.status(409).json({ message: error.message });
+      return;
+    }
+
+    console.error('Fetching customer rate chart failed:', error);
+    res.status(500).json({ message: 'Unable to fetch rate chart.' });
+  }
+});
 
 router.get('/rate-charts', authRequired, async (req, res) => {
   const customerId = getQueryString(req.query.customer_id);

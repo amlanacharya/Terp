@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { key: 'invoices', label: 'Customer Invoices', roles: ['admin', 'manager', 'accountant'] },
   { key: 'collections', label: 'Payment Receipts', roles: ['admin', 'manager', 'accountant'] },
   { key: 'driver-settlements', label: 'Salary Slips', roles: ['admin', 'manager', 'accountant'] },
-  { key: 'owner-settlements', label: 'Vendor Invoices', roles: ['admin', 'manager', 'accountant'] },
+  { key: 'owner-settlements', label: 'Owner Invoices', roles: ['admin', 'manager', 'accountant'] },
   { key: 'reports', label: 'Reports' },
   { key: 'settings', label: 'Settings', roles: ['admin'] },
 ];

@@ -4,7 +4,7 @@
  * All IDs are deterministic fake UUIDs for test isolation (no DB required).
  */
 
-import type { RateChartDetail } from './rate-engine';
+import type { DutyType, RateChartDetail, RateChartItemRecord } from './rate-engine';
 
 // ---------------------------------------------------------------------------
 // Shared category IDs
@@ -18,16 +18,16 @@ function makeCategory(id: string, name: string) {
   return { id, name, description: null, is_active: true };
 }
 
-function makeBaseItem(overrides: Partial<ReturnType<typeof makeEmptyItem>>): ReturnType<typeof makeEmptyItem> {
+function makeBaseItem(overrides: Partial<RateChartItemRecord>): RateChartItemRecord {
   return { ...makeEmptyItem(), ...overrides };
 }
 
-function makeEmptyItem() {
+function makeEmptyItem(): RateChartItemRecord {
   return {
     id: '',
     rate_chart_id: '',
     vehicle_category_id: '',
-    duty_type: 'local' as const,
+    duty_type: 'local' as DutyType,
     package_code: '',
     package_label: '',
     sort_order: 0,
@@ -299,3 +299,5 @@ export const CHART_IFFCO: RateChartDetail = {
   ],
   fixed_routes: [],
 };
+
+

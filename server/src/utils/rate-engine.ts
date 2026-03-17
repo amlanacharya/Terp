@@ -114,6 +114,7 @@ export interface RateCalculationResult {
   requested_duty_type: DutyType;
   applied_duty_type: DutyType;
   applied_fixed_route_id: string | null;
+  is_long_trip: boolean;
   line_items: RateCalculationLineItem[];
   totals: {
     base_charge: number;
@@ -345,6 +346,7 @@ export function calculateRateFromChart(
       requested_duty_type: input.duty_type,
       applied_duty_type: input.duty_type,
       applied_fixed_route_id: fixedRoute.id,
+      is_long_trip: false,
       line_items: [
         {
           code: 'FIXED_ROUTE',
@@ -534,6 +536,7 @@ export function calculateRateFromChart(
     requested_duty_type: input.duty_type,
     applied_duty_type: appliedDutyType,
     applied_fixed_route_id: null,
+    is_long_trip: appliedDutyType === 'long',
     line_items: lineItems,
     totals: {
       base_charge: roundMoney(baseCharge),
@@ -564,4 +567,6 @@ export async function calculateRateForCustomer(
 
   return calculateRateFromChart(rateChart, input);
 }
+
+
 

@@ -275,6 +275,7 @@ export interface RateCalculationResult {
   requested_duty_type: DutyType;
   applied_duty_type: DutyType;
   applied_fixed_route_id: string | null;
+  is_long_trip: boolean;
   line_items: RateCalculationLineItem[];
   totals: {
     base_charge: number;
@@ -313,6 +314,8 @@ export interface TripCustomerSummary {
   id: string;
   name: string;
   customer_code: string;
+  contact_person?: string | null;
+  phone?: string | null;
 }
 
 export interface TripDriverSummary {
@@ -328,24 +331,105 @@ export interface TripVehicleSummary {
   vehicle_type: string;
 }
 
+export interface TripRateChartSummary {
+  id: string;
+  name: string;
+  effective_from: string;
+  effective_to: string | null;
+}
+
+export interface TripRateChartItemSummary {
+  id: string;
+  package_code: string;
+  package_label: string;
+  duty_type: DutyType;
+}
+
+export interface TripRateChartFixedRouteSummary {
+  id: string;
+  from_location: string;
+  to_location: string;
+  duty_type: DutyType;
+  fixed_amount: number;
+  description: string | null;
+}
+
+export interface TripTravelMetric {
+  id: string;
+  trip_id: string;
+  seq: number;
+  start_date: string;
+  start_time: string;
+  start_km: number;
+  end_date: string | null;
+  end_time: string | null;
+  end_km: number | null;
+  segment_km: number | null;
+  segment_hours: number | null;
+  is_complete: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Trip {
   id: string;
   trip_number: string;
+  customer_id: string;
+  route_id: string | null;
+  vehicle_id: string;
+  driver_id: string;
   trip_date: string;
+  duty_type: DutyType | null;
+  booked_by: string | null;
+  report_to: string | null;
+  vehicle_category_id: string | null;
+  rate_chart_id: string | null;
+  rate_chart_item_id: string | null;
+  rate_chart_fixed_route_id: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  start_km: number | null;
+  end_km: number | null;
+  actual_km: number | null;
+  total_hours: number | null;
+  night_halts: number | null;
   from_location: string;
   to_location: string;
   purpose: string | null;
   passengers: number | null;
   status: string;
   trip_amount: number;
+  advance_hirer: number;
+  advance_travels: number;
+  fuel_advance: number;
+  cash_advance: number;
+  base_charge: number;
+  extra_km_charge: number;
+  extra_hr_charge: number;
+  night_halt_charge: number;
+  fuel_charge: number;
+  fixed_route_charge: number;
+  ot_charge: number;
+  calculated_amount: number | null;
+  is_long_trip: boolean;
+  parent_trip_id: string | null;
+  annexure_number: string | null;
   driver_allowance: number;
   toll_charges: number;
   parking_charges: number;
+  other_charges: number;
   remarks: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
   total_expenses?: number;
   customer: TripCustomerSummary;
   driver: TripDriverSummary;
   vehicle: TripVehicleSummary;
+  vehicle_category: VehicleCategory | null;
+  rate_chart: TripRateChartSummary | null;
+  rate_chart_item: TripRateChartItemSummary | null;
+  rate_chart_fixed_route: TripRateChartFixedRouteSummary | null;
 }
 
 export interface TripExpense {
@@ -356,6 +440,16 @@ export interface TripExpense {
   description: string | null;
   receipt_number: string | null;
   created_at?: string;
+}
+
+export interface TripDetail extends Trip {
+  metrics: TripTravelMetric[];
+  expenses: TripExpense[];
+}
+
+export interface TripCalculationResponse {
+  trip: TripDetail | null;
+  calculation: RateCalculationResult;
 }
 
 export interface InvoiceCustomerSummary {
@@ -604,6 +698,8 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
+
 
 
 

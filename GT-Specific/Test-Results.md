@@ -267,7 +267,7 @@ Phase 1 established the core DB schema (customers, vehicles, drivers, routes, tr
 | --------- | -------------------------------- | ------ | ------ | ------ |
 | Phase 2   | `src/utils/rate-engine.test.ts`  | 23     | 23     | 0      |
 | Phase 3   | `src/utils/trip-metrics.test.ts` | 30     | 30     | 0      |
-| Phase 4   | `src/utils/invoice-gt.test.ts`   | 34     | 34     | 0      |
+| Phase 4   | `src/utils/invoice-gt.test.ts`   | 32     | 32     | 0      |
 | **Total** |                                  | **87** | **87** | **0**  |
 
 All 87 automated tests pass as of 2026-03-17.

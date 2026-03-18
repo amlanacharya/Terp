@@ -406,6 +406,7 @@ CREATE TABLE IF NOT EXISTS trip_expenses (
   amount numeric(15,2) NOT NULL,
   description text,
   receipt_number text,
+  is_billable_to_hirer boolean NOT NULL DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
 
@@ -694,16 +695,3 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
-
-
-
-
-
-
-
-
-
-
-
-
-

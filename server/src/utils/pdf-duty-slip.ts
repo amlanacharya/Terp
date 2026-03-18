@@ -2,6 +2,11 @@ import PDFDocument from 'pdfkit';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
+const PAGE_MARGIN = 40;
+const EXTERNAL_MIN_MOVEMENT_ROWS = 5;
+
+export type DutySlipVariant = 'open_external' | 'closed_external' | 'internal';
+
 export interface DutySlipPdfMetric {
   seq: number;
   start_date: string;
@@ -19,6 +24,12 @@ export interface DutySlipPdfLineItem {
   amount: number;
 }
 
+export interface DutySlipExpense {
+  expense_type: string;
+  amount: number;
+  description: string | null;
+}
+
 export interface DutySlipPdfData {
   trip_number: string;
   trip_date: string;
@@ -26,8 +37,10 @@ export interface DutySlipPdfData {
   duty_type: string | null;
   from_location: string;
   to_location: string;
+  purpose: string | null;
   customer_name: string;
   customer_code: string;
+  customer_address: string | null;
   customer_contact_person: string | null;
   customer_phone: string | null;
   booked_by: string | null;
@@ -52,6 +65,7 @@ export interface DutySlipPdfData {
   trip_amount: number;
   remarks: string | null;
   metrics: DutySlipPdfMetric[];
+  expenses: DutySlipExpense[];
   line_items: DutySlipPdfLineItem[];
 }
 
@@ -74,6 +88,48 @@ function formatHours(value: number | null | undefined): string {
 
 function formatKm(value: number | null | undefined): string {
   return value == null ? '-' : `${Number(value).toFixed(2)} km`;
+}
+
+function formatGridTime(value: string | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+
+  return value.slice(0, 5);
+}
+
+function formatGridNumber(value: number | null | undefined): string {
+  if (value == null) {
+    return '';
+  }
+
+  return Number(value).toFixed(Number.isInteger(Number(value)) ? 0 : 2);
+}
+
+function getExternalDutyLabel(dutySlip: DutySlipPdfData): string {
+  if (dutySlip.purpose && dutySlip.purpose.trim().length > 0) {
+    return dutySlip.purpose.trim();
+  }
+
+  if (dutySlip.duty_type && dutySlip.duty_type.trim().length > 0) {
+    return dutySlip.duty_type.replace(/_/g, ' ');
+  }
+
+  return `${dutySlip.from_location} to ${dutySlip.to_location}`;
+}
+
+function createPdfBuffer(render: (doc: PdfDoc) => void): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: PAGE_MARGIN, compress: false });
+    const chunks: Buffer[] = [];
+
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    render(doc);
+    doc.end();
+  });
 }
 
 function ensureSpace(doc: PdfDoc, neededHeight: number): void {
@@ -285,92 +341,425 @@ function drawTotalsBox(
   doc.y = y + height + 12;
 }
 
-export function buildDutySlipPdf(
+function renderInternalDutySlipContent(doc: PdfDoc, dutySlip: DutySlipPdfData, settings: Record<string, string>): void {
+  drawHeaderCard(doc, 'DUTY SLIP', settings);
+
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const left = doc.page.margins.left;
+  const boxGap = 14;
+  const boxWidth = (pageWidth - boxGap) / 2;
+  const top = doc.y;
+
+  const partyHeight = drawInfoBox(doc, left, top, boxWidth, 'Trip Party', [
+    { label: 'Customer', value: `${dutySlip.customer_name} (${dutySlip.customer_code})` },
+    { label: 'Contact', value: dutySlip.customer_contact_person || '-' },
+    { label: 'Phone', value: dutySlip.customer_phone || '-' },
+    { label: 'Booked By', value: dutySlip.booked_by || '-' },
+    { label: 'Report To', value: dutySlip.report_to || '-' },
+  ]);
+  const tripHeight = drawInfoBox(doc, left + boxWidth + boxGap, top, boxWidth, 'Duty Summary', [
+    { label: 'Trip Number', value: dutySlip.trip_number },
+    { label: 'Trip Date', value: formatDate(dutySlip.trip_date) },
+    { label: 'Duty Type', value: dutySlip.duty_type || '-' },
+    { label: 'Status', value: dutySlip.status },
+    { label: 'Route', value: `${dutySlip.from_location} -> ${dutySlip.to_location}` },
+  ]);
+  doc.y = top + Math.max(partyHeight, tripHeight) + 16;
+
+  const assetTop = doc.y;
+  const assetHeight = drawInfoBox(doc, left, assetTop, boxWidth, 'Vehicle And Driver', [
+    { label: 'Vehicle', value: dutySlip.vehicle_number },
+    { label: 'Vehicle Type', value: dutySlip.vehicle_type },
+    { label: 'GT Category', value: dutySlip.vehicle_category_name || '-' },
+    { label: 'Driver', value: `${dutySlip.driver_name} (${dutySlip.driver_code})` },
+    { label: 'Driver Phone', value: dutySlip.driver_phone || '-' },
+  ]);
+  const rateHeight = drawInfoBox(doc, left + boxWidth + boxGap, assetTop, boxWidth, 'Rate Source', [
+    { label: 'Rate Chart', value: dutySlip.rate_chart_name || '-' },
+    { label: 'Package', value: dutySlip.package_label || '-' },
+    { label: 'Fixed Route', value: dutySlip.fixed_route_label || '-' },
+    { label: 'Total KM', value: formatKm(dutySlip.total_km) },
+    { label: 'Total Hours', value: formatHours(dutySlip.total_hours) },
+    { label: 'Night Halts', value: dutySlip.night_halts == null ? '-' : String(dutySlip.night_halts) },
+  ]);
+  doc.y = assetTop + Math.max(assetHeight, rateHeight) + 16;
+
+  drawSectionTitle(doc, 'Travel Metrics');
+  drawMetricsTable(doc, dutySlip.metrics);
+
+  drawSectionTitle(doc, 'Advances');
+  drawTotalsBox(doc, [
+    { label: 'Advance Hirer', value: formatCurrency(dutySlip.advance_hirer) },
+    { label: 'Advance Travels', value: formatCurrency(dutySlip.advance_travels) },
+    { label: 'Fuel Advance', value: formatCurrency(dutySlip.fuel_advance) },
+    { label: 'Cash Advance', value: formatCurrency(dutySlip.cash_advance) },
+  ]);
+
+  drawSectionTitle(doc, 'Rate Breakdown');
+  drawAmountTable(doc, dutySlip.line_items);
+  drawTotalsBox(doc, [
+    { label: 'Calculated Amount', value: formatCurrency(dutySlip.calculated_amount) },
+    { label: 'Final Billed Amount', value: formatCurrency(dutySlip.trip_amount), emphasized: true },
+  ]);
+
+  if (dutySlip.remarks) {
+    drawSectionTitle(doc, 'Remarks');
+    ensureSpace(doc, 60);
+    doc.roundedRect(left, doc.y, pageWidth, 56, 8).stroke('#cbd5e1');
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(dutySlip.remarks, left + 12, doc.y + 12, {
+      width: pageWidth - 24,
+    });
+    doc.y += 70;
+  }
+
+  ensureSpace(doc, 40);
+  doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated duty slip', {
+    align: 'center',
+  });
+}
+
+function drawExternalHeader(doc: PdfDoc, dutySlip: DutySlipPdfData, settings: Record<string, string>): void {
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const top = doc.y;
+
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#111827').text('DUTY SLIP', left, top, {
+    width,
+    align: 'center',
+  });
+  doc.font('Helvetica-Bold').fontSize(23).text(settings.company_name || 'Travel ERP', left, top + 16, {
+    width,
+    align: 'center',
+  });
+  doc.font('Helvetica').fontSize(10).text(settings.company_address || '-', left, top + 46, {
+    width,
+    align: 'center',
+  });
+
+  const metaY = top + 82;
+  doc.font('Helvetica').fontSize(10).text(`Date: ${formatDate(dutySlip.trip_date)}`, left, metaY);
+  doc.text(`No. ${dutySlip.trip_number}`, left + width - 170, metaY, {
+    width: 170,
+    align: 'right',
+  });
+  doc.moveTo(left, metaY + 18).lineTo(left + width, metaY + 18).stroke('#111827');
+  doc.y = metaY + 26;
+}
+
+function drawExternalFieldLine(
+  doc: PdfDoc,
+  label: string,
+  value: string,
+  options?: { lineCount?: number; labelWidth?: number }
+): void {
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const lineCount = options?.lineCount ?? 1;
+  const labelWidth = options?.labelWidth ?? 145;
+  const y = doc.y;
+  const lineHeight = 18;
+  const height = lineCount * lineHeight;
+
+  ensureSpace(doc, height + 10);
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(label, left, y, { width: labelWidth });
+  doc.font('Helvetica').fontSize(10).text(value || '', left + labelWidth, y, {
+    width: width - labelWidth,
+    lineGap: 2,
+  });
+
+  for (let index = 0; index < lineCount; index += 1) {
+    const lineY = y + (index + 1) * lineHeight;
+    doc.moveTo(left, lineY).lineTo(left + width, lineY).stroke('#111827');
+  }
+
+  doc.y = y + height + 8;
+}
+
+function drawExternalSplitRow(
+  doc: PdfDoc,
+  leftLabel: string,
+  leftValue: string,
+  rightLabel: string,
+  rightValue: string
+): void {
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const gap = 18;
+  const columnWidth = (width - gap) / 2;
+  const y = doc.y;
+
+  ensureSpace(doc, 28);
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(leftLabel, left, y, { width: 90 });
+  doc.font('Helvetica').text(leftValue || '', left + 90, y, { width: columnWidth - 90 });
+  doc.font('Helvetica-Bold').text(rightLabel, left + columnWidth + gap, y, { width: 90 });
+  doc.font('Helvetica').text(rightValue || '', left + columnWidth + gap + 90, y, { width: columnWidth - 90 });
+  doc.moveTo(left, y + 18).lineTo(left + columnWidth, y + 18).stroke('#111827');
+  doc.moveTo(left + columnWidth + gap, y + 18).lineTo(left + width, y + 18).stroke('#111827');
+  doc.y = y + 24;
+}
+
+function drawExternalSectionLabel(doc: PdfDoc, label: string): void {
+  ensureSpace(doc, 24);
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(label, doc.page.margins.left, doc.y);
+  doc.y += 6;
+}
+
+function drawExternalMovementGrid(doc: PdfDoc, metrics: DutySlipPdfMetric[], blank: boolean): void {
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const ratios = [1.18, 1, 1.02, 1, 1.02, 1.18];
+  const totalRatio = ratios.reduce((sum, ratio) => sum + ratio, 0);
+  const widths = ratios.map((ratio) => (width * ratio) / totalRatio);
+  const headers = ['Starting\nDate', 'Starting\nTime', 'Starting\nKM', 'Closing\nTime', 'Closing\nKM', 'Closing\nDate'];
+  const gridRows = blank
+    ? []
+    : [...metrics].sort((first, second) => first.seq - second.seq).map((metric) => ([
+        formatDate(metric.start_date),
+        formatGridTime(metric.start_time),
+        formatGridNumber(metric.start_km),
+        formatGridTime(metric.end_time),
+        formatGridNumber(metric.end_km),
+        metric.end_date ? formatDate(metric.end_date) : '',
+      ]));
+  const totalRows = Math.max(EXTERNAL_MIN_MOVEMENT_ROWS, gridRows.length || 0);
+  const headerHeight = 28;
+  const rowHeight = 24;
+
+  ensureSpace(doc, headerHeight + totalRows * rowHeight + 12);
+  let x = left;
+  const headerY = doc.y;
+
+  headers.forEach((header, index) => {
+    doc.rect(x, headerY, widths[index], headerHeight).stroke('#111827');
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#111827').text(header, x + 4, headerY + 6, {
+      width: widths[index] - 8,
+      align: 'center',
+    });
+    x += widths[index];
+  });
+
+  let y = headerY + headerHeight;
+  for (let rowIndex = 0; rowIndex < totalRows; rowIndex += 1) {
+    const row = blank ? ['', '', '', '', '', ''] : gridRows[rowIndex] ?? ['', '', '', '', '', ''];
+    x = left;
+
+    row.forEach((value, index) => {
+      doc.rect(x, y, widths[index], rowHeight).stroke('#111827');
+      doc.font('Helvetica').fontSize(8.5).fillColor('#111827').text(value, x + 4, y + 7, {
+        width: widths[index] - 8,
+        align: index === 2 || index === 4 ? 'right' : 'center',
+      });
+      x += widths[index];
+    });
+
+    y += rowHeight;
+  }
+
+  doc.y = y + 10;
+}
+
+function drawExternalExpensesTable(doc: PdfDoc, expenses: DutySlipExpense[]): void {
+  drawExternalSectionLabel(doc, 'TRIP COSTS INCURRED');
+
+  if (expenses.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text('No recorded expenses.', doc.page.margins.left, doc.y + 4);
+    doc.y += 20;
+    return;
+  }
+
+  const left = doc.page.margins.left;
+  const widths = [120, 265, 130];
+  const headers = ['Expense Type', 'Description', 'Amount'];
+  let y = drawTableHeader(doc, headers, widths, left, doc.y);
+  let totalAmount = 0;
+
+  expenses.forEach((expense) => {
+    const description = expense.description && expense.description.trim().length > 0 ? expense.description : '-';
+    const rowHeight = Math.max(24, doc.heightOfString(description, { width: widths[1] - 10 }) + 10);
+    ensureSpace(doc, rowHeight + 20);
+
+    doc.rect(left, y, widths[0], rowHeight).stroke('#cbd5e1');
+    doc.rect(left + widths[0], y, widths[1], rowHeight).stroke('#cbd5e1');
+    doc.rect(left + widths[0] + widths[1], y, widths[2], rowHeight).stroke('#cbd5e1');
+    doc.font('Helvetica').fontSize(9).fillColor('#111827').text(expense.expense_type.replace(/_/g, ' '), left + 6, y + 7, {
+      width: widths[0] - 12,
+    });
+    doc.text(description, left + widths[0] + 6, y + 7, {
+      width: widths[1] - 12,
+    });
+    doc.text(formatCurrency(expense.amount), left + widths[0] + widths[1] + 6, y + 7, {
+      width: widths[2] - 12,
+      align: 'right',
+    });
+    y += rowHeight;
+    totalAmount += Number(expense.amount || 0);
+  });
+
+  const totalHeight = 24;
+  ensureSpace(doc, totalHeight + 20);
+  doc.rect(left, y, widths[0] + widths[1], totalHeight).stroke('#111827');
+  doc.rect(left + widths[0] + widths[1], y, widths[2], totalHeight).stroke('#111827');
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#111827').text('Total Incurred', left + 6, y + 7, {
+    width: widths[0] + widths[1] - 12,
+    align: 'right',
+  });
+  doc.text(formatCurrency(totalAmount), left + widths[0] + widths[1] + 6, y + 7, {
+    width: widths[2] - 12,
+    align: 'right',
+  });
+  doc.y = y + totalHeight + 10;
+}
+
+function drawExternalAdvancesTable(doc: PdfDoc, dutySlip: DutySlipPdfData): void {
+  drawExternalSectionLabel(doc, 'ADV. PAID');
+
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const firstColWidth = 120;
+  const otherColWidth = (width - firstColWidth) / 2;
+  const headers = ['ADV. PAID', 'HIRER', 'TRAVELS'];
+  const values = ['', formatCurrency(dutySlip.advance_hirer), formatCurrency(dutySlip.advance_travels)];
+  const widths = [firstColWidth, otherColWidth, otherColWidth];
+  const headerHeight = 22;
+  const rowHeight = 24;
+
+  ensureSpace(doc, headerHeight + rowHeight + 12);
+  let x = left;
+  const y = doc.y;
+
+  headers.forEach((header, index) => {
+    doc.rect(x, y, widths[index], headerHeight).stroke('#111827');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111827').text(header, x + 4, y + 6, {
+      width: widths[index] - 8,
+      align: 'center',
+    });
+    x += widths[index];
+  });
+
+  x = left;
+  values.forEach((value, index) => {
+    doc.rect(x, y + headerHeight, widths[index], rowHeight).stroke('#111827');
+    doc.font('Helvetica').fontSize(9).fillColor('#111827').text(value, x + 4, y + headerHeight + 7, {
+      width: widths[index] - 8,
+      align: 'center',
+    });
+    x += widths[index];
+  });
+
+  doc.y = y + headerHeight + rowHeight + 10;
+}
+
+function drawExternalRemarks(doc: PdfDoc, remarks: string | null): void {
+  if (!remarks) {
+    return;
+  }
+
+  drawExternalFieldLine(doc, 'REMARKS', remarks, { labelWidth: 90, lineCount: Math.max(1, Math.ceil(remarks.length / 90)) });
+}
+
+function drawExternalSignatureBlock(doc: PdfDoc, settings: Record<string, string>): void {
+  const left = doc.page.margins.left;
+  const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const footerLines = [
+    'PLEASE MENTION TOTAL KMS / MOST URGENT',
+    'FULL SIGNATURE OF THE CLIENT',
+  ];
+
+  ensureSpace(doc, 90);
+  footerLines.forEach((line) => {
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#111827').text(line, left, doc.y, {
+      width,
+      align: 'center',
+    });
+    doc.y += 2;
+  });
+
+  doc.y += 8;
+  const labelY = doc.y;
+  doc.font('Helvetica-Bold').fontSize(10).text(`For ${(settings.company_name || 'Travel ERP').toUpperCase()}`, left, labelY, {
+    width: width / 2,
+  });
+  doc.text('Signature of the Hirer', left + width / 2, labelY, {
+    width: width / 2,
+    align: 'right',
+  });
+  doc.moveTo(left, labelY + 22).lineTo(left + 170, labelY + 22).stroke('#111827');
+  doc.moveTo(left + width - 170, labelY + 22).lineTo(left + width, labelY + 22).stroke('#111827');
+  doc.y = labelY + 28;
+
+  doc.font('Helvetica').fontSize(8.5).fillColor('#334155').text('N.B.: Time and Kilometre will be charged from office to office.', left, doc.y, {
+    width,
+    align: 'left',
+  });
+  doc.y += 12;
+  doc.font('Helvetica').fontSize(8.5).fillColor('#64748b').text('Computer-generated duty slip', left, doc.y, {
+    width,
+    align: 'center',
+  });
+}
+
+function renderExternalDutySlipCommon(doc: PdfDoc, dutySlip: DutySlipPdfData, settings: Record<string, string>, blankMovement: boolean): void {
+  drawExternalHeader(doc, dutySlip, settings);
+  drawExternalFieldLine(
+    doc,
+    'NAME & ADDRESS OF HIRER',
+    [dutySlip.customer_name, dutySlip.customer_address].filter(Boolean).join(', '),
+    { lineCount: 2, labelWidth: 165 }
+  );
+  drawExternalFieldLine(doc, 'BOOKED BY', dutySlip.booked_by || '-', { labelWidth: 95 });
+  drawExternalFieldLine(doc, 'REPORT TO', dutySlip.report_to || '-', { labelWidth: 95 });
+  drawExternalFieldLine(doc, 'NATURE OF DUTY', getExternalDutyLabel(dutySlip), { labelWidth: 125 });
+  drawExternalSplitRow(doc, 'CAR NO.', dutySlip.vehicle_number, "Driver's Name", dutySlip.driver_name);
+  drawExternalSectionLabel(doc, 'MOVEMENT RECORD');
+  drawExternalMovementGrid(doc, dutySlip.metrics, blankMovement);
+}
+
+export function buildInternalDutySlipPdf(
   dutySlip: DutySlipPdfData,
   settings: Record<string, string>
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
-    const chunks: Buffer[] = [];
-
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    drawHeaderCard(doc, 'DUTY SLIP', settings);
-
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const left = doc.page.margins.left;
-    const boxGap = 14;
-    const boxWidth = (pageWidth - boxGap) / 2;
-    const top = doc.y;
-
-    const partyHeight = drawInfoBox(doc, left, top, boxWidth, 'Trip Party', [
-      { label: 'Customer', value: `${dutySlip.customer_name} (${dutySlip.customer_code})` },
-      { label: 'Contact', value: dutySlip.customer_contact_person || '-' },
-      { label: 'Phone', value: dutySlip.customer_phone || '-' },
-      { label: 'Booked By', value: dutySlip.booked_by || '-' },
-      { label: 'Report To', value: dutySlip.report_to || '-' },
-    ]);
-    const tripHeight = drawInfoBox(doc, left + boxWidth + boxGap, top, boxWidth, 'Duty Summary', [
-      { label: 'Trip Number', value: dutySlip.trip_number },
-      { label: 'Trip Date', value: formatDate(dutySlip.trip_date) },
-      { label: 'Duty Type', value: dutySlip.duty_type || '-' },
-      { label: 'Status', value: dutySlip.status },
-      { label: 'Route', value: `${dutySlip.from_location} -> ${dutySlip.to_location}` },
-    ]);
-    doc.y = top + Math.max(partyHeight, tripHeight) + 16;
-
-    const assetTop = doc.y;
-    const assetHeight = drawInfoBox(doc, left, assetTop, boxWidth, 'Vehicle And Driver', [
-      { label: 'Vehicle', value: dutySlip.vehicle_number },
-      { label: 'Vehicle Type', value: dutySlip.vehicle_type },
-      { label: 'GT Category', value: dutySlip.vehicle_category_name || '-' },
-      { label: 'Driver', value: `${dutySlip.driver_name} (${dutySlip.driver_code})` },
-      { label: 'Driver Phone', value: dutySlip.driver_phone || '-' },
-    ]);
-    const rateHeight = drawInfoBox(doc, left + boxWidth + boxGap, assetTop, boxWidth, 'Rate Source', [
-      { label: 'Rate Chart', value: dutySlip.rate_chart_name || '-' },
-      { label: 'Package', value: dutySlip.package_label || '-' },
-      { label: 'Fixed Route', value: dutySlip.fixed_route_label || '-' },
-      { label: 'Total KM', value: formatKm(dutySlip.total_km) },
-      { label: 'Total Hours', value: formatHours(dutySlip.total_hours) },
-      { label: 'Night Halts', value: dutySlip.night_halts == null ? '-' : String(dutySlip.night_halts) },
-    ]);
-    doc.y = assetTop + Math.max(assetHeight, rateHeight) + 16;
-
-    drawSectionTitle(doc, 'Travel Metrics');
-    drawMetricsTable(doc, dutySlip.metrics);
-
-    drawSectionTitle(doc, 'Advances');
-    drawTotalsBox(doc, [
-      { label: 'Advance Hirer', value: formatCurrency(dutySlip.advance_hirer) },
-      { label: 'Advance Travels', value: formatCurrency(dutySlip.advance_travels) },
-      { label: 'Fuel Advance', value: formatCurrency(dutySlip.fuel_advance) },
-      { label: 'Cash Advance', value: formatCurrency(dutySlip.cash_advance) },
-    ]);
-
-    drawSectionTitle(doc, 'Rate Breakdown');
-    drawAmountTable(doc, dutySlip.line_items);
-    drawTotalsBox(doc, [
-      { label: 'Calculated Amount', value: formatCurrency(dutySlip.calculated_amount) },
-      { label: 'Final Billed Amount', value: formatCurrency(dutySlip.trip_amount), emphasized: true },
-    ]);
-
-    if (dutySlip.remarks) {
-      drawSectionTitle(doc, 'Remarks');
-      ensureSpace(doc, 60);
-      doc.roundedRect(left, doc.y, pageWidth, 56, 8).stroke('#cbd5e1');
-      doc.font('Helvetica').fontSize(10).fillColor('#111827').text(dutySlip.remarks, left + 12, doc.y + 12, {
-        width: pageWidth - 24,
-      });
-      doc.y += 70;
-    }
-
-    ensureSpace(doc, 40);
-    doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated duty slip', {
-      align: 'center',
-    });
-    doc.end();
+  return createPdfBuffer((doc) => {
+    renderInternalDutySlipContent(doc, dutySlip, settings);
   });
+}
+
+export function buildOpenExternalDutySlipPdf(
+  dutySlip: DutySlipPdfData,
+  settings: Record<string, string>
+): Promise<Buffer> {
+  return createPdfBuffer((doc) => {
+    renderExternalDutySlipCommon(doc, dutySlip, settings, true);
+    drawExternalAdvancesTable(doc, dutySlip);
+    drawExternalRemarks(doc, dutySlip.remarks);
+    drawExternalSignatureBlock(doc, settings);
+  });
+}
+
+export function buildClosedExternalDutySlipPdf(
+  dutySlip: DutySlipPdfData,
+  settings: Record<string, string>
+): Promise<Buffer> {
+  return createPdfBuffer((doc) => {
+    renderExternalDutySlipCommon(doc, dutySlip, settings, false);
+    drawExternalExpensesTable(doc, dutySlip.expenses);
+    drawExternalAdvancesTable(doc, dutySlip);
+    drawExternalRemarks(doc, dutySlip.remarks);
+    drawExternalSignatureBlock(doc, settings);
+  });
+}
+
+export function buildDutySlipPdf(
+  dutySlip: DutySlipPdfData,
+  settings: Record<string, string>,
+  variant: DutySlipVariant
+): Promise<Buffer> {
+  if (variant === 'open_external') {
+    return buildOpenExternalDutySlipPdf(dutySlip, settings);
+  }
+
+  if (variant === 'closed_external') {
+    return buildClosedExternalDutySlipPdf(dutySlip, settings);
+  }
+
+  return buildInternalDutySlipPdf(dutySlip, settings);
 }

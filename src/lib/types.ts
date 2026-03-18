@@ -391,6 +391,7 @@ export interface TripCustomerSummary {
   id: string;
   name: string;
   customer_code: string;
+  address?: string | null;
   contact_person?: string | null;
   phone?: string | null;
 }
@@ -526,6 +527,7 @@ export interface TripExpense {
   amount: number;
   description: string | null;
   receipt_number: string | null;
+  is_billable_to_hirer: boolean;
   created_at?: string;
 }
 
@@ -870,15 +872,3 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
-
-
-
-
-
-
-
-
-
-
-
-

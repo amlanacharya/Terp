@@ -661,19 +661,20 @@ SET
   source_metric_id = EXCLUDED.source_metric_id,
   updated_at = now();
 
-INSERT INTO trip_expenses (id, trip_id, expense_type, amount, description, receipt_number)
+INSERT INTO trip_expenses (id, trip_id, expense_type, amount, description, receipt_number, is_billable_to_hirer)
 VALUES
-  ('91500000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', 'fuel', 900, 'Local fuel reimbursement', 'FUEL-RBI-1001'),
-  ('91500000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000001', 'toll', 120, 'City toll and parking bundle', 'TOLL-RBI-1001'),
-  ('91500000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000006', 'parking', 250, 'Plant parking and entry fees', 'PARK-IFF-1006'),
-  ('91500000-0000-0000-0000-000000000004', '90000000-0000-0000-0000-000000000006', 'food', 300, 'Driver meal allowance during outstation duty', 'FOOD-IFF-1006')
+  ('91500000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', 'fuel', 900, 'Local fuel reimbursement', 'FUEL-RBI-1001', false),
+  ('91500000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000001', 'toll', 120, 'City toll and parking bundle', 'TOLL-RBI-1001', false),
+  ('91500000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000006', 'parking', 250, 'Plant parking and entry fees', 'PARK-IFF-1006', false),
+  ('91500000-0000-0000-0000-000000000004', '90000000-0000-0000-0000-000000000006', 'food', 300, 'Driver meal allowance during outstation duty', 'FOOD-IFF-1006', false)
 ON CONFLICT (id) DO UPDATE
 SET
   trip_id = EXCLUDED.trip_id,
   expense_type = EXCLUDED.expense_type,
   amount = EXCLUDED.amount,
   description = EXCLUDED.description,
-  receipt_number = EXCLUDED.receipt_number;
+  receipt_number = EXCLUDED.receipt_number,
+  is_billable_to_hirer = EXCLUDED.is_billable_to_hirer;
 
 -- ---------------------------------------------------------------------------
 -- Phase 4 invoices and annexures
@@ -1012,4 +1013,3 @@ SET
   updated_at = now();
 
 COMMIT;
-

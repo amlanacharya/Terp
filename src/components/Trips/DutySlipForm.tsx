@@ -14,6 +14,8 @@ import {
   VehicleCategory,
 } from '../../lib/types';
 
+type DutySlipPdfDownloadVariant = 'open_external' | 'closed_external' | 'internal';
+
 interface DutySlipFormProps {
   trip: TripDetail | null;
   customers: Customer[];
@@ -28,7 +30,7 @@ interface DutySlipFormProps {
   onUpdateMetric: (tripId: string, metricId: string, payload: Record<string, unknown>) => Promise<void>;
   onDeleteMetric: (tripId: string, metricId: string) => Promise<void>;
   onCalculate: (tripId: string, payload: { package_code?: string | null; force_sync_trip_amount?: boolean }) => Promise<void>;
-  onDownloadPdf: (tripId: string) => Promise<void>;
+  onDownloadPdf: (tripId: string, variant?: DutySlipPdfDownloadVariant) => Promise<void>;
   activeCalculation: RateCalculationResult | null;
 }
 
@@ -370,6 +372,7 @@ export function DutySlipForm({
           <label className="flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-700"><input type="checkbox" checked={syncTripAmount} onChange={(event) => setSyncTripAmount(event.target.checked)} />Sync billed amount on calculate</label>
           {trip?.id ? <button type="button" disabled={calculating || hasIncompleteMetrics || !trip.metrics.length} onClick={() => void onCalculate(trip.id, { package_code: formState.package_code || null, force_sync_trip_amount: syncTripAmount })} className="rounded-2xl border border-sky-300 px-5 py-3 text-sm font-medium text-sky-700 disabled:opacity-60">{calculating ? 'Calculating...' : 'Calculate'}</button> : null}
           {trip?.id ? <button type="button" onClick={() => void onDownloadPdf(trip.id)} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Duty Slip PDF</button> : null}
+          {trip?.id ? <button type="button" onClick={() => void onDownloadPdf(trip.id, 'internal')} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Internal PDF</button> : null}
         </div>
       </form>
 
@@ -418,8 +421,3 @@ export function DutySlipForm({
     </section>
   );
 }
-
-
-
-
-

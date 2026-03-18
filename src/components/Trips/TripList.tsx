@@ -25,13 +25,17 @@ interface ExpenseFormState {
   amount: string;
   description: string;
   receipt_number: string;
+  is_billable_to_hirer: boolean;
 }
+
+type DutySlipPdfDownloadVariant = 'open_external' | 'closed_external' | 'internal';
 
 const initialExpenseForm: ExpenseFormState = {
   expense_type: 'fuel',
   amount: '',
   description: '',
   receipt_number: '',
+  is_billable_to_hirer: false,
 };
 
 export function TripList() {
@@ -241,26 +245,32 @@ export function TripList() {
     }
   }
 
-  async function handleDownloadPdf(tripId: string) {
+  async function handleDownloadPdf(tripId: string, variant?: DutySlipPdfDownloadVariant) {
     try {
       setError('');
-      const blob = await downloadBlob(`/trips/${tripId}/duty-slip-pdf`);
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
       const tripForFilename = editingTrip?.id === tripId
         ? editingTrip
         : selectedTrip?.id === tripId
           ? selectedTrip
           : null;
+      const query = variant ? `?variant=${encodeURIComponent(variant)}` : '';
+      const blob = await downloadBlob(`/trips/${tripId}/duty-slip-pdf${query}`);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const effectiveVariant = variant ?? (tripForFilename?.status === 'completed' ? 'closed_external' : 'open_external');
+      const suffix = effectiveVariant === 'internal'
+        ? 'duty-slip-internal'
+        : effectiveVariant === 'closed_external'
+          ? 'duty-slip-external-closed'
+          : 'duty-slip-external-open';
       anchor.href = url;
-      anchor.download = `${tripForFilename?.trip_number ?? tripId}-duty-slip.pdf`;
+      anchor.download = `${tripForFilename?.trip_number ?? tripId}-${suffix}.pdf`;
       anchor.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to download duty slip PDF.');
     }
   }
-
   function handleDeleteTrip(trip: Trip) {
     setDeleteTripTarget(trip);
   }
@@ -307,6 +317,7 @@ export function TripList() {
         amount: Number(expenseForm.amount),
         description: expenseForm.description || null,
         receipt_number: expenseForm.receipt_number || null,
+        is_billable_to_hirer: expenseForm.is_billable_to_hirer,
       };
 
       if (editingExpenseId) {
@@ -337,6 +348,7 @@ export function TripList() {
       amount: String(expense.amount),
       description: expense.description ?? '',
       receipt_number: expense.receipt_number ?? '',
+      is_billable_to_hirer: expense.is_billable_to_hirer,
     });
   }
 
@@ -428,6 +440,13 @@ export function TripList() {
                 >
                   Duty Slip PDF
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPdf(selectedTrip.id, 'internal')}
+                  className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700"
+                >
+                  Internal PDF
+                </button>
                 {canManage ? (
                   <button
                     type="button"
@@ -515,42 +534,42 @@ export function TripList() {
                   <h3 className="mt-2 text-xl font-semibold text-slate-900">Trip expenses</h3>
                 </div>
                 {canManage ? (
-                  <form onSubmit={handleExpenseSubmit} className="grid gap-4 lg:grid-cols-4">
-                    <label className="text-sm font-semibold text-slate-800">
-                      Expense Type
-                      <select
-                        value={expenseForm.expense_type}
-                        onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))}
-                        className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-                      >
-                        <option value="fuel">Fuel expense</option>
-                        <option value="toll">Toll expense</option>
-                        <option value="parking">Parking expense</option>
-                        <option value="food">Food expense</option>
-                        <option value="other">Other expense</option>
-                      </select>
-                    </label>
-                    <label className="text-sm font-semibold text-slate-800">
-                      Expense Amount
-                      <input
-                        value={expenseForm.amount}
-                        onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
-                        type="number"
-                        min="0"
-                        className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-                        required
-                      />
-                    </label>
-                    <label className="text-sm font-semibold text-slate-800">
-                      Receipt Reference
-                      <input
-                        value={expenseForm.receipt_number}
-                        onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))}
-                        className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-                      />
-                    </label>
-                    <div className="flex gap-3">
-                      <label className="flex-1 text-sm font-semibold text-slate-800">
+                  <form onSubmit={handleExpenseSubmit} className="space-y-4">
+                    <div className="grid gap-4 lg:grid-cols-4">
+                      <label className="text-sm font-semibold text-slate-800">
+                        Expense Type
+                        <select
+                          value={expenseForm.expense_type}
+                          onChange={(event) => setExpenseForm((current) => ({ ...current, expense_type: event.target.value }))}
+                          className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                        >
+                          <option value="fuel">Fuel expense</option>
+                          <option value="toll">Toll expense</option>
+                          <option value="parking">Parking expense</option>
+                          <option value="food">Food expense</option>
+                          <option value="other">Other expense</option>
+                        </select>
+                      </label>
+                      <label className="text-sm font-semibold text-slate-800">
+                        Expense Amount
+                        <input
+                          value={expenseForm.amount}
+                          onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+                          type="number"
+                          min="0"
+                          className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                          required
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-slate-800">
+                        Receipt Reference
+                        <input
+                          value={expenseForm.receipt_number}
+                          onChange={(event) => setExpenseForm((current) => ({ ...current, receipt_number: event.target.value }))}
+                          className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-slate-800">
                         Description
                         <input
                           value={expenseForm.description}
@@ -558,6 +577,16 @@ export function TripList() {
                           className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
                         />
                       </label>
+                    </div>
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={expenseForm.is_billable_to_hirer}
+                        onChange={(event) => setExpenseForm((current) => ({ ...current, is_billable_to_hirer: event.target.checked }))}
+                      />
+                      Billable to Hirer
+                    </label>
+                    <div className="flex flex-wrap gap-3">
                       <button type="submit" disabled={expenseSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
                         {expenseSaving ? 'Saving...' : editingExpenseId ? 'Update' : 'Add'}
                       </button>
@@ -584,6 +613,7 @@ export function TripList() {
                         <th className="px-4 py-3">Amount</th>
                         <th className="px-4 py-3">Receipt</th>
                         <th className="px-4 py-3">Description</th>
+                        <th className="px-4 py-3">Billable</th>
                         {canManage ? <th className="px-4 py-3">Action</th> : null}
                       </tr>
                     </thead>
@@ -594,6 +624,7 @@ export function TripList() {
                           <td className="px-4 py-3">{formatCurrency(expense.amount)}</td>
                           <td className="px-4 py-3">{expense.receipt_number ?? '-'}</td>
                           <td className="px-4 py-3">{expense.description ?? '-'}</td>
+                          <td className="px-4 py-3">{expense.is_billable_to_hirer ? 'Yes' : 'No'}</td>
                           {canManage ? (
                             <td className="px-4 py-3">
                               <button type="button" onClick={() => startExpenseEdit(expense)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
@@ -608,7 +639,7 @@ export function TripList() {
                       ))}
                       {selectedTrip.expenses.length === 0 ? (
                         <tr>
-                          <td colSpan={canManage ? 5 : 4} className="px-4 py-6 text-center text-slate-500">
+                          <td colSpan={canManage ? 6 : 5} className="px-4 py-6 text-center text-slate-500">
                             No expenses recorded for this trip.
                           </td>
                         </tr>

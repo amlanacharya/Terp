@@ -76,20 +76,6 @@ const initialFollowUpForm: FollowUpFormState = {
   quoted_amount: '',
 };
 
-function formatDateTimeLocalInput(value?: string | null): string {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60000);
-  return localDate.toISOString().slice(0, 16);
-}
 
 function getLeadLabel(lead: Lead): string {
   return lead.customer?.name || lead.prospect_name || lead.prospect_phone;
@@ -368,7 +354,7 @@ export function LeadList() {
           <label className="text-sm font-semibold text-slate-800">
             Lead Source
             <select value={leadForm.source} onChange={(event) => setLeadForm((current) => ({ ...current, source: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-              {leadSourceOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {leadSourceOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -426,7 +412,7 @@ export function LeadList() {
             Vehicle Preference
             <select value={leadForm.vehicle_preference} onChange={(event) => setLeadForm((current) => ({ ...current, vehicle_preference: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
               <option value="">No specific preference</option>
-              {vehiclePreferenceOptions.filter(Boolean).map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {vehiclePreferenceOptions.filter(Boolean).map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -451,7 +437,7 @@ export function LeadList() {
           <label className="text-sm font-semibold text-slate-800">
             Lead Status
             <select value={leadForm.status} onChange={(event) => setLeadForm((current) => ({ ...current, status: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-              {leadStatusOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {leadStatusOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -500,7 +486,7 @@ export function LeadList() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{lead.lead_number}</p>
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                        {lead.status.replaceAll('_', ' ')}
+                        {lead.status.replace(/_/g, ' ')}
                       </span>
                       <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
                         {lead.priority}
@@ -512,7 +498,7 @@ export function LeadList() {
                     </p>
                     <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                       <p><span className="font-semibold text-slate-800">Phone:</span> {lead.prospect_phone}</p>
-                      <p><span className="font-semibold text-slate-800">Source:</span> {lead.source.replaceAll('_', ' ')}</p>
+                      <p><span className="font-semibold text-slate-800">Source:</span> {lead.source.replace(/_/g, ' ')}</p>
                       <p><span className="font-semibold text-slate-800">PAX:</span> {lead.pax_count}</p>
                       <p><span className="font-semibold text-slate-800">Vehicles:</span> {lead.num_vehicles}</p>
                       <p><span className="font-semibold text-slate-800">Assigned:</span> {lead.assigned_user?.full_name ?? 'Unassigned'}</p>
@@ -575,7 +561,7 @@ export function LeadList() {
               <label className="text-sm font-semibold text-slate-800">
                 Contact Mode
                 <select value={followUpForm.contact_mode} onChange={(event) => setFollowUpForm((current) => ({ ...current, contact_mode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-                  {contactModeOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+                  {contactModeOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
                 </select>
               </label>
               <label className="text-sm font-semibold text-slate-800">
@@ -604,7 +590,7 @@ export function LeadList() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{formatDate(followUp.follow_up_date)}</p>
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{followUp.contact_mode.replaceAll('_', ' ')}</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{followUp.contact_mode.replace(/_/g, ' ')}</p>
                     </div>
                     {canManage ? (
                       <button type="button" onClick={() => void handleDeleteFollowUp(followUp)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
@@ -647,12 +633,3 @@ export function LeadList() {
     </section>
   );
 }
-
-
-
-
-
-
-
-
-

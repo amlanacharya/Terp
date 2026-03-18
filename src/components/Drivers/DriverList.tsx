@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
@@ -221,9 +222,9 @@ export function DriverList() {
                     {driver.city ?? '-'}, {driver.state ?? '-'}
                   </td>
                   <td className="px-4 py-3">{getVehicleLabel(driver.default_vehicle_id)}</td>
-                  <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : driver.night_halt_rate}</td>
-                  <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : driver.ot_per_hour}</td>
-                  <td className="px-4 py-3">{driver.license_expiry?.slice(0, 10) ?? '-'}</td>
+                  <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : formatCurrency(driver.night_halt_rate)}</td>
+                  <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : formatCurrency(driver.ot_per_hour)}</td>
+                  <td className="px-4 py-3">{driver.license_expiry ? formatDate(driver.license_expiry) : '-'}</td>
                   <td className="px-4 py-3">{driver.is_active ? 'Active' : 'Inactive'}</td>
                   {canManage ? (
                     <td className="px-4 py-3">

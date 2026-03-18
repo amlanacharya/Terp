@@ -82,7 +82,7 @@ export function Modal({
             onClick={onClose}
             className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
           >
-            x
+            &times;
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>

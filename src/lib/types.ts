@@ -136,6 +136,8 @@ export interface TaxPreviewResponse {
   total_amount: number;
 }
 
+export type InvoicePdfMode = 'invoice_only' | 'invoice_with_annexures';
+
 export interface Customer {
   id: string;
   customer_code: string;
@@ -152,6 +154,7 @@ export interface Customer {
   default_duty_start_time: string | null;
   default_duty_end_time: string | null;
   default_duty_hours: number | null;
+  invoice_pdf_mode: InvoicePdfMode;
   is_active: boolean;
 }
 
@@ -867,6 +870,7 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+
 
 
 

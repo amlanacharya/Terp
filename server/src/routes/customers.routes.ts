@@ -22,11 +22,17 @@ const customerFields = [
   'default_duty_start_time',
   'default_duty_end_time',
   'default_duty_hours',
+  'invoice_pdf_mode',
   'is_active',
 ] as const;
+const invoicePdfModes = ['invoice_only', 'invoice_with_annexures'] as const;
 
 function isNegativeNumber(value: unknown): boolean {
   return value !== null && value !== undefined && Number(value) < 0;
+}
+
+function isInvoicePdfMode(value: unknown): value is (typeof invoicePdfModes)[number] {
+  return typeof value === 'string' && invoicePdfModes.includes(value as (typeof invoicePdfModes)[number]);
 }
 
 router.get('/', authRequired, async (_req, res) => {
@@ -76,17 +82,22 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
     return;
   }
 
+  if (payload.invoice_pdf_mode !== undefined && !isInvoicePdfMode(payload.invoice_pdf_mode)) {
+    res.status(400).json({ message: 'Invalid invoice PDF mode.' });
+    return;
+  }
+
   try {
     const result = await query(
       `
         INSERT INTO customers (
           customer_code, name, contact_person, phone, email, address, city, state,
           pincode, gstin, credit_limit, credit_days, default_duty_start_time,
-          default_duty_end_time, default_duty_hours, is_active
+          default_duty_end_time, default_duty_hours, invoice_pdf_mode, is_active
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13,
-          $14, $15, $16
+          $14, $15, $16, $17
         )
         RETURNING *
       `,
@@ -106,6 +117,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
         payload.default_duty_start_time ?? null,
         payload.default_duty_end_time ?? null,
         payload.default_duty_hours ?? null,
+        payload.invoice_pdf_mode ?? 'invoice_with_annexures',
         payload.is_active ?? true,
       ]
     );
@@ -126,6 +138,11 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, re
 
   if (isNegativeNumber(payload.default_duty_hours)) {
     res.status(400).json({ message: 'Default duty hours cannot be negative.' });
+    return;
+  }
+
+  if (payload.invoice_pdf_mode !== undefined && !isInvoicePdfMode(payload.invoice_pdf_mode)) {
+    res.status(400).json({ message: 'Invalid invoice PDF mode.' });
     return;
   }
 
@@ -164,6 +181,8 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+
 
 
 

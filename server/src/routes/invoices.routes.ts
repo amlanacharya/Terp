@@ -3,7 +3,8 @@ import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { buildInterestNote, getGtInvoiceSettings } from '../utils/invoice-gt';
-import { buildGtInvoicePdf } from '../utils/pdf-invoice-gt';
+import { AnnexurePdfData } from '../utils/pdf-annexure';
+import { buildGtInvoicePdf, buildGtInvoiceWithAnnexuresPdf } from '../utils/pdf-invoice-gt';
 import { buildInvoicePdf } from '../utils/pdf-invoice';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 import { calculateInvoiceTaxes, persistInvoiceTaxSnapshots } from '../utils/tax-engine';
@@ -91,6 +92,71 @@ interface InvoiceTaxComponentRow {
 
 interface InvoiceItemTaxComponentRow extends InvoiceTaxComponentRow {
   invoice_item_id: string;
+}
+
+type InvoicePdfMode = 'invoice_only' | 'invoice_with_annexures';
+
+const invoicePdfModes: InvoicePdfMode[] = ['invoice_only', 'invoice_with_annexures'];
+
+interface InvoicePdfHeaderRow {
+  id: string;
+  customer_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string | null;
+  booking_date: string | null;
+  duty_type_label: string | null;
+  nature_of_journey: string | null;
+  vehicle_number: string | null;
+  vehicle_type_label: string | null;
+  duty_slip_number: string | null;
+  total_km: string | null;
+  total_hours: string | null;
+  payment_terms_days: number | null;
+  interest_note: string | null;
+  subtotal: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  billing_address: string | null;
+  customer_gstin: string | null;
+  remarks: string | null;
+  customer_name: string;
+  invoice_pdf_mode: InvoicePdfMode;
+}
+
+interface InvoicePdfItemRow {
+  id: string;
+  description: string;
+  hsn_code: string | null;
+  quantity: string;
+  rate: string;
+  amount: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  annexure_id: string | null;
+  annexure_number: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  start_km: string | null;
+  end_km: string | null;
+  total_km: string | null;
+  total_hours: string | null;
+  night_halts: number | null;
+  calculated_amount: string | null;
+  annexure_is_billed: boolean | null;
+  parent_trip_number: string | null;
+  child_trip_number: string | null;
+  annexure_vehicle_number: string | null;
+  annexure_vehicle_type_label: string | null;
+  vehicle_category_name: string | null;
+}
+
+function isInvoicePdfMode(value: unknown): value is InvoicePdfMode {
+  return typeof value === 'string' && invoicePdfModes.includes(value as InvoicePdfMode);
 }
 
 function toNumber(value: number | string | null | undefined): number | null {
@@ -392,36 +458,23 @@ router.get('/', authRequired, async (req, res) => {
 });
 
 router.get('/:id/pdf', authRequired, async (req, res) => {
+  const invoiceId = String(req.params.id);
+  const requestedMode = typeof req.query.mode === 'string' && req.query.mode.trim().length > 0
+    ? req.query.mode.trim()
+    : null;
+
+  if (requestedMode && !isInvoicePdfMode(requestedMode)) {
+    res.status(400).json({ message: 'Invalid invoice PDF mode.' });
+    return;
+  }
+
   try {
     const [invoiceResult, itemResult, taxData, settings] = await Promise.all([
-      query<{
-        id: string;
-        invoice_number: string;
-        invoice_date: string;
-        due_date: string | null;
-        booking_date: string | null;
-        duty_type_label: string | null;
-        nature_of_journey: string | null;
-        vehicle_number: string | null;
-        vehicle_type_label: string | null;
-        duty_slip_number: string | null;
-        total_km: string | null;
-        total_hours: string | null;
-        payment_terms_days: number | null;
-        interest_note: string | null;
-        subtotal: string;
-        cgst_amount: string;
-        sgst_amount: string;
-        igst_amount: string;
-        total_amount: string;
-        billing_address: string | null;
-        customer_gstin: string | null;
-        remarks: string | null;
-        customer_name: string;
-      }>(
+      query<InvoicePdfHeaderRow>(
         `
           SELECT
             i.id,
+            i.customer_id,
             i.invoice_number,
             i.invoice_date::text,
             i.due_date::text,
@@ -443,29 +496,16 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
             i.billing_address,
             i.customer_gstin,
             i.remarks,
-            c.name AS customer_name
+            c.name AS customer_name,
+            c.invoice_pdf_mode
           FROM invoices i
           JOIN customers c ON c.id = i.customer_id
           WHERE i.id = $1
           LIMIT 1
         `,
-        [String(req.params.id)]
+        [invoiceId]
       ),
-      query<{
-        id: string;
-        description: string;
-        hsn_code: string | null;
-        quantity: string;
-        rate: string;
-        amount: string;
-        cgst_amount: string;
-        sgst_amount: string;
-        igst_amount: string;
-        total_amount: string;
-        annexure_number: string | null;
-        start_date: string | null;
-        end_date: string | null;
-      }>(
+      query<InvoicePdfItemRow>(
         `
           SELECT
             ii.id,
@@ -478,17 +518,34 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
             ii.sgst_amount::text,
             ii.igst_amount::text,
             ii.total_amount::text,
+            ii.annexure_id,
             a.annexure_number,
             a.start_date::text,
-            a.end_date::text
+            a.end_date::text,
+            a.start_km::text,
+            a.end_km::text,
+            a.total_km::text,
+            a.total_hours::text,
+            a.night_halts,
+            a.calculated_amount::text,
+            a.is_billed AS annexure_is_billed,
+            parent_t.trip_number AS parent_trip_number,
+            child_t.trip_number AS child_trip_number,
+            v.vehicle_number AS annexure_vehicle_number,
+            COALESCE(vc.name, v.vehicle_type::text) AS annexure_vehicle_type_label,
+            vc.name AS vehicle_category_name
           FROM invoice_items ii
           LEFT JOIN annexures a ON a.id = ii.annexure_id
+          LEFT JOIN trips parent_t ON parent_t.id = a.parent_trip_id
+          LEFT JOIN trips child_t ON child_t.id = a.trip_id
+          LEFT JOIN vehicles v ON v.id = parent_t.vehicle_id
+          LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
           WHERE ii.invoice_id = $1
           ORDER BY ii.created_at ASC
         `,
-        [String(req.params.id)]
+        [invoiceId]
       ),
-      loadInvoiceTaxComponents(String(req.params.id)),
+      loadInvoiceTaxComponents(invoiceId),
       getGtInvoiceSettings({ query }),
     ]);
 
@@ -498,69 +555,132 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
       return;
     }
 
-    const hasGtSnapshot = Boolean(invoice.duty_slip_number || invoice.booking_date || invoice.duty_type_label || itemResult.rows.some((item) => item.annexure_number));
+    const effectiveMode: InvoicePdfMode = requestedMode ? (requestedMode as InvoicePdfMode) : invoice.invoice_pdf_mode;
+    const hasAnnexureItems = itemResult.rows.some((item) => Boolean(item.annexure_id));
+    const hasGtSnapshot = Boolean(
+      invoice.duty_slip_number ||
+      invoice.booking_date ||
+      invoice.duty_type_label ||
+      itemResult.rows.some((item) => item.annexure_number)
+    );
 
-    const pdf = hasGtSnapshot
-      ? await buildGtInvoicePdf(
-          {
-            invoice_number: invoice.invoice_number,
-            invoice_date: invoice.invoice_date,
-            booking_date: invoice.booking_date,
-            duty_type_label: invoice.duty_type_label,
-            nature_of_journey: invoice.nature_of_journey,
-            vehicle_number: invoice.vehicle_number,
-            vehicle_type_label: invoice.vehicle_type_label,
-            duty_slip_number: invoice.duty_slip_number,
-            total_km: toNumber(invoice.total_km),
-            total_hours: toNumber(invoice.total_hours),
-            payment_terms_days: invoice.payment_terms_days,
-            interest_note: invoice.interest_note,
-            subtotal: Number(invoice.subtotal),
-            cgst_amount: Number(invoice.cgst_amount),
-            sgst_amount: Number(invoice.sgst_amount),
-            igst_amount: Number(invoice.igst_amount),
-            total_amount: Number(invoice.total_amount),
-            customer_name: invoice.customer_name,
-            billing_address: invoice.billing_address,
-            customer_gstin: invoice.customer_gstin,
-            remarks: invoice.remarks,
-            tax_components: taxData.tax_components,
-            items: itemResult.rows.map((item) => ({
-              description: item.description,
-              amount: Number(item.amount),
-              cgst_amount: Number(item.cgst_amount),
-              sgst_amount: Number(item.sgst_amount),
-              igst_amount: Number(item.igst_amount),
-              total_amount: Number(item.total_amount),
+    const gtInvoiceData = {
+      invoice_number: invoice.invoice_number,
+      invoice_date: invoice.invoice_date,
+      booking_date: invoice.booking_date,
+      duty_type_label: invoice.duty_type_label,
+      nature_of_journey: invoice.nature_of_journey,
+      vehicle_number: invoice.vehicle_number,
+      vehicle_type_label: invoice.vehicle_type_label,
+      duty_slip_number: invoice.duty_slip_number,
+      total_km: toNumber(invoice.total_km),
+      total_hours: toNumber(invoice.total_hours),
+      payment_terms_days: invoice.payment_terms_days,
+      interest_note: invoice.interest_note,
+      subtotal: Number(invoice.subtotal),
+      cgst_amount: Number(invoice.cgst_amount),
+      sgst_amount: Number(invoice.sgst_amount),
+      igst_amount: Number(invoice.igst_amount),
+      total_amount: Number(invoice.total_amount),
+      customer_name: invoice.customer_name,
+      billing_address: invoice.billing_address,
+      customer_gstin: invoice.customer_gstin,
+      remarks: invoice.remarks,
+      tax_components: taxData.tax_components,
+      items: itemResult.rows.map((item) => ({
+        description: item.description,
+        amount: Number(item.amount),
+        cgst_amount: Number(item.cgst_amount),
+        sgst_amount: Number(item.sgst_amount),
+        igst_amount: Number(item.igst_amount),
+        total_amount: Number(item.total_amount),
+        annexure_number: item.annexure_number,
+        start_date: item.start_date,
+        end_date: item.end_date,
+      })),
+    };
+
+    let pdf: Buffer;
+    if (hasGtSnapshot) {
+      if (effectiveMode === 'invoice_with_annexures' && hasAnnexureItems) {
+        const annexures: AnnexurePdfData[] = itemResult.rows
+          .filter((item) => Boolean(item.annexure_id))
+          .map((item, index) => {
+            if (
+              !item.annexure_number ||
+              !item.start_date ||
+              !item.end_date ||
+              item.start_km == null ||
+              item.end_km == null ||
+              item.total_km == null ||
+              item.total_hours == null ||
+              item.night_halts == null ||
+              item.calculated_amount == null ||
+              !item.parent_trip_number ||
+              !item.child_trip_number ||
+              !item.annexure_vehicle_number ||
+              !item.annexure_vehicle_type_label
+            ) {
+              throw new Error(`Missing annexure PDF data for appended annexure #${index + 1}.`);
+            }
+
+            return {
               annexure_number: item.annexure_number,
+              parent_trip_number: item.parent_trip_number,
+              child_trip_number: item.child_trip_number,
+              customer_name: invoice.customer_name,
+              vehicle_number: item.annexure_vehicle_number,
+              vehicle_type_label: item.annexure_vehicle_type_label,
+              vehicle_category_name: item.vehicle_category_name,
               start_date: item.start_date,
               end_date: item.end_date,
-            })),
-          },
-          settings as unknown as Record<string, string>
-        )
-      : await buildInvoicePdf(
-          {
-            ...invoice,
-            subtotal: Number(invoice.subtotal),
-            cgst_amount: Number(invoice.cgst_amount),
-            sgst_amount: Number(invoice.sgst_amount),
-            igst_amount: Number(invoice.igst_amount),
-            total_amount: Number(invoice.total_amount),
-            tax_components: taxData.tax_components,
-            items: itemResult.rows.map((item) => ({
-              ...item,
-              quantity: Number(item.quantity),
-              rate: Number(item.rate),
-              amount: Number(item.amount),
-              cgst_amount: Number(item.cgst_amount),
-              sgst_amount: Number(item.sgst_amount),
-              igst_amount: Number(item.igst_amount),
-              total_amount: Number(item.total_amount),
-            })),
-          },
+              start_km: Number(item.start_km),
+              end_km: Number(item.end_km),
+              total_km: Number(item.total_km),
+              total_hours: Number(item.total_hours),
+              night_halts: item.night_halts,
+              calculated_amount: Number(item.calculated_amount),
+              is_billed: item.annexure_is_billed ?? true,
+              invoice_number: invoice.invoice_number,
+            };
+          });
+
+        pdf = await buildGtInvoiceWithAnnexuresPdf(
+          gtInvoiceData,
+          annexures,
           settings as unknown as Record<string, string>
         );
+      } else {
+        pdf = await buildGtInvoicePdf(
+          gtInvoiceData,
+          settings as unknown as Record<string, string>
+        );
+      }
+    } else {
+      // Non-GT/legacy invoices ignore the annexure PDF mode and continue using the base invoice builder.
+      pdf = await buildInvoicePdf(
+        {
+          ...invoice,
+          subtotal: Number(invoice.subtotal),
+          cgst_amount: Number(invoice.cgst_amount),
+          sgst_amount: Number(invoice.sgst_amount),
+          igst_amount: Number(invoice.igst_amount),
+          total_amount: Number(invoice.total_amount),
+          tax_components: taxData.tax_components,
+          items: itemResult.rows.map((item) => ({
+            ...item,
+            quantity: Number(item.quantity),
+            rate: Number(item.rate),
+            amount: Number(item.amount),
+            cgst_amount: Number(item.cgst_amount),
+            sgst_amount: Number(item.sgst_amount),
+            igst_amount: Number(item.igst_amount),
+            total_amount: Number(item.total_amount),
+          })),
+        },
+        settings as unknown as Record<string, string>
+      );
+    }
 
     const fileName = `${invoice.invoice_number.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
@@ -932,9 +1052,6 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
-
-
-
 
 
 

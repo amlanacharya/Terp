@@ -1,4 +1,4 @@
-﻿BEGIN;
+BEGIN;
 
 -- ---------------------------------------------------------------------------
 -- GT demo users
@@ -93,15 +93,16 @@ INSERT INTO customers (
   default_duty_start_time,
   default_duty_end_time,
   default_duty_hours,
+  invoice_pdf_mode,
   is_active
 )
 VALUES
-  ('20000000-0000-0000-0000-000000000001', 'GT-CUST-RBI', 'RBI Bhubaneswar Office', 'Prakash Mishra', '+91-9123456780', 'accounts.rbi@gtdemo.local', 'RBI Campus, Sachivalaya Marg', 'Bhubaneswar', 'Odisha', '751001', '21AABCU9603R1ZP', 500000, 30, '08:00', '20:00', 12, true),
-  ('20000000-0000-0000-0000-000000000002', 'GT-CUST-TSM', 'TSM Logistics Hub', 'Ritesh Parida', '+91-9234567801', 'billing.tsm@gtdemo.local', 'TSM Site Office', 'Talcher', 'Odisha', '759100', '21AACCT2104M1Z5', 350000, 21, '08:00', '18:00', 10, true),
-  ('20000000-0000-0000-0000-000000000003', 'GT-CUST-UNIT4', 'UNIT-4 Secretariat', 'Ananya Das', '+91-9234567802', 'admin.unit4@gtdemo.local', 'Unit-4 Administrative Complex', 'Bhubaneswar', 'Odisha', '751001', '21AACCU3410D1Z2', 400000, 21, '09:00', '17:00', 8, true),
-  ('20000000-0000-0000-0000-000000000004', 'GT-CUST-NTPC', 'NTPC Western Region', 'Kunal Deshmukh', '+91-9234567803', 'billing.ntpc@gtdemo.local', 'NTPC Office, Andheri East', 'Mumbai', 'Maharashtra', '400059', '27AADCS0472N1ZO', 800000, 45, '06:00', '18:00', 12, true),
-  ('20000000-0000-0000-0000-000000000005', 'GT-CUST-IFFCO', 'IFFCO Paradeep Operations', 'Subhash Sahoo', '+91-9234567804', 'accounts.iffco@gtdemo.local', 'IFFCO Township', 'Paradeep', 'Odisha', '754142', '21AAACI1760F1ZO', 650000, 30, '07:00', '19:00', 12, true),
-  ('20000000-0000-0000-0000-000000000006', 'GT-CUST-MCL', 'MCL Mining Division', 'Deepak Bhoi', '+91-9234567805', 'billing.mcl@gtdemo.local', 'MCL Area Office', 'Sambalpur', 'Odisha', '768001', '21AACCM4400K1Z7', 550000, 21, '06:00', '18:00', 12, true)
+  ('20000000-0000-0000-0000-000000000001', 'GT-CUST-RBI', 'RBI Bhubaneswar Office', 'Prakash Mishra', '+91-9123456780', 'accounts.rbi@gtdemo.local', 'RBI Campus, Sachivalaya Marg', 'Bhubaneswar', 'Odisha', '751001', '21AABCU9603R1ZP', 500000, 30, '08:00', '20:00', 12, 'invoice_with_annexures', true),
+  ('20000000-0000-0000-0000-000000000002', 'GT-CUST-TSM', 'TSM Logistics Hub', 'Ritesh Parida', '+91-9234567801', 'billing.tsm@gtdemo.local', 'TSM Site Office', 'Talcher', 'Odisha', '759100', '21AACCT2104M1Z5', 350000, 21, '08:00', '18:00', 10, 'invoice_with_annexures', true),
+  ('20000000-0000-0000-0000-000000000003', 'GT-CUST-UNIT4', 'UNIT-4 Secretariat', 'Ananya Das', '+91-9234567802', 'admin.unit4@gtdemo.local', 'Unit-4 Administrative Complex', 'Bhubaneswar', 'Odisha', '751001', '21AACCU3410D1Z2', 400000, 21, '09:00', '17:00', 8, 'invoice_with_annexures', true),
+  ('20000000-0000-0000-0000-000000000004', 'GT-CUST-NTPC', 'NTPC Western Region', 'Kunal Deshmukh', '+91-9234567803', 'billing.ntpc@gtdemo.local', 'NTPC Office, Andheri East', 'Mumbai', 'Maharashtra', '400059', '27AADCS0472N1ZO', 800000, 45, '06:00', '18:00', 12, 'invoice_with_annexures', true),
+  ('20000000-0000-0000-0000-000000000005', 'GT-CUST-IFFCO', 'IFFCO Paradeep Operations', 'Subhash Sahoo', '+91-9234567804', 'accounts.iffco@gtdemo.local', 'IFFCO Township', 'Paradeep', 'Odisha', '754142', '21AAACI1760F1ZO', 650000, 30, '07:00', '19:00', 12, 'invoice_with_annexures', true),
+  ('20000000-0000-0000-0000-000000000006', 'GT-CUST-MCL', 'MCL Mining Division', 'Deepak Bhoi', '+91-9234567805', 'billing.mcl@gtdemo.local', 'MCL Area Office', 'Sambalpur', 'Odisha', '768001', '21AACCM4400K1Z7', 550000, 21, '06:00', '18:00', 12, 'invoice_with_annexures', true)
 ON CONFLICT (customer_code) DO UPDATE
 SET
   name = EXCLUDED.name,
@@ -118,6 +119,7 @@ SET
   default_duty_start_time = EXCLUDED.default_duty_start_time,
   default_duty_end_time = EXCLUDED.default_duty_end_time,
   default_duty_hours = EXCLUDED.default_duty_hours,
+  invoice_pdf_mode = EXCLUDED.invoice_pdf_mode,
   is_active = EXCLUDED.is_active,
   updated_at = now();
 
@@ -1010,3 +1012,4 @@ SET
   updated_at = now();
 
 COMMIT;
+

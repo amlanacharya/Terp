@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS customers (
   default_duty_start_time time,
   default_duty_end_time time,
   default_duty_hours numeric(5,2) CHECK (default_duty_hours IS NULL OR default_duty_hours >= 0),
+  invoice_pdf_mode text NOT NULL DEFAULT 'invoice_with_annexures'
+    CHECK (invoice_pdf_mode IN ('invoice_only', 'invoice_with_annexures')),
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -692,6 +694,7 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
+
 
 
 

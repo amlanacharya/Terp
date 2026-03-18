@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Customer } from '../../lib/types';
+import { Customer, InvoicePdfMode } from '../../lib/types';
 
 interface CustomerFormState {
   customer_code: string;
@@ -17,6 +17,7 @@ interface CustomerFormState {
   default_duty_start_time: string;
   default_duty_end_time: string;
   default_duty_hours: string;
+  invoice_pdf_mode: InvoicePdfMode;
   is_active: boolean;
 }
 
@@ -33,6 +34,7 @@ const initialForm: CustomerFormState = {
   default_duty_start_time: '',
   default_duty_end_time: '',
   default_duty_hours: '',
+  invoice_pdf_mode: 'invoice_with_annexures',
   is_active: true,
 };
 
@@ -42,6 +44,10 @@ function toTimeInputValue(value: string | null | undefined): string {
 
 function formatDutyTime(value: string | null | undefined): string {
   return value ? value.slice(0, 5) : '-';
+}
+
+function formatInvoicePdfMode(value: InvoicePdfMode): string {
+  return value === 'invoice_with_annexures' ? 'Invoice + Annexures' : 'Invoice Only';
 }
 
 export function CustomerList() {
@@ -88,6 +94,7 @@ export function CustomerList() {
       default_duty_start_time: toTimeInputValue(customer.default_duty_start_time),
       default_duty_end_time: toTimeInputValue(customer.default_duty_end_time),
       default_duty_hours: customer.default_duty_hours == null ? '' : String(customer.default_duty_hours),
+      invoice_pdf_mode: customer.invoice_pdf_mode,
       is_active: customer.is_active,
     });
   }
@@ -207,6 +214,13 @@ export function CustomerList() {
             Default Duty End Time
             <input type="time" value={formState.default_duty_end_time} onChange={(event) => setFormState((current) => ({ ...current, default_duty_end_time: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
+          <label className="text-sm font-semibold text-slate-800">
+            Annexure Invoice PDF
+            <select value={formState.invoice_pdf_mode} onChange={(event) => setFormState((current) => ({ ...current, invoice_pdf_mode: event.target.value as InvoicePdfMode }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+              <option value="invoice_with_annexures">Invoice + Annexures</option>
+              <option value="invoice_only">Invoice Only</option>
+            </select>
+          </label>
           <div className="flex gap-3 lg:col-span-2">
             <label className="flex-1 text-sm font-semibold text-slate-800">
               Default Duty Hours
@@ -228,6 +242,7 @@ export function CustomerList() {
               <th className="px-4 py-3">Credit Limit</th>
               <th className="px-4 py-3">Credit Days</th>
               <th className="px-4 py-3">Duty Defaults</th>
+              <th className="px-4 py-3">Invoice PDF</th>
               {canManage ? <th className="px-4 py-3">Action</th> : null}
             </tr>
           </thead>
@@ -255,6 +270,7 @@ export function CustomerList() {
                     {customer.default_duty_hours == null ? 'Hours not set' : `${customer.default_duty_hours} hrs`}
                   </div>
                 </td>
+                <td className="px-4 py-3">{formatInvoicePdfMode(customer.invoice_pdf_mode)}</td>
                 {canManage ? (
                   <td className="px-4 py-3">
                     <button type="button" onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>

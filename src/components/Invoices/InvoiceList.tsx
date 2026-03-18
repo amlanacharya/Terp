@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Customer, Invoice, TaxPreviewResponse } from '../../lib/types';
+import { Customer, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
+
+type InvoicePdfDownloadMode = 'default' | InvoicePdfMode;
 
 interface InvoiceFormState {
   invoice_number: string;
@@ -85,6 +87,8 @@ export function InvoiceList() {
   const [writeOffModal, setWriteOffModal] = useState<Invoice | null>(null);
   const [writeOffReason, setWriteOffReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [openPdfMenuId, setOpenPdfMenuId] = useState<string | null>(null);
+  const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const canVoid = profile ? ['admin', 'manager'].includes(profile.role) : false;
@@ -303,10 +307,17 @@ export function InvoiceList() {
     }
   }
 
-  async function handleDownloadPdf(invoice: Invoice) {
+  async function handleDownloadPdf(invoice: Invoice, mode: InvoicePdfDownloadMode = 'default') {
+    setPdfLoadingId(invoice.id);
+    setOpenPdfMenuId(null);
     try {
       setError('');
-      const blob = await downloadBlob(`/invoices/${invoice.id}/pdf`);
+      const params = new URLSearchParams();
+      if (mode !== 'default') {
+        params.set('mode', mode);
+      }
+      const suffix = params.toString();
+      const blob = await downloadBlob(`/invoices/${invoice.id}/pdf${suffix ? `?${suffix}` : ''}`);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -317,6 +328,8 @@ export function InvoiceList() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to download invoice PDF.');
+    } finally {
+      setPdfLoadingId((current) => (current === invoice.id ? null : current));
     }
   }
 
@@ -468,6 +481,8 @@ export function InvoiceList() {
               const canVoidInvoice = canVoid && isActive && invoice.invoice_type === 'invoice';
               const canWriteOffInvoice = canWriteOff && isActive && invoice.invoice_type === 'invoice'
                 && ['pending', 'partial', 'overdue'].includes(invoice.payment_status);
+              const hasAnnexurePdfOptions = Number(invoice.annexure_item_count ?? 0) > 0;
+              const pdfBusy = actionLoading || pdfLoadingId === invoice.id;
               const rowClass = !isActive ? 'opacity-60' : '';
 
               return (
@@ -489,9 +504,35 @@ export function InvoiceList() {
                   </td>
                   <td className="px-4 py-3">{formatCurrency(invoice.total_amount)}</td>
                   <td className="px-4 py-3">
-                    <button type="button" onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                      PDF
-                    </button>
+                    {hasAnnexurePdfOptions ? (
+                      <div className="relative inline-block text-left">
+                        <button
+                          type="button"
+                          disabled={pdfBusy}
+                          onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
+                          className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                        >
+                          {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                        </button>
+                        {openPdfMenuId === invoice.id ? (
+                          <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="block w-full px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                              Customer Default
+                            </button>
+                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_only')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                              Invoice Only
+                            </button>
+                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_with_annexures')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                              Invoice + Annexures
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
+                        {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                      </button>
+                    )}
                   </td>
                   {canManage ? (
                     <td className="px-4 py-3">
@@ -619,3 +660,6 @@ export function InvoiceList() {
     </section>
   );
 }
+
+
+

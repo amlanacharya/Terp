@@ -1,4 +1,4 @@
-﻿import PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
@@ -35,14 +35,6 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('en-IN');
 }
 
-function ensureSpace(doc: PdfDoc, neededHeight: number): void {
-  if (doc.y + neededHeight <= doc.page.height - doc.page.margins.bottom) {
-    return;
-  }
-
-  doc.addPage();
-}
-
 function drawHeader(doc: PdfDoc, title: string, settings: Record<string, string>): void {
   const left = doc.page.margins.left;
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -65,7 +57,6 @@ function drawHeader(doc: PdfDoc, title: string, settings: Record<string, string>
 }
 
 function drawSectionTitle(doc: PdfDoc, title: string): void {
-  ensureSpace(doc, 30);
   const x = doc.page.margins.left;
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const y = doc.y;
@@ -107,7 +98,7 @@ function drawInfoBox(
   return contentHeight;
 }
 
-export function buildAnnexurePdf(data: AnnexurePdfData, settings: Record<string, string>): Promise<Buffer> {
+function createPdfBuffer(render: (doc: PdfDoc) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
@@ -116,46 +107,55 @@ export function buildAnnexurePdf(data: AnnexurePdfData, settings: Record<string,
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    drawHeader(doc, 'ANNEXURE', settings);
-
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const left = doc.page.margins.left;
-    const gap = 14;
-    const boxWidth = (pageWidth - gap) / 2;
-    const top = doc.y;
-
-    const leftHeight = drawInfoBox(doc, left, top, boxWidth, 'Annexure Identity', [
-      { label: 'Annexure Number', value: data.annexure_number },
-      { label: 'Parent Duty Slip', value: data.parent_trip_number },
-      { label: 'Child Duty Slip', value: data.child_trip_number },
-      { label: 'Customer', value: data.customer_name },
-    ]);
-    const rightHeight = drawInfoBox(doc, left + boxWidth + gap, top, boxWidth, 'Vehicle And Billing', [
-      { label: 'Vehicle Number', value: data.vehicle_number },
-      { label: 'Vehicle Type', value: data.vehicle_type_label },
-      { label: 'GT Category', value: data.vehicle_category_name || '-' },
-      { label: 'Billed', value: data.is_billed ? 'Yes' : 'No' },
-      { label: 'Invoice Number', value: data.invoice_number || '-' },
-    ]);
-    doc.y = top + Math.max(leftHeight, rightHeight) + 16;
-
-    drawSectionTitle(doc, 'Usage Snapshot');
-    const usageTop = doc.y;
-    const usageHeight = drawInfoBox(doc, left, usageTop, pageWidth, 'Annexure Totals', [
-      { label: 'Date Range', value: `${formatDate(data.start_date)} to ${formatDate(data.end_date)}` },
-      { label: 'Start KM', value: String(Number(data.start_km).toFixed(2)) },
-      { label: 'End KM', value: String(Number(data.end_km).toFixed(2)) },
-      { label: 'Total KM', value: `${Number(data.total_km).toFixed(2)} km` },
-      { label: 'Total Hours', value: `${Number(data.total_hours).toFixed(2)} hrs` },
-      { label: 'Night Halts', value: String(data.night_halts) },
-      { label: 'Calculated Amount', value: formatCurrency(data.calculated_amount) },
-    ]);
-    doc.y = usageTop + usageHeight + 18;
-
-    ensureSpace(doc, 40);
-    doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated annexure', {
-      align: 'center',
-    });
+    render(doc);
     doc.end();
+  });
+}
+
+export function renderAnnexureContent(doc: PdfDoc, data: AnnexurePdfData, settings: Record<string, string>): void {
+  drawHeader(doc, 'ANNEXURE', settings);
+
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const left = doc.page.margins.left;
+  const gap = 14;
+  const boxWidth = (pageWidth - gap) / 2;
+  const top = doc.y;
+
+  const leftHeight = drawInfoBox(doc, left, top, boxWidth, 'Annexure Identity', [
+    { label: 'Annexure Number', value: data.annexure_number },
+    { label: 'Parent Duty Slip', value: data.parent_trip_number },
+    { label: 'Child Duty Slip', value: data.child_trip_number },
+    { label: 'Customer', value: data.customer_name },
+  ]);
+  const rightHeight = drawInfoBox(doc, left + boxWidth + gap, top, boxWidth, 'Vehicle And Billing', [
+    { label: 'Vehicle Number', value: data.vehicle_number },
+    { label: 'Vehicle Type', value: data.vehicle_type_label },
+    { label: 'GT Category', value: data.vehicle_category_name || '-' },
+    { label: 'Billed', value: data.is_billed ? 'Yes' : 'No' },
+    { label: 'Invoice Number', value: data.invoice_number || '-' },
+  ]);
+  doc.y = top + Math.max(leftHeight, rightHeight) + 16;
+
+  drawSectionTitle(doc, 'Usage Snapshot');
+  const usageTop = doc.y;
+  const usageHeight = drawInfoBox(doc, left, usageTop, pageWidth, 'Annexure Totals', [
+    { label: 'Date Range', value: `${formatDate(data.start_date)} to ${formatDate(data.end_date)}` },
+    { label: 'Start KM', value: String(Number(data.start_km).toFixed(2)) },
+    { label: 'End KM', value: String(Number(data.end_km).toFixed(2)) },
+    { label: 'Total KM', value: `${Number(data.total_km).toFixed(2)} km` },
+    { label: 'Total Hours', value: `${Number(data.total_hours).toFixed(2)} hrs` },
+    { label: 'Night Halts', value: String(data.night_halts) },
+    { label: 'Calculated Amount', value: formatCurrency(data.calculated_amount) },
+  ]);
+  doc.y = usageTop + usageHeight + 18;
+
+  doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated annexure', {
+    align: 'center',
+  });
+}
+
+export function buildAnnexurePdf(data: AnnexurePdfData, settings: Record<string, string>): Promise<Buffer> {
+  return createPdfBuffer((doc) => {
+    renderAnnexureContent(doc, data, settings);
   });
 }

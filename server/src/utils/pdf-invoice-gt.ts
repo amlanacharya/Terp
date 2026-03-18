@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { AnnexurePdfData, renderAnnexureContent } from './pdf-annexure';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
@@ -152,6 +153,7 @@ function drawItemTable(doc: PdfDoc, items: GtInvoicePdfItem[]): void {
   const startX = doc.page.margins.left;
   const widths = [26, 220, 90, 80, 90];
   const headers = ['#', 'Description', 'Annexure', 'Base', 'Total'];
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
   let y = drawTableHeader(doc, headers, widths, startX, doc.y);
 
   items.forEach((item, index) => {
@@ -172,7 +174,10 @@ function drawItemTable(doc: PdfDoc, items: GtInvoicePdfItem[]): void {
       doc.heightOfString(values[2], { width: widths[2] - 8 }) + 10
     );
 
-    ensureSpace(doc, rowHeight + 20);
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawTableHeader(doc, headers, widths, startX, doc.y);
+    }
 
     let x = startX;
     values.forEach((value, cellIndex) => {
@@ -236,6 +241,20 @@ function drawTotalsBox(doc: PdfDoc, data: GtInvoicePdfData): void {
   doc.y = y + height + 12;
 }
 
+function createPdfBuffer(render: (doc: PdfDoc) => void): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    render(doc);
+    doc.end();
+  });
+}
+
 export function numberToWords(value: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -270,91 +289,98 @@ export function numberToWords(value: number): string {
   return `${rupeeWords} Rupees${paiseWords} Only`;
 }
 
-export function buildGtInvoicePdf(data: GtInvoicePdfData, settings: Record<string, string>): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
-    const chunks: Buffer[] = [];
+export function renderGtInvoiceContent(doc: PdfDoc, data: GtInvoicePdfData, settings: Record<string, string>): void {
+  drawHeader(doc, settings);
 
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const left = doc.page.margins.left;
+  const gap = 14;
+  const boxWidth = (pageWidth - gap) / 2;
+  const top = doc.y;
 
-    drawHeader(doc, settings);
+  const leftHeight = drawInfoBox(doc, left, top, boxWidth, 'Bill To', [
+    { label: 'Customer', value: data.customer_name },
+    { label: 'Billing Address', value: data.billing_address || '-' },
+    { label: 'Customer GSTIN', value: data.customer_gstin || '-' },
+    { label: 'Booking Date (BD)', value: formatDate(data.booking_date) },
+    { label: 'Duty Type (DT)', value: data.duty_type_label || '-' },
+  ]);
+  const rightHeight = drawInfoBox(doc, left + boxWidth + gap, top, boxWidth, 'Invoice Snapshot', [
+    { label: 'Invoice Number', value: data.invoice_number },
+    { label: 'Invoice Date', value: formatDate(data.invoice_date) },
+    { label: 'Duty Slip Number', value: data.duty_slip_number || '-' },
+    { label: 'Nature Of Journey', value: data.nature_of_journey || '-' },
+    { label: 'Vehicle Number', value: data.vehicle_number || '-' },
+    { label: 'Vehicle Type', value: data.vehicle_type_label || '-' },
+    { label: 'Total KM / Hours', value: `${data.total_km == null ? '-' : data.total_km.toFixed(2)} km / ${data.total_hours == null ? '-' : data.total_hours.toFixed(2)} hrs` },
+  ]);
+  doc.y = top + Math.max(leftHeight, rightHeight) + 16;
 
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const left = doc.page.margins.left;
-    const gap = 14;
-    const boxWidth = (pageWidth - gap) / 2;
-    const top = doc.y;
+  drawSectionTitle(doc, 'Invoice Schedule');
+  drawItemTable(doc, data.items);
 
-    const leftHeight = drawInfoBox(doc, left, top, boxWidth, 'Bill To', [
-      { label: 'Customer', value: data.customer_name },
-      { label: 'Billing Address', value: data.billing_address || '-' },
-      { label: 'Customer GSTIN', value: data.customer_gstin || '-' },
-      { label: 'Booking Date (BD)', value: formatDate(data.booking_date) },
-      { label: 'Duty Type (DT)', value: data.duty_type_label || '-' },
+  drawTotalsBox(doc, data);
+
+  drawSectionTitle(doc, 'Amount In Words');
+  ensureSpace(doc, 52);
+  doc.roundedRect(left, doc.y, pageWidth, 44, 8).stroke('#cbd5e1');
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text(numberToWords(data.total_amount), left + 12, doc.y + 14, {
+    width: pageWidth - 24,
+  });
+  doc.y += 58;
+
+  drawSectionTitle(doc, 'Notes');
+  ensureSpace(doc, 72);
+  doc.roundedRect(left, doc.y, pageWidth, 64, 8).stroke('#cbd5e1');
+  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(`Payment terms: ${data.payment_terms_days ?? 0} day(s)`, left + 12, doc.y + 12, {
+    width: pageWidth - 24,
+  });
+  doc.text(`Interest note: ${data.interest_note || '-'}`, left + 12, doc.y + 30, {
+    width: pageWidth - 24,
+  });
+  if (data.remarks) {
+    doc.text(`Remarks: ${data.remarks}`, left + 12, doc.y + 48, {
+      width: pageWidth - 24,
+    });
+    doc.y += 80;
+  } else {
+    doc.y += 70;
+  }
+
+  if (settings.bank_name || settings.bank_account || settings.bank_ifsc) {
+    drawSectionTitle(doc, 'Bank Details');
+    const bankTop = doc.y;
+    drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
+      { label: 'Bank Name', value: settings.bank_name || '-' },
+      { label: 'Account Number', value: settings.bank_account || '-' },
+      { label: 'IFSC Code', value: settings.bank_ifsc || '-' },
     ]);
-    const rightHeight = drawInfoBox(doc, left + boxWidth + gap, top, boxWidth, 'Invoice Snapshot', [
-      { label: 'Invoice Number', value: data.invoice_number },
-      { label: 'Invoice Date', value: formatDate(data.invoice_date) },
-      { label: 'Duty Slip Number', value: data.duty_slip_number || '-' },
-      { label: 'Nature Of Journey', value: data.nature_of_journey || '-' },
-      { label: 'Vehicle Number', value: data.vehicle_number || '-' },
-      { label: 'Vehicle Type', value: data.vehicle_type_label || '-' },
-      { label: 'Total KM / Hours', value: `${data.total_km == null ? '-' : data.total_km.toFixed(2)} km / ${data.total_hours == null ? '-' : data.total_hours.toFixed(2)} hrs` },
-    ]);
-    doc.y = top + Math.max(leftHeight, rightHeight) + 16;
+    doc.y = bankTop + 100;
+  }
 
-    drawSectionTitle(doc, 'Invoice Schedule');
-    drawItemTable(doc, data.items);
-
-    drawTotalsBox(doc, data);
-
-    drawSectionTitle(doc, 'Amount In Words');
-    ensureSpace(doc, 52);
-    doc.roundedRect(left, doc.y, pageWidth, 44, 8).stroke('#cbd5e1');
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text(numberToWords(data.total_amount), left + 12, doc.y + 14, {
-      width: pageWidth - 24,
-    });
-    doc.y += 58;
-
-    drawSectionTitle(doc, 'Notes');
-    ensureSpace(doc, 72);
-    doc.roundedRect(left, doc.y, pageWidth, 64, 8).stroke('#cbd5e1');
-    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(`Payment terms: ${data.payment_terms_days ?? 0} day(s)`, left + 12, doc.y + 12, {
-      width: pageWidth - 24,
-    });
-    doc.text(`Interest note: ${data.interest_note || '-'}`, left + 12, doc.y + 30, {
-      width: pageWidth - 24,
-    });
-    if (data.remarks) {
-      doc.text(`Remarks: ${data.remarks}`, left + 12, doc.y + 48, {
-        width: pageWidth - 24,
-      });
-      doc.y += 80;
-    } else {
-      doc.y += 70;
-    }
-
-    if (settings.bank_name || settings.bank_account || settings.bank_ifsc) {
-      drawSectionTitle(doc, 'Bank Details');
-      const bankTop = doc.y;
-      drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
-        { label: 'Bank Name', value: settings.bank_name || '-' },
-        { label: 'Account Number', value: settings.bank_account || '-' },
-        { label: 'IFSC Code', value: settings.bank_ifsc || '-' },
-      ]);
-      doc.y = bankTop + 100;
-    }
-
-    ensureSpace(doc, 40);
-    doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated GT invoice', {
-      align: 'center',
-    });
-    doc.end();
+  ensureSpace(doc, 40);
+  doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated GT invoice', {
+    align: 'center',
   });
 }
 
+export function buildGtInvoicePdf(data: GtInvoicePdfData, settings: Record<string, string>): Promise<Buffer> {
+  return createPdfBuffer((doc) => {
+    renderGtInvoiceContent(doc, data, settings);
+  });
+}
 
+export function buildGtInvoiceWithAnnexuresPdf(
+  data: GtInvoicePdfData,
+  annexures: AnnexurePdfData[],
+  settings: Record<string, string>
+): Promise<Buffer> {
+  return createPdfBuffer((doc) => {
+    renderGtInvoiceContent(doc, data, settings);
 
-
+    for (const annexure of annexures) {
+      doc.addPage();
+      renderAnnexureContent(doc, annexure, settings);
+    }
+  });
+}

@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, Vehicle } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface DriverFormState {
   driver_code: string;
@@ -40,8 +41,11 @@ export function DriverList() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [formState, setFormState] = useState<DriverFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
@@ -79,6 +83,12 @@ export function DriverList() {
     return vehicle ? vehicle.vehicle_number : vehicleId;
   }
 
+  function openCreate() {
+    setEditingId(null);
+    setFormState(initialForm);
+    setIsModalOpen(true);
+  }
+
   function startEdit(driver: Driver) {
     setEditingId(driver.id);
     setFormState({
@@ -95,11 +105,13 @@ export function DriverList() {
       ot_per_hour: driver.ot_per_hour == null ? '' : String(driver.ot_per_hour),
       is_active: driver.is_active,
     });
+    setIsModalOpen(true);
   }
 
-  function resetForm() {
+  function closeModal() {
     setEditingId(null);
     setFormState(initialForm);
+    setIsModalOpen(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -124,8 +136,8 @@ export function DriverList() {
         await api.post('/drivers', payload);
       }
 
-      resetForm();
       await loadDrivers();
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save driver.');
     } finally {
@@ -133,21 +145,24 @@ export function DriverList() {
     }
   }
 
-  async function handleDelete(driver: Driver) {
-    const confirmed = window.confirm(`Delete driver ${driver.name}?`);
-    if (!confirmed) {
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/drivers/${driver.id}`);
-      if (editingId === driver.id) {
-        resetForm();
+      await api.delete(`/drivers/${deleteTarget.id}`);
+      if (editingId === deleteTarget.id) {
+        closeModal();
       }
+      setDeleteTarget(null);
       await loadDrivers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete driver.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -161,13 +176,91 @@ export function DriverList() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Drivers</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Driver roster</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Drivers</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Driver roster</h2>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Driver
+          </button>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <div className="overflow-x-auto rounded-3xl border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-slate-600">
+            <tr>
+              <th className="px-4 py-3">Code</th>
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">Location</th>
+              <th className="px-4 py-3">Default Vehicle</th>
+              <th className="px-4 py-3">Night Halt</th>
+              <th className="px-4 py-3">OT/Hour</th>
+              <th className="px-4 py-3">Expiry</th>
+              <th className="px-4 py-3">Status</th>
+              {canManage ? <th className="px-4 py-3">Action</th> : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {drivers.map((driver) => {
+              const rowBusy = deletingId === driver.id;
+
+              return (
+                <tr key={driver.id}>
+                  <td className="px-4 py-3 font-medium text-slate-900">{driver.driver_code}</td>
+                  <td className="px-4 py-3">{driver.name}</td>
+                  <td className="px-4 py-3">{driver.phone}</td>
+                  <td className="px-4 py-3">
+                    {driver.city ?? '-'}, {driver.state ?? '-'}
+                  </td>
+                  <td className="px-4 py-3">{getVehicleLabel(driver.default_vehicle_id)}</td>
+                  <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : driver.night_halt_rate}</td>
+                  <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : driver.ot_per_hour}</td>
+                  <td className="px-4 py-3">{driver.license_expiry?.slice(0, 10) ?? '-'}</td>
+                  <td className="px-4 py-3">{driver.is_active ? 'Active' : 'Inactive'}</td>
+                  {canManage ? (
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        disabled={rowBusy}
+                        onClick={() => startEdit(driver)}
+                        className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={rowBusy}
+                        onClick={() => setDeleteTarget(driver)}
+                        className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={saving ? () => undefined : closeModal}
+        title={editingId ? 'Edit Driver' : 'Add Driver'}
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Driver Code
             <input
@@ -271,91 +364,47 @@ export function DriverList() {
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
-          <div className="flex gap-3 lg:col-span-2">
-            <label className="flex-1 text-sm font-semibold text-slate-800">
-              OT Per Hour
-              <input
-                value={formState.ot_per_hour}
-                onChange={(event) => setFormState((current) => ({ ...current, ot_per_hour: event.target.value }))}
-                placeholder="e.g. 150"
-                type="number"
-                min="0"
-                step="0.01"
-                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              />
-            </label>
+          <label className="text-sm font-semibold text-slate-800">
+            OT Per Hour
+            <input
+              value={formState.ot_per_hour}
+              onChange={(event) => setFormState((current) => ({ ...current, ot_per_hour: event.target.value }))}
+              placeholder="e.g. 150"
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
+            />
+          </label>
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              disabled={saving}
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
               disabled={saving}
-              className="self-end rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
+              className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
             >
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Add'}
+              {saving ? 'Saving...' : editingId ? 'Update Driver' : 'Create Driver'}
             </button>
-            {editingId ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="self-end rounded-2xl border border-slate-300 px-5 py-3 text-slate-700"
-              >
-                Cancel
-              </button>
-            ) : null}
           </div>
         </form>
-      ) : null}
-      <div className="overflow-x-auto rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
-              <th className="px-4 py-3">Code</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">Default Vehicle</th>
-              <th className="px-4 py-3">Night Halt</th>
-              <th className="px-4 py-3">OT/Hour</th>
-              <th className="px-4 py-3">Expiry</th>
-              <th className="px-4 py-3">Status</th>
-              {canManage ? <th className="px-4 py-3">Action</th> : null}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {drivers.map((driver) => (
-              <tr key={driver.id}>
-                <td className="px-4 py-3 font-medium text-slate-900">{driver.driver_code}</td>
-                <td className="px-4 py-3">{driver.name}</td>
-                <td className="px-4 py-3">{driver.phone}</td>
-                <td className="px-4 py-3">
-                  {driver.city ?? '-'}, {driver.state ?? '-'}
-                </td>
-                <td className="px-4 py-3">{getVehicleLabel(driver.default_vehicle_id)}</td>
-                <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : formatCurrency(driver.night_halt_rate)}</td>
-                <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : formatCurrency(driver.ot_per_hour)}</td>
-                <td className="px-4 py-3">{formatDate(driver.license_expiry)}</td>
-                <td className="px-4 py-3">{driver.is_active ? 'Active' : 'Inactive'}</td>
-                {canManage ? (
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(driver)}
-                      className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDelete(driver)}
-                      className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Driver"
+        message={deleteTarget ? `Delete driver ${deleteTarget.name}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
+import { ConfirmModal } from '../Layout/ConfirmModal';
 import {
   Customer,
   Driver,
@@ -170,6 +171,7 @@ export function DutySlipForm({
   const [formState, setFormState] = useState<DutySlipFormState>(() => buildFormState(trip));
   const [metricState, setMetricState] = useState<MetricFormState>(() => buildMetricFormState(trip));
   const [editingMetricId, setEditingMetricId] = useState<string | null>(null);
+  const [metricDeleteTarget, setMetricDeleteTarget] = useState<TripTravelMetric | null>(null);
   const [activeRateChart, setActiveRateChart] = useState<RateChart | null>(null);
   const [loadingRateChart, setLoadingRateChart] = useState(false);
   const [rateChartError, setRateChartError] = useState('');
@@ -297,17 +299,17 @@ export function DutySlipForm({
     setMetricState(buildMetricFormState(trip));
   }
 
-  async function handleDeleteMetric(metric: TripTravelMetric) {
-    if (!trip?.id) {
+  function handleDeleteMetric(metric: TripTravelMetric) {
+    setMetricDeleteTarget(metric);
+  }
+
+  async function handleDeleteMetricConfirm() {
+    if (!trip?.id || !metricDeleteTarget) {
       return;
     }
 
-    const confirmed = window.confirm(`Delete metric row ${metric.seq}?`);
-    if (!confirmed) {
-      return;
-    }
-
-    await onDeleteMetric(trip.id, metric.id);
+    await onDeleteMetric(trip.id, metricDeleteTarget.id);
+    setMetricDeleteTarget(null);
   }
 
   return (
@@ -403,6 +405,21 @@ export function DutySlipForm({
         {hasIncompleteMetrics ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Complete all metric rows before running calculation.</div> : null}
         {activeCalculation ? <p className="text-sm text-slate-500">Latest calculation: {formatCurrency(activeCalculation.totals.final_amount)}</p> : null}
       </div>
+
+      <ConfirmModal
+        isOpen={metricDeleteTarget !== null}
+        onClose={() => setMetricDeleteTarget(null)}
+        onConfirm={handleDeleteMetricConfirm}
+        title="Delete Metric Row"
+        message={metricDeleteTarget ? `Delete metric row ${metricDeleteTarget.seq}?` : ''}
+        confirmLabel="Delete"
+        loading={metricSaving}
+      />
     </section>
   );
 }
+
+
+
+
+

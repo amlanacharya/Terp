@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface OwnerFormState {
   code: string;
@@ -32,8 +34,11 @@ export function OwnerList() {
   const [owners, setOwners] = useState<Owner[]>([]);
   const [formState, setFormState] = useState<OwnerFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Owner | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
@@ -56,6 +61,12 @@ export function OwnerList() {
     void hydrate();
   }, []);
 
+  function openCreate() {
+    setEditingId(null);
+    setFormState(initialForm);
+    setIsModalOpen(true);
+  }
+
   function startEdit(owner: Owner) {
     setEditingId(owner.id);
     setFormState({
@@ -69,11 +80,13 @@ export function OwnerList() {
       gstin: owner.gstin ?? '',
       is_active: owner.is_active,
     });
+    setIsModalOpen(true);
   }
 
-  function resetForm() {
+  function closeModal() {
     setEditingId(null);
     setFormState(initialForm);
+    setIsModalOpen(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -98,8 +111,8 @@ export function OwnerList() {
         await api.post('/owners', payload);
       }
 
-      resetForm();
       await loadOwners();
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save vehicle owner.');
     } finally {
@@ -107,21 +120,24 @@ export function OwnerList() {
     }
   }
 
-  async function handleDelete(owner: Owner) {
-    const confirmed = window.confirm(`Delete vehicle owner ${owner.name}?`);
-    if (!confirmed) {
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/owners/${owner.id}`);
-      if (editingId === owner.id) {
-        resetForm();
+      await api.delete(`/owners/${deleteTarget.id}`);
+      if (editingId === deleteTarget.id) {
+        closeModal();
       }
+      setDeleteTarget(null);
       await loadOwners();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete vehicle owner.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -131,161 +147,139 @@ export function OwnerList() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicle Owners</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vehicle owner master</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicle Owners</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vehicle owner master</h2>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Vehicle Owner
+          </button>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        {owners.map((owner) => {
+          const rowBusy = deletingId === owner.id;
+
+          return (
+            <article key={owner.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{owner.code}</p>
+                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{owner.name}</h3>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  {owner.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              {canManage ? (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={rowBusy}
+                    onClick={() => startEdit(owner)}
+                    className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                  >
+                    Edit owner
+                  </button>
+                  <button
+                    type="button"
+                    disabled={rowBusy}
+                    onClick={() => setDeleteTarget(owner)}
+                    className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                <div>
+                  <dt className="font-medium text-slate-500">Contact</dt>
+                  <dd>{owner.contact_person ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Phone</dt>
+                  <dd>{owner.phone ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Location</dt>
+                  <dd>
+                    {owner.city ?? '-'}, {owner.state ?? '-'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">GSTIN</dt>
+                  <dd>{owner.gstin ?? '-'}</dd>
+                </div>
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={saving ? () => undefined : closeModal}
+        title={editingId ? 'Edit Vehicle Owner' : 'Add Vehicle Owner'}
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Owner Code
-            <input
-              value={formState.code}
-              onChange={(event) => setFormState((current) => ({ ...current, code: event.target.value }))}
-              placeholder="Owner code, e.g. OWN-001"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            />
+            <input value={formState.code} onChange={(event) => setFormState((current) => ({ ...current, code: event.target.value }))} placeholder="Owner code, e.g. OWN-001" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Owner Name
-            <input
-              value={formState.name}
-              onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Owner name, e.g. Sai Tours"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            />
+            <input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} placeholder="Owner name, e.g. Sai Tours" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Contact Person
-            <input
-              value={formState.contact_person}
-              onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))}
-              placeholder="Contact person, e.g. Mehul Shah"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
+            <input value={formState.contact_person} onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))} placeholder="Contact person, e.g. Mehul Shah" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Phone Number
-            <input
-              value={formState.phone}
-              onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
-              placeholder="Phone number, e.g. 9876543210"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
+            <input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number, e.g. 9876543210" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             Email
-            <input
-              value={formState.email}
-              onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-              placeholder="Email, e.g. owner@company.com"
-              type="email"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
+            <input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} placeholder="Email, e.g. owner@company.com" type="email" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             City
-            <input
-              value={formState.city}
-              onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
-              placeholder="City, e.g. Cuttack"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
+            <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City, e.g. Cuttack" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
             State
-            <input
-              value={formState.state}
-              onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))}
-              placeholder="State, e.g. Odisha"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
+            <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State, e.g. Odisha" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
-          <div className="flex gap-3">
-            <label className="flex-1 text-sm font-semibold text-slate-800">
-              GSTIN
-              <input
-                value={formState.gstin}
-                onChange={(event) => setFormState((current) => ({ ...current, gstin: event.target.value }))}
-                placeholder="GSTIN, e.g. 21ABCDE1234F1Z5"
-                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
-            >
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Add'}
-            </button>
-            {editingId ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700"
-              >
-                Cancel
-              </button>
-            ) : null}
+          <label className="text-sm font-semibold text-slate-800">
+            GSTIN
+            <input value={formState.gstin} onChange={(event) => setFormState((current) => ({ ...current, gstin: event.target.value }))} placeholder="GSTIN, e.g. 21ABCDE1234F1Z5" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Vehicle Owner' : 'Create Vehicle Owner'}</button>
           </div>
         </form>
-      ) : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {owners.map((owner) => (
-          <article key={owner.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{owner.code}</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-900">{owner.name}</h3>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {owner.is_active ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-            {canManage ? (
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => startEdit(owner)}
-                  className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
-                >
-                  Edit owner
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDelete(owner)}
-                  className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700"
-                >
-                  Delete
-                </button>
-              </div>
-            ) : null}
-            <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-              <div>
-                <dt className="font-medium text-slate-500">Contact</dt>
-                <dd>{owner.contact_person ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">Phone</dt>
-                <dd>{owner.phone ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">Location</dt>
-                <dd>
-                  {owner.city ?? '-'}, {owner.state ?? '-'}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">GSTIN</dt>
-                <dd>{owner.gstin ?? '-'}</dd>
-              </div>
-            </dl>
-          </article>
-        ))}
-      </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Vehicle Owner"
+        message={deleteTarget ? `Delete vehicle owner ${deleteTarget.name}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }

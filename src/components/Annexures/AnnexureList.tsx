@@ -1,8 +1,10 @@
-﻿import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Annexure, Trip, TripDetail } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface AnnexureListProps {
   parentTrip?: TripDetail | null;
@@ -24,9 +26,12 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [selectedAnnexureIds, setSelectedAnnexureIds] = useState<string[]>([]);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Annexure | null>(null);
   const [loading, setLoading] = useState(!embedded);
   const [saving, setSaving] = useState(false);
   const [billing, setBilling] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -150,6 +155,17 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
     [selectedMetrics]
   );
 
+  function openCreateModal() {
+    setIsCreateModalOpen(true);
+  }
+
+  function closeCreateModal() {
+    setIsCreateModalOpen(false);
+    setSelectionMode('metric_rows');
+    setSelectedMetricIds([]);
+    setAnnexureNumber('');
+  }
+
   async function handleCreateAnnexure(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedParent?.id) {
@@ -169,8 +185,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
         end_date: selectionMode === 'date_range' ? rangeEnd : undefined,
       });
       await refreshForTrip(selectedParent.id);
-      setAnnexureNumber('');
-      setSelectedMetricIds([]);
+      closeCreateModal();
       setNotice('Annexure created.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create annexure.');
@@ -179,22 +194,27 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
     }
   }
 
-  async function handleDeleteAnnexure(annexure: Annexure) {
-    if (!selectedParent?.id) {
-      return;
-    }
-    if (!window.confirm(`Delete annexure ${annexure.annexure_number}?`)) {
+  function handleDeleteAnnexure(annexure: Annexure) {
+    setDeleteTarget(annexure);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!selectedParent?.id || !deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
       setNotice('');
-      await api.delete(`/annexures/${annexure.id}`);
+      await api.delete(`/annexures/${deleteTarget.id}`);
+      setDeleteTarget(null);
       await refreshForTrip(selectedParent.id);
       setNotice('Annexure deleted.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete annexure.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -275,12 +295,24 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
           <p className="text-sm uppercase tracking-[0.22em] text-sky-600">Annexures</p>
           <h3 className="mt-2 text-2xl font-semibold text-slate-900">{title}</h3>
         </div>
-        {selectedParent ? (
-          <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-            <div>Parent Duty Slip</div>
-            <div className="font-semibold text-slate-900">{selectedParent.trip_number}</div>
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {selectedParent ? (
+            <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
+              <div>Parent Duty Slip</div>
+              <div className="font-semibold text-slate-900">{selectedParent.trip_number}</div>
+            </div>
+          ) : null}
+          {canCreate ? (
+            <button
+              type="button"
+              disabled={!selectedParent || Boolean(selectedParent.parent_trip_id)}
+              onClick={openCreateModal}
+              className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
+            >
+              Create Annexure
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
@@ -304,77 +336,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
 
       {selectedParent && !selectedParent.parent_trip_id ? (
         <>
-          {canCreate ? (
-            <form onSubmit={handleCreateAnnexure} className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="grid gap-4 lg:grid-cols-4">
-                <label className="text-sm font-semibold text-slate-800">
-                  Annexure Number
-                  <input value={annexureNumber} onChange={(event) => setAnnexureNumber(event.target.value)} placeholder={`${selectedParent.trip_number}/ANX-01`} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-                </label>
-                <label className="text-sm font-semibold text-slate-800">
-                  Selection Mode
-                  <select value={selectionMode} onChange={(event) => setSelectionMode(event.target.value as SelectionMode)} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-                    <option value="metric_rows">Metric rows</option>
-                    <option value="date_range">Date range</option>
-                  </select>
-                </label>
-                <label className="text-sm font-semibold text-slate-800">
-                  Start Date
-                  <input type="date" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} disabled={selectionMode !== 'date_range'} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100" />
-                </label>
-                <label className="text-sm font-semibold text-slate-800">
-                  End Date
-                  <input type="date" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} disabled={selectionMode !== 'date_range'} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100" />
-                </label>
-              </div>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-600">
-                    <tr>
-                      <th className="px-4 py-3">Use</th>
-                      <th className="px-4 py-3">Seq</th>
-                      <th className="px-4 py-3">Start</th>
-                      <th className="px-4 py-3">End</th>
-                      <th className="px-4 py-3">KM</th>
-                      <th className="px-4 py-3">Hours</th>
-                      <th className="px-4 py-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {selectedParent.metrics.map((metric) => {
-                      const allocated = allocatedMetricIds.has(metric.id);
-                      const withinRange = !rangeStart || !rangeEnd ? true : metric.start_date >= rangeStart && (metric.end_date ?? metric.start_date) <= rangeEnd;
-                      const checked = selectionMode === 'metric_rows' ? selectedMetricIds.includes(metric.id) : withinRange;
-                      return (
-                        <tr key={metric.id} className={allocated ? 'bg-slate-50 text-slate-400' : ''}>
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={selectionMode !== 'metric_rows' || allocated}
-                              onChange={() => toggleMetric(metric.id)}
-                            />
-                          </td>
-                          <td className="px-4 py-3 font-medium text-slate-900">{metric.seq}</td>
-                          <td className="px-4 py-3">{metric.start_date} {metric.start_time}</td>
-                          <td className="px-4 py-3">{metric.end_date ?? '-'} {metric.end_time ?? ''}</td>
-                          <td className="px-4 py-3">{metric.segment_km?.toFixed(2) ?? '-'}</td>
-                          <td className="px-4 py-3">{metric.segment_hours?.toFixed(2) ?? '-'}</td>
-                          <td className="px-4 py-3">{allocated ? 'Allocated' : metric.is_complete ? 'Available' : 'Incomplete'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-                <div>Selection preview: {selectedMetrics.length} rows, {selectedMetricTotals.totalKm.toFixed(2)} km, {selectedMetricTotals.totalHours.toFixed(2)} hrs</div>
-                <button type="submit" disabled={saving || selectedMetrics.length === 0} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Creating...' : 'Create Annexure'}</button>
-              </div>
-            </form>
-          ) : null}
 
           <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -432,6 +394,111 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
           </div>
         </>
       ) : null}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={saving ? () => undefined : closeCreateModal}
+        title="Create Annexure"
+        size="xl"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        {selectedParent ? (
+          <form onSubmit={handleCreateAnnexure} className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-4">
+              <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+                Parent Trip
+                <input value={`${selectedParent.trip_number} - ${selectedParent.customer.name}`} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal" />
+              </label>
+              <label className="text-sm font-semibold text-slate-800">
+                Start Date
+                <input type="date" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} disabled={selectionMode !== 'date_range'} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100" />
+              </label>
+              <label className="text-sm font-semibold text-slate-800">
+                End Date
+                <input type="date" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} disabled={selectionMode !== 'date_range'} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100" />
+              </label>
+              <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+                Annexure Number
+                <input value={annexureNumber} onChange={(event) => setAnnexureNumber(event.target.value)} placeholder={`${selectedParent.trip_number}/ANX-01`} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+              </label>
+              <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+                Selection Mode
+                <select value={selectionMode} onChange={(event) => setSelectionMode(event.target.value as SelectionMode)} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+                  <option value="metric_rows">Metric rows</option>
+                  <option value="date_range">Date range</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3">Use</th>
+                    <th className="px-4 py-3">Seq</th>
+                    <th className="px-4 py-3">Start</th>
+                    <th className="px-4 py-3">End</th>
+                    <th className="px-4 py-3">KM</th>
+                    <th className="px-4 py-3">Hours</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {selectedParent.metrics.map((metric) => {
+                    const allocated = allocatedMetricIds.has(metric.id);
+                    const withinRange = !rangeStart || !rangeEnd ? true : metric.start_date >= rangeStart && (metric.end_date ?? metric.start_date) <= rangeEnd;
+                    const checked = selectionMode === 'metric_rows' ? selectedMetricIds.includes(metric.id) : withinRange;
+                    return (
+                      <tr key={metric.id} className={allocated ? 'bg-slate-50 text-slate-400' : ''}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={selectionMode !== 'metric_rows' || allocated}
+                            onChange={() => toggleMetric(metric.id)}
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{metric.seq}</td>
+                        <td className="px-4 py-3">{metric.start_date} {metric.start_time}</td>
+                        <td className="px-4 py-3">{metric.end_date ?? '-'} {metric.end_time ?? ''}</td>
+                        <td className="px-4 py-3">{metric.segment_km?.toFixed(2) ?? '-'}</td>
+                        <td className="px-4 py-3">{metric.segment_hours?.toFixed(2) ?? '-'}</td>
+                        <td className="px-4 py-3">{allocated ? 'Allocated' : metric.is_complete ? 'Available' : 'Incomplete'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+              <div>Selection preview: {selectedMetrics.length} rows, {selectedMetricTotals.totalKm.toFixed(2)} km, {selectedMetricTotals.totalHours.toFixed(2)} hrs</div>
+              <div className="flex gap-3">
+                <button type="button" onClick={closeCreateModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
+                <button type="submit" disabled={saving || selectedMetrics.length === 0} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Creating...' : 'Create Annexure'}</button>
+              </div>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Annexure"
+        message={deleteTarget ? `Delete annexure ${deleteTarget.annexure_number}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }
+
+
+
+
+
+
+
+

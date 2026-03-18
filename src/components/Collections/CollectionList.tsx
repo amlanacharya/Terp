@@ -3,6 +3,8 @@ import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Collection, Invoice } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface CollectionFormState {
   collection_number: string;
@@ -29,8 +31,11 @@ export function CollectionList() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [formState, setFormState] = useState<CollectionFormState>(initialForm);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Collection | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
@@ -58,6 +63,16 @@ export function CollectionList() {
     void hydrate();
   }, []);
 
+  function openCreate() {
+    setFormState(initialForm);
+    setIsModalOpen(true);
+  }
+
+  function closeModal() {
+    setFormState(initialForm);
+    setIsModalOpen(false);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -70,8 +85,8 @@ export function CollectionList() {
         reference_number: formState.reference_number || null,
         bank_name: formState.bank_name || null,
       });
-      setFormState(initialForm);
       await loadCollections();
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to record collection.');
     } finally {
@@ -79,18 +94,21 @@ export function CollectionList() {
     }
   }
 
-  async function handleDelete(collection: Collection) {
-    const confirmed = window.confirm(`Delete collection ${collection.collection_number}?`);
-    if (!confirmed) {
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/collections/${collection.id}`);
+      await api.delete(`/collections/${deleteTarget.id}`);
+      setDeleteTarget(null);
       await loadCollections();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete collection.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -100,13 +118,70 @@ export function CollectionList() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Payment Receipts</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Receipt register</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Payment Receipts</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Receipt register</h2>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Receipt
+          </button>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <div className="overflow-hidden rounded-3xl border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-slate-600">
+            <tr>
+              <th className="px-4 py-3">Collection</th>
+              <th className="px-4 py-3">Invoice</th>
+              <th className="px-4 py-3">Customer</th>
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Mode</th>
+              <th className="px-4 py-3">Amount</th>
+              {canManage ? <th className="px-4 py-3">Action</th> : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {collections.map((collection) => {
+              const rowBusy = deletingId === collection.id;
+
+              return (
+                <tr key={collection.id}>
+                  <td className="px-4 py-3 font-medium text-slate-900">{collection.collection_number}</td>
+                  <td className="px-4 py-3">{collection.invoice.invoice_number}</td>
+                  <td className="px-4 py-3">{collection.invoice.customer.name}</td>
+                  <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
+                  <td className="px-4 py-3">{collection.payment_mode}</td>
+                  <td className="px-4 py-3">{formatCurrency(collection.amount)}</td>
+                  {canManage ? (
+                    <td className="px-4 py-3">
+                      <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">
+                        Delete
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={saving ? () => undefined : closeModal}
+        title="Record Payment Receipt"
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Receipt Number
             <input
@@ -124,11 +199,10 @@ export function CollectionList() {
               value={formState.collection_date}
               onChange={(event) => setFormState((current) => ({ ...current, collection_date: event.target.value }))}
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              placeholder="Receipt date"
               required
             />
           </label>
-          <label className="text-sm font-semibold text-slate-800">
+          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
             Customer Invoice
             <select
               value={formState.invoice_id}
@@ -188,49 +262,22 @@ export function CollectionList() {
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
             />
           </label>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Record payment'}
-          </button>
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : 'Record Payment'}</button>
+          </div>
         </form>
-      ) : null}
-      <div className="overflow-hidden rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
-              <th className="px-4 py-3">Collection</th>
-              <th className="px-4 py-3">Invoice</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Mode</th>
-              <th className="px-4 py-3">Amount</th>
-              {canManage ? <th className="px-4 py-3">Action</th> : null}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {collections.map((collection) => (
-              <tr key={collection.id}>
-                <td className="px-4 py-3 font-medium text-slate-900">{collection.collection_number}</td>
-                <td className="px-4 py-3">{collection.invoice.invoice_number}</td>
-                <td className="px-4 py-3">{collection.invoice.customer.name}</td>
-                <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
-                <td className="px-4 py-3">{collection.payment_mode}</td>
-                <td className="px-4 py-3">{formatCurrency(collection.amount)}</td>
-                {canManage ? (
-                  <td className="px-4 py-3">
-                    <button type="button" onClick={() => void handleDelete(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
-                      Delete
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Receipt"
+        message={deleteTarget ? `Delete collection ${deleteTarget.collection_number}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }

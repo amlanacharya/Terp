@@ -3,6 +3,8 @@ import { api } from '../../lib/api';
 import { formatCurrency } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Customer, InvoicePdfMode } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface CustomerFormState {
   customer_code: string;
@@ -55,8 +57,11 @@ export function CustomerList() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [formState, setFormState] = useState<CustomerFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
@@ -79,6 +84,12 @@ export function CustomerList() {
     void hydrate();
   }, []);
 
+  function openCreate() {
+    setEditingId(null);
+    setFormState(initialForm);
+    setIsModalOpen(true);
+  }
+
   function startEdit(customer: Customer) {
     setEditingId(customer.id);
     setFormState({
@@ -97,11 +108,13 @@ export function CustomerList() {
       invoice_pdf_mode: customer.invoice_pdf_mode,
       is_active: customer.is_active,
     });
+    setIsModalOpen(true);
   }
 
-  function resetForm() {
+  function closeModal() {
     setEditingId(null);
     setFormState(initialForm);
+    setIsModalOpen(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -130,8 +143,8 @@ export function CustomerList() {
         await api.post('/customers', payload);
       }
 
-      resetForm();
       await loadCustomers();
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save customer.');
     } finally {
@@ -139,21 +152,24 @@ export function CustomerList() {
     }
   }
 
-  async function handleDelete(customer: Customer) {
-    const confirmed = window.confirm(`Delete customer ${customer.name}?`);
-    if (!confirmed) {
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/customers/${customer.id}`);
-      if (editingId === customer.id) {
-        resetForm();
+      await api.delete(`/customers/${deleteTarget.id}`);
+      if (editingId === deleteTarget.id) {
+        closeModal();
       }
+      setDeleteTarget(null);
       await loadCustomers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete customer.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -163,13 +179,87 @@ export function CustomerList() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Customers</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer accounts</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Customers</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer accounts</h2>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Customer
+          </button>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <div className="overflow-x-auto rounded-3xl border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-slate-600">
+            <tr>
+              <th className="px-4 py-3">Code</th>
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Contact</th>
+              <th className="px-4 py-3">Location</th>
+              <th className="px-4 py-3">Credit Limit</th>
+              <th className="px-4 py-3">Credit Days</th>
+              <th className="px-4 py-3">Duty Defaults</th>
+              <th className="px-4 py-3">Invoice PDF</th>
+              {canManage ? <th className="px-4 py-3">Action</th> : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {customers.map((customer) => {
+              const rowBusy = deletingId === customer.id;
+
+              return (
+                <tr key={customer.id}>
+                  <td className="px-4 py-3 font-medium text-slate-900">{customer.customer_code}</td>
+                  <td className="px-4 py-3">{customer.name}</td>
+                  <td className="px-4 py-3">
+                    <div>{customer.contact_person ?? '-'}</div>
+                    <div className="text-xs text-slate-500">{customer.phone ?? '-'}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {customer.city ?? '-'}, {customer.state ?? '-'}
+                  </td>
+                  <td className="px-4 py-3">{formatCurrency(customer.credit_limit)}</td>
+                  <td className="px-4 py-3">{customer.credit_days}</td>
+                  <td className="px-4 py-3">
+                    <div>
+                      {customer.default_duty_start_time || customer.default_duty_end_time
+                        ? `${formatDutyTime(customer.default_duty_start_time)} to ${formatDutyTime(customer.default_duty_end_time)}`
+                        : '-'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {customer.default_duty_hours == null ? 'Hours not set' : `${customer.default_duty_hours} hrs`}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">{formatInvoicePdfMode(customer.invoice_pdf_mode)}</td>
+                  {canManage ? (
+                    <td className="px-4 py-3">
+                      <button type="button" disabled={rowBusy} onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit</button>
+                      <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(customer)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={saving ? () => undefined : closeModal}
+        title={editingId ? 'Edit Customer' : 'Add Customer'}
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Customer Code
             <input value={formState.customer_code} onChange={(event) => setFormState((current) => ({ ...current, customer_code: event.target.value }))} placeholder="Customer code, e.g. CUST-001" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
@@ -215,73 +305,32 @@ export function CustomerList() {
             <input type="time" value={formState.default_duty_end_time} onChange={(event) => setFormState((current) => ({ ...current, default_duty_end_time: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           <label className="text-sm font-semibold text-slate-800">
+            Default Duty Hours
+            <input value={formState.default_duty_hours} onChange={(event) => setFormState((current) => ({ ...current, default_duty_hours: event.target.value }))} placeholder="e.g. 8.5" type="number" min="0" step="0.25" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+          </label>
+          <label className="text-sm font-semibold text-slate-800">
             Annexure Invoice PDF
             <select value={formState.invoice_pdf_mode} onChange={(event) => setFormState((current) => ({ ...current, invoice_pdf_mode: event.target.value as InvoicePdfMode }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
               <option value="invoice_with_annexures">Invoice + Annexures</option>
               <option value="invoice_only">Invoice Only</option>
             </select>
           </label>
-          <div className="flex gap-3 lg:col-span-2">
-            <label className="flex-1 text-sm font-semibold text-slate-800">
-              Default Duty Hours
-              <input value={formState.default_duty_hours} onChange={(event) => setFormState((current) => ({ ...current, default_duty_hours: event.target.value }))} placeholder="e.g. 8.5" type="number" min="0" step="0.25" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-            </label>
-            <button type="submit" disabled={saving} className="self-end rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
-            {editingId ? <button type="button" onClick={resetForm} className="self-end rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Customer' : 'Create Customer'}</button>
           </div>
         </form>
-      ) : null}
-      <div className="overflow-x-auto rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
-              <th className="px-4 py-3">Code</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">Credit Limit</th>
-              <th className="px-4 py-3">Credit Days</th>
-              <th className="px-4 py-3">Duty Defaults</th>
-              <th className="px-4 py-3">Invoice PDF</th>
-              {canManage ? <th className="px-4 py-3">Action</th> : null}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {customers.map((customer) => (
-              <tr key={customer.id}>
-                <td className="px-4 py-3 font-medium text-slate-900">{customer.customer_code}</td>
-                <td className="px-4 py-3">{customer.name}</td>
-                <td className="px-4 py-3">
-                  <div>{customer.contact_person ?? '-'}</div>
-                  <div className="text-xs text-slate-500">{customer.phone ?? '-'}</div>
-                </td>
-                <td className="px-4 py-3">
-                  {customer.city ?? '-'}, {customer.state ?? '-'}
-                </td>
-                <td className="px-4 py-3">{formatCurrency(customer.credit_limit)}</td>
-                <td className="px-4 py-3">{customer.credit_days}</td>
-                <td className="px-4 py-3">
-                  <div>
-                    {customer.default_duty_start_time || customer.default_duty_end_time
-                      ? `${formatDutyTime(customer.default_duty_start_time)} to ${formatDutyTime(customer.default_duty_end_time)}`
-                      : '-'}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {customer.default_duty_hours == null ? 'Hours not set' : `${customer.default_duty_hours} hrs`}
-                  </div>
-                </td>
-                <td className="px-4 py-3">{formatInvoicePdfMode(customer.invoice_pdf_mode)}</td>
-                {canManage ? (
-                  <td className="px-4 py-3">
-                    <button type="button" onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>
-                    <button type="button" onClick={() => void handleDelete(customer)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Customer"
+        message={deleteTarget ? `Delete customer ${deleteTarget.name}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }

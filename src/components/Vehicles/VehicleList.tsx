@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner, Vehicle, VehicleCategory } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface VehicleFormState {
   vehicle_number: string;
@@ -36,8 +38,11 @@ export function VehicleList() {
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   const [formState, setFormState] = useState<VehicleFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
@@ -68,6 +73,12 @@ export function VehicleList() {
     void hydrate();
   }, []);
 
+  function openCreate() {
+    setEditingId(null);
+    setFormState(initialForm);
+    setIsModalOpen(true);
+  }
+
   function startEdit(vehicle: Vehicle) {
     setEditingId(vehicle.id);
     setFormState({
@@ -82,11 +93,13 @@ export function VehicleList() {
       is_owned: vehicle.is_owned,
       is_active: vehicle.is_active,
     });
+    setIsModalOpen(true);
   }
 
-  function resetForm() {
+  function closeModal() {
     setEditingId(null);
     setFormState(initialForm);
+    setIsModalOpen(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -111,8 +124,8 @@ export function VehicleList() {
         await api.post('/vehicles', payload);
       }
 
-      resetForm();
       await loadVehicles();
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save vehicle.');
     } finally {
@@ -120,21 +133,24 @@ export function VehicleList() {
     }
   }
 
-  async function handleDelete(vehicle: Vehicle) {
-    const confirmed = window.confirm(`Delete vehicle ${vehicle.vehicle_number}?`);
-    if (!confirmed) {
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/vehicles/${vehicle.id}`);
-      if (editingId === vehicle.id) {
-        resetForm();
+      await api.delete(`/vehicles/${deleteTarget.id}`);
+      if (editingId === deleteTarget.id) {
+        closeModal();
       }
+      setDeleteTarget(null);
       await loadVehicles();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete vehicle.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -148,13 +164,91 @@ export function VehicleList() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicles</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Fleet master</h2>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicles</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Fleet master</h2>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Vehicle
+          </button>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        {vehicles.map((vehicle) => {
+          const rowBusy = deletingId === vehicle.id;
+
+          return (
+            <article key={vehicle.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900">{vehicle.vehicle_number}</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {vehicle.make ?? 'Unknown make'} {vehicle.model ?? ''}
+                  </p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  {vehicle.vehicle_type}
+                </span>
+              </div>
+              {canManage ? (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={rowBusy}
+                    onClick={() => startEdit(vehicle)}
+                    className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                  >
+                    Edit vehicle
+                  </button>
+                  <button
+                    type="button"
+                    disabled={rowBusy}
+                    onClick={() => setDeleteTarget(vehicle)}
+                    className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                <div>
+                  <dt className="font-medium text-slate-500">GT Category</dt>
+                  <dd>{vehicle.vehicle_category?.name ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Vehicle Owner</dt>
+                  <dd>{vehicle.is_owned ? 'Company-owned' : vehicle.owner?.name ?? 'Not assigned'}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Seating</dt>
+                  <dd>{vehicle.seating_capacity ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Status</dt>
+                  <dd>{vehicle.is_active ? 'Active' : 'Inactive'}</dd>
+                </div>
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={saving ? () => undefined : closeModal}
+        title={editingId ? 'Edit Vehicle' : 'Add Vehicle'}
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Vehicle Number
             <input
@@ -246,85 +340,45 @@ export function VehicleList() {
             />
             Company-owned vehicle
           </label>
-          <div className="flex gap-3 lg:col-span-2">
-            <label className="flex-1 text-sm font-semibold text-slate-800">
-              Vehicle Owner
-              <select
-                value={formState.owner_id}
-                onChange={(event) => setFormState((current) => ({ ...current, owner_id: event.target.value }))}
-                disabled={formState.is_owned}
-                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100"
-              >
-                <option value="">Select vehicle owner</option>
-                {owners.map((owner) => (
-                  <option key={owner.id} value={owner.id}>{owner.name}</option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Add'}
+          <label className="text-sm font-semibold text-slate-800">
+            Vehicle Owner
+            <select
+              value={formState.owner_id}
+              onChange={(event) => setFormState((current) => ({ ...current, owner_id: event.target.value }))}
+              disabled={formState.is_owned}
+              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal disabled:bg-slate-100"
+            >
+              <option value="">Select vehicle owner</option>
+              {owners.map((owner) => (
+                <option key={owner.id} value={owner.id}>{owner.name}</option>
+              ))}
+            </select>
+          </label>
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              disabled={saving}
+              className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60"
+            >
+              Cancel
             </button>
-            {editingId ? (
-              <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">
-                Cancel
-              </button>
-            ) : null}
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
+              {saving ? 'Saving...' : editingId ? 'Update Vehicle' : 'Create Vehicle'}
+            </button>
           </div>
         </form>
-      ) : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {vehicles.map((vehicle) => (
-          <article key={vehicle.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">{vehicle.vehicle_number}</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  {vehicle.make ?? 'Unknown make'} {vehicle.model ?? ''}
-                </p>
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                {vehicle.vehicle_type}
-              </span>
-            </div>
-            {canManage ? (
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => startEdit(vehicle)}
-                  className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
-                >
-                  Edit vehicle
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDelete(vehicle)}
-                  className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700"
-                >
-                  Delete
-                </button>
-              </div>
-            ) : null}
-            <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-              <div>
-                <dt className="font-medium text-slate-500">GT Category</dt>
-                <dd>{vehicle.vehicle_category?.name ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">Vehicle Owner</dt>
-                <dd>{vehicle.is_owned ? 'Company-owned' : vehicle.owner?.name ?? 'Not assigned'}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">Seating</dt>
-                <dd>{vehicle.seating_capacity ?? '-'}</dd>
-              </div>
-              <div>
-                <dt className="font-medium text-slate-500">Status</dt>
-                <dd>{vehicle.is_active ? 'Active' : 'Inactive'}</dd>
-              </div>
-            </dl>
-          </article>
-        ))}
-      </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Vehicle"
+        message={deleteTarget ? `Delete vehicle ${deleteTarget.vehicle_number}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
     </section>
   );
 }

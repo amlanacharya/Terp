@@ -3,6 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Customer, Lead, LeadAssigneeSummary, LeadFollowUp } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 interface LeadFormState {
   source: string;
@@ -74,20 +76,6 @@ const initialFollowUpForm: FollowUpFormState = {
   quoted_amount: '',
 };
 
-function formatDateTimeLocalInput(value?: string | null): string {
-  if (!value) {
-    return '';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60000);
-  return localDate.toISOString().slice(0, 16);
-}
 
 function getLeadLabel(lead: Lead): string {
   return lead.customer?.name || lead.prospect_name || lead.prospect_phone;
@@ -103,9 +91,14 @@ export function LeadList() {
   const [followUpForm, setFollowUpForm] = useState<FollowUpFormState>(initialFollowUpForm);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [deleteLeadTarget, setDeleteLeadTarget] = useState<Lead | null>(null);
+  const [deleteFollowUpTarget, setDeleteFollowUpTarget] = useState<LeadFollowUp | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingLead, setSavingLead] = useState(false);
   const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
+  const [deletingFollowUpId, setDeletingFollowUpId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
@@ -160,12 +153,22 @@ export function LeadList() {
     });
   }, [selectedLeadId]);
 
+  function openCreate() {
+    setEditingId(null);
+    setLeadForm({
+      ...initialLeadForm,
+      assigned_to: profile?.id || '',
+    });
+    setIsLeadModalOpen(true);
+  }
+
   function resetLeadForm() {
     setEditingId(null);
     setLeadForm({
       ...initialLeadForm,
       assigned_to: profile?.id || '',
     });
+    setIsLeadModalOpen(false);
   }
 
   function startEdit(lead: Lead) {
@@ -262,43 +265,53 @@ export function LeadList() {
     }
   }
 
-  async function handleDeleteLead(lead: Lead) {
-    const confirmed = window.confirm(`Delete lead ${lead.lead_number}?`);
-    if (!confirmed) {
+  function handleDeleteLead(lead: Lead) {
+    setDeleteLeadTarget(lead);
+  }
+
+  async function handleDeleteLeadConfirm() {
+    if (!deleteLeadTarget) {
       return;
     }
 
     try {
+      setDeletingLeadId(deleteLeadTarget.id);
       setError('');
-      await api.delete(`/leads/${lead.id}`);
-      if (selectedLeadId === lead.id) {
+      await api.delete(`/leads/${deleteLeadTarget.id}`);
+      if (selectedLeadId === deleteLeadTarget.id) {
         setSelectedLeadId(null);
       }
-      if (editingId === lead.id) {
+      if (editingId === deleteLeadTarget.id) {
         resetLeadForm();
       }
+      setDeleteLeadTarget(null);
       await loadLeads();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete lead.');
+    } finally {
+      setDeletingLeadId(null);
     }
   }
 
-  async function handleDeleteFollowUp(followUp: LeadFollowUp) {
-    if (!selectedLeadId) {
-      return;
-    }
+  function handleDeleteFollowUp(followUp: LeadFollowUp) {
+    setDeleteFollowUpTarget(followUp);
+  }
 
-    const confirmed = window.confirm('Delete this follow-up entry?');
-    if (!confirmed) {
+  async function handleDeleteFollowUpConfirm() {
+    if (!selectedLeadId || !deleteFollowUpTarget) {
       return;
     }
 
     try {
+      setDeletingFollowUpId(deleteFollowUpTarget.id);
       setError('');
-      await api.delete(`/leads/${selectedLeadId}/follow-ups/${followUp.id}`);
+      await api.delete(`/leads/${selectedLeadId}/follow-ups/${deleteFollowUpTarget.id}`);
+      setDeleteFollowUpTarget(null);
       await Promise.all([loadFollowUps(selectedLeadId), loadLeads()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete follow-up.');
+    } finally {
+      setDeletingFollowUpId(null);
     }
   }
 
@@ -308,22 +321,40 @@ export function LeadList() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Leads</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Lead capture and follow-up</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
-          Capture inquiries before they become trips. This first slice covers lead intake, assignment, status tracking, and follow-up history.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Leads</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Lead capture and follow-up</h2>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">
+            Capture inquiries before they become trips. This first slice covers lead intake, assignment, status tracking, and follow-up history.
+          </p>
+        </div>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
+          >
+            Add Lead
+          </button>
+        ) : null}
       </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
 
-      {canManage ? (
-        <form onSubmit={handleLeadSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+      <Modal
+        isOpen={isLeadModalOpen}
+        onClose={savingLead ? () => undefined : resetLeadForm}
+        title={editingId ? 'Edit Lead' : 'Add Lead'}
+        size="xl"
+        closeOnBackdrop={!savingLead}
+        closeOnEsc={!savingLead}
+      >
+        <form onSubmit={handleLeadSubmit} className="grid gap-4 lg:grid-cols-3">
           <label className="text-sm font-semibold text-slate-800">
             Lead Source
             <select value={leadForm.source} onChange={(event) => setLeadForm((current) => ({ ...current, source: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-              {leadSourceOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {leadSourceOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -381,7 +412,7 @@ export function LeadList() {
             Vehicle Preference
             <select value={leadForm.vehicle_preference} onChange={(event) => setLeadForm((current) => ({ ...current, vehicle_preference: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
               <option value="">No specific preference</option>
-              {vehiclePreferenceOptions.filter(Boolean).map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {vehiclePreferenceOptions.filter(Boolean).map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -406,7 +437,7 @@ export function LeadList() {
           <label className="text-sm font-semibold text-slate-800">
             Lead Status
             <select value={leadForm.status} onChange={(event) => setLeadForm((current) => ({ ...current, status: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-              {leadStatusOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+              {leadStatusOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
@@ -415,32 +446,28 @@ export function LeadList() {
               {priorityOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
-          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+          <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
             Special Requirements
             <textarea value={leadForm.special_requirements} onChange={(event) => setLeadForm((current) => ({ ...current, special_requirements: event.target.value }))} placeholder="AC / luggage / sleeper / stopovers / VIP guest notes" rows={3} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
-          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+          <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
             Internal Remarks
             <textarea value={leadForm.remarks} onChange={(event) => setLeadForm((current) => ({ ...current, remarks: event.target.value }))} placeholder="Negotiation notes, route assumptions, booking context" rows={3} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
           </label>
           {leadForm.status === 'lost' ? (
-            <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
+            <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
               Lost Reason
               <textarea value={leadForm.lost_reason} onChange={(event) => setLeadForm((current) => ({ ...current, lost_reason: event.target.value }))} placeholder="Why this lead was lost" rows={3} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
             </label>
           ) : null}
-          <div className="flex items-end gap-3 lg:col-span-2">
+          <div className="lg:col-span-3 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={resetLeadForm} disabled={savingLead} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
             <button type="submit" disabled={savingLead} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">
               {savingLead ? 'Saving...' : editingId ? 'Update Lead' : 'Add Lead'}
             </button>
-            {editingId ? (
-              <button type="button" onClick={resetLeadForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">
-                Cancel
-              </button>
-            ) : null}
           </div>
         </form>
-      ) : null}
+      </Modal>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
@@ -459,7 +486,7 @@ export function LeadList() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{lead.lead_number}</p>
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                        {lead.status.replaceAll('_', ' ')}
+                        {lead.status.replace(/_/g, ' ')}
                       </span>
                       <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
                         {lead.priority}
@@ -471,7 +498,7 @@ export function LeadList() {
                     </p>
                     <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                       <p><span className="font-semibold text-slate-800">Phone:</span> {lead.prospect_phone}</p>
-                      <p><span className="font-semibold text-slate-800">Source:</span> {lead.source.replaceAll('_', ' ')}</p>
+                      <p><span className="font-semibold text-slate-800">Source:</span> {lead.source.replace(/_/g, ' ')}</p>
                       <p><span className="font-semibold text-slate-800">PAX:</span> {lead.pax_count}</p>
                       <p><span className="font-semibold text-slate-800">Vehicles:</span> {lead.num_vehicles}</p>
                       <p><span className="font-semibold text-slate-800">Assigned:</span> {lead.assigned_user?.full_name ?? 'Unassigned'}</p>
@@ -534,7 +561,7 @@ export function LeadList() {
               <label className="text-sm font-semibold text-slate-800">
                 Contact Mode
                 <select value={followUpForm.contact_mode} onChange={(event) => setFollowUpForm((current) => ({ ...current, contact_mode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-                  {contactModeOptions.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}
+                  {contactModeOptions.map((option) => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}
                 </select>
               </label>
               <label className="text-sm font-semibold text-slate-800">
@@ -563,7 +590,7 @@ export function LeadList() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{formatDate(followUp.follow_up_date)}</p>
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{followUp.contact_mode.replaceAll('_', ' ')}</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{followUp.contact_mode.replace(/_/g, ' ')}</p>
                     </div>
                     {canManage ? (
                       <button type="button" onClick={() => void handleDeleteFollowUp(followUp)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
@@ -583,6 +610,26 @@ export function LeadList() {
           ) : null}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={deleteLeadTarget !== null}
+        onClose={() => setDeleteLeadTarget(null)}
+        onConfirm={handleDeleteLeadConfirm}
+        title="Delete Lead"
+        message={deleteLeadTarget ? `Delete lead ${deleteLeadTarget.lead_number}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteLeadTarget ? deletingLeadId === deleteLeadTarget.id : false}
+      />
+
+      <ConfirmModal
+        isOpen={deleteFollowUpTarget !== null}
+        onClose={() => setDeleteFollowUpTarget(null)}
+        onConfirm={handleDeleteFollowUpConfirm}
+        title="Delete Follow-up"
+        message="Delete this follow-up entry?"
+        confirmLabel="Delete"
+        loading={deleteFollowUpTarget ? deletingFollowUpId === deleteFollowUpTarget.id : false}
+      />
     </section>
   );
 }

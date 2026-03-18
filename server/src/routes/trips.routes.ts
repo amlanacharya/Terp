@@ -5,7 +5,7 @@ import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { calculateGst } from '../utils/gst';
 import { createGtInvoice, formatDutyTypeLabel } from '../utils/invoice-gt';
-import { buildDutySlipPdf } from '../utils/pdf-duty-slip';
+import { buildDutySlipPdf, DutySlipVariant } from '../utils/pdf-duty-slip';
 import {
   DutyType,
   Queryable,
@@ -31,9 +31,10 @@ const tripFields = [
   'ot_charge', 'calculated_amount', 'is_long_trip', 'parent_trip_id', 'annexure_number',
   'driver_allowance', 'toll_charges', 'parking_charges', 'other_charges', 'remarks',
 ] as const;
-const expenseFields = ['expense_type', 'amount', 'description', 'receipt_number'] as const;
+const expenseFields = ['expense_type', 'amount', 'description', 'receipt_number', 'is_billable_to_hirer'] as const;
 const metricFields = ['seq', 'start_date', 'start_time', 'start_km', 'end_date', 'end_time', 'end_km'] as const;
 const allowedDutyTypes: DutyType[] = ['local', 'outstation', 'drop_pickup', 'station_drop', 'long'];
+const allowedDutySlipVariants: DutySlipVariant[] = ['open_external', 'closed_external', 'internal'];
 const nonNegativeTripFields = [
   'trip_amount', 'start_km', 'end_km', 'actual_km', 'total_hours', 'night_halts', 'advance_hirer',
   'advance_travels', 'fuel_advance', 'cash_advance', 'base_charge', 'extra_km_charge',
@@ -69,6 +70,7 @@ interface TripCustomerSummaryRow {
   id: string;
   name: string;
   customer_code: string;
+  address?: string | null;
   contact_person?: string | null;
   phone?: string | null;
 }
@@ -127,6 +129,7 @@ interface TripExpenseRow {
   amount: number | string;
   description: string | null;
   receipt_number: string | null;
+  is_billable_to_hirer: boolean;
   created_at: string;
 }
 
@@ -252,6 +255,10 @@ function isDutyType(value: unknown): value is DutyType {
   return typeof value === 'string' && allowedDutyTypes.includes(value as DutyType);
 }
 
+function isDutySlipVariant(value: unknown): value is DutySlipVariant {
+  return typeof value === 'string' && allowedDutySlipVariants.includes(value as DutySlipVariant);
+}
+
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -311,6 +318,7 @@ function getTripDetailSelect(): string {
         'id', c.id,
         'name', c.name,
         'customer_code', c.customer_code,
+        'address', c.address,
         'contact_person', c.contact_person,
         'phone', c.phone
       ) AS customer,
@@ -570,6 +578,49 @@ function validateTripPayload(payload: Record<string, unknown>, requireAllFields:
   return null;
 }
 
+function normalizeExpensePayload(source: Record<string, unknown>): Record<string, unknown> {
+  const payload = pickDefinedFields(source, expenseFields);
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'expense_type')) {
+    payload.expense_type = normalizeRequiredText(payload.expense_type);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'amount')) {
+    payload.amount = toNumber(payload.amount);
+  }
+  for (const field of ['description', 'receipt_number'] as const) {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+      payload[field] = normalizeOptionalText(payload[field]) ?? null;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'is_billable_to_hirer')) {
+    payload.is_billable_to_hirer = payload.is_billable_to_hirer === true;
+  }
+
+  return payload;
+}
+
+function validateExpensePayload(payload: Record<string, unknown>, requireAllFields: boolean): string | null {
+  if (requireAllFields) {
+    if (typeof payload.expense_type !== 'string' || payload.expense_type.trim().length === 0 || typeof payload.amount !== 'number') {
+      return 'Expense type and amount are required.';
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'expense_type') && (typeof payload.expense_type !== 'string' || payload.expense_type.trim().length === 0)) {
+    return 'Expense type is required.';
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'amount')) {
+    if (typeof payload.amount !== 'number' || !Number.isFinite(payload.amount)) {
+      return 'Expense amount must be a valid number.';
+    }
+    if (payload.amount < 0) {
+      return 'Expense amount cannot be negative.';
+    }
+  }
+
+  return null;
+}
+
 function normalizeMetricPayload(source: Record<string, unknown>): Record<string, unknown> {
   const payload = pickDefinedFields(source, metricFields);
 
@@ -589,7 +640,6 @@ function normalizeMetricPayload(source: Record<string, unknown>): Record<string,
 
   return payload;
 }
-
 function validateMetricPayload(payload: Record<string, unknown>, requireAllFields: boolean): string | null {
   if (requireAllFields) {
     const requiredFields = ['seq', 'start_date', 'start_time', 'start_km'];
@@ -1023,21 +1073,29 @@ router.get('/:id/expenses', authRequired, async (req, res) => {
 });
 
 router.post('/:id/expenses', authRequired, roleCheck(['admin', 'manager', 'operator']), async (req, res) => {
-  const payload = pickDefinedFields(req.body as Record<string, unknown>, expenseFields);
+  const payload = normalizeExpensePayload(req.body as Record<string, unknown>);
+  const validationError = validateExpensePayload(payload, true);
 
-  if (!payload.expense_type || payload.amount === undefined) {
-    res.status(400).json({ message: 'Expense type and amount are required.' });
+  if (validationError) {
+    res.status(400).json({ message: validationError });
     return;
   }
 
   try {
     const result = await query<TripExpenseRow>(
       `
-        INSERT INTO trip_expenses (trip_id, expense_type, amount, description, receipt_number)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO trip_expenses (trip_id, expense_type, amount, description, receipt_number, is_billable_to_hirer)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
       `,
-      [req.params.id, payload.expense_type, payload.amount, payload.description ?? null, payload.receipt_number ?? null]
+      [
+        req.params.id,
+        payload.expense_type,
+        payload.amount,
+        payload.description ?? null,
+        payload.receipt_number ?? null,
+        payload.is_billable_to_hirer ?? false,
+      ]
     );
 
     res.status(201).json(result.rows[0]);
@@ -1046,12 +1104,17 @@ router.post('/:id/expenses', authRequired, roleCheck(['admin', 'manager', 'opera
     res.status(500).json({ message: 'Unable to create trip expense.' });
   }
 });
-
 router.put('/:id/expenses/:expenseId', authRequired, roleCheck(['admin', 'manager', 'operator']), async (req, res) => {
-  const payload = pickDefinedFields(req.body as Record<string, unknown>, expenseFields);
+  const payload = normalizeExpensePayload(req.body as Record<string, unknown>);
 
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No expense fields supplied for update.' });
+    return;
+  }
+
+  const validationError = validateExpensePayload(payload, false);
+  if (validationError) {
+    res.status(400).json({ message: validationError });
     return;
   }
 
@@ -1078,7 +1141,6 @@ router.put('/:id/expenses/:expenseId', authRequired, roleCheck(['admin', 'manage
     res.status(500).json({ message: 'Unable to update trip expense.' });
   }
 });
-
 router.delete('/:id/expenses/:expenseId', authRequired, roleCheck(['admin', 'manager', 'operator']), async (req, res) => {
   try {
     const result = await query<{ id: string }>('DELETE FROM trip_expenses WHERE id = $1 AND trip_id = $2 RETURNING id', [req.params.expenseId, req.params.id]);
@@ -1416,10 +1478,24 @@ router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountan
 
 router.get('/:id/duty-slip-pdf', authRequired, async (req, res) => {
   try {
+    const rawVariant = req.query['variant'];
+    if (rawVariant !== undefined && !isDutySlipVariant(rawVariant)) {
+      res.status(400).json({ message: 'Invalid duty slip PDF variant.' });
+      return;
+    }
+
     const [trip, settings] = await Promise.all([getTripById({ query }, String(req.params.id)), getTripSettings()]);
 
     if (!trip) {
       res.status(404).json({ message: 'Trip not found.' });
+      return;
+    }
+
+    const variant: DutySlipVariant = rawVariant
+      ?? (trip.status === 'completed' ? 'closed_external' : 'open_external');
+
+    if (variant === 'closed_external' && trip.status !== 'completed') {
+      res.status(400).json({ message: 'Closed external duty slip is only available for completed trips.' });
       return;
     }
 
@@ -1430,8 +1506,10 @@ router.get('/:id/duty-slip-pdf', authRequired, async (req, res) => {
       duty_type: trip.duty_type,
       from_location: trip.from_location,
       to_location: trip.to_location,
+      purpose: trip.purpose,
       customer_name: trip.customer.name,
       customer_code: trip.customer.customer_code,
+      customer_address: trip.customer.address ?? null,
       customer_contact_person: trip.customer.contact_person ?? null,
       customer_phone: trip.customer.phone ?? null,
       booked_by: trip.booked_by,
@@ -1455,11 +1533,31 @@ router.get('/:id/duty-slip-pdf', authRequired, async (req, res) => {
       calculated_amount: toNumber(trip.calculated_amount),
       trip_amount: Number(trip.trip_amount || 0),
       remarks: trip.remarks,
-      metrics: trip.metrics.map((metric) => ({ seq: metric.seq, start_date: metric.start_date, start_time: metric.start_time, start_km: metric.start_km, end_date: metric.end_date, end_time: metric.end_time, end_km: metric.end_km, segment_km: metric.segment_km, segment_hours: metric.segment_hours })),
+      metrics: trip.metrics.map((metric) => ({
+        seq: metric.seq,
+        start_date: metric.start_date,
+        start_time: metric.start_time,
+        start_km: metric.start_km,
+        end_date: metric.end_date,
+        end_time: metric.end_time,
+        end_km: metric.end_km,
+        segment_km: metric.segment_km,
+        segment_hours: metric.segment_hours,
+      })),
+      expenses: trip.expenses.map((expense) => ({
+        expense_type: expense.expense_type,
+        amount: Number(expense.amount || 0),
+        description: expense.description,
+      })),
       line_items: getStoredBreakdownLineItems(trip),
-    }, settings);
+    }, settings, variant);
 
-    const fileName = `${trip.trip_number.replace(/[^a-zA-Z0-9-_]/g, '_')}-duty-slip.pdf`;
+    const safeTripNumber = trip.trip_number.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const fileName = variant === 'internal'
+      ? `${safeTripNumber}-duty-slip-internal.pdf`
+      : variant === 'closed_external'
+        ? `${safeTripNumber}-duty-slip-external-closed.pdf`
+        : `${safeTripNumber}-duty-slip-external-open.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.send(pdf);
@@ -1473,7 +1571,6 @@ router.get('/:id/duty-slip-pdf', authRequired, async (req, res) => {
     res.status(500).json({ message: 'Unable to generate duty slip PDF.' });
   }
 });
-
 router.get('/:id', authRequired, async (req, res) => {
   try {
     const trip = await getTripById({ query }, String(req.params.id));
@@ -1556,11 +1653,4 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
-
-
-
-
-
-
-
 

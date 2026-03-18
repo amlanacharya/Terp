@@ -3,6 +3,8 @@ import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Customer, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 
 type InvoicePdfDownloadMode = 'default' | InvoicePdfMode;
 
@@ -76,8 +78,11 @@ export function InvoiceList() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [formState, setFormState] = useState<InvoiceFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -167,8 +172,17 @@ export function InvoiceList() {
       }
     }
 
-    void loadPreview();
-  }, [formState.customer_id, formState.subtotal]);
+    if (isFormModalOpen) {
+      void loadPreview();
+    }
+  }, [formState.customer_id, formState.subtotal, isFormModalOpen]);
+
+  function openCreate() {
+    setEditingId(null);
+    setPreview(null);
+    setFormState(initialForm);
+    setIsFormModalOpen(true);
+  }
 
   function startEdit(invoice: Invoice) {
     if (invoice.invoice_status !== 'active' || (invoice.source_type && invoice.source_type !== 'manual')) {
@@ -188,12 +202,14 @@ export function InvoiceList() {
       due_date: invoice.due_date?.slice(0, 10) ?? '',
       payment_status: invoice.payment_status,
     });
+    setIsFormModalOpen(true);
   }
 
   function resetForm() {
     setEditingId(null);
     setPreview(null);
     setFormState(initialForm);
+    setIsFormModalOpen(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -227,17 +243,28 @@ export function InvoiceList() {
     }
   }
 
-  async function handleDelete(invoice: Invoice) {
-    const confirmed = window.confirm(`Delete invoice ${invoice.invoice_number}?`);
-    if (!confirmed) return;
+  function handleDelete(invoice: Invoice) {
+    setDeleteTarget(invoice);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) {
+      return;
+    }
 
     try {
+      setDeletingId(deleteTarget.id);
       setError('');
-      await api.delete(`/invoices/${invoice.id}`);
-      if (editingId === invoice.id) resetForm();
+      await api.delete(`/invoices/${deleteTarget.id}`);
+      if (editingId === deleteTarget.id) {
+        resetForm();
+      }
+      setDeleteTarget(null);
       await loadInvoices(showVoided);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete invoice.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -345,6 +372,15 @@ export function InvoiceList() {
           <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer billing register</h2>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canManage ? (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              Add Manual Invoice
+            </button>
+          ) : null}
           {canVoid ? (
             <button
               type="button"
@@ -374,8 +410,16 @@ export function InvoiceList() {
       ) : null}
 
       {canManage ? <p className="text-sm text-slate-500">Use this form only for legacy manual invoices. GT trip and annexure invoices should be created from the Trips or Annexures screens.</p> : null}
-      {canManage ? (
-        <form onSubmit={handleSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-4">
+
+      <Modal
+        isOpen={isFormModalOpen}
+        onClose={saving ? () => undefined : resetForm}
+        title={editingId ? 'Edit Manual Invoice' : 'Add Manual Invoice'}
+        size="lg"
+        closeOnBackdrop={!saving}
+        closeOnEsc={!saving}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
             Invoice Number
             <input value={formState.invoice_number} onChange={(event) => setFormState((current) => ({ ...current, invoice_number: event.target.value }))} placeholder="Invoice number, e.g. INV-00045" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
@@ -395,7 +439,7 @@ export function InvoiceList() {
             Subtotal
             <input value={formState.subtotal} onChange={(event) => setFormState((current) => ({ ...current, subtotal: event.target.value }))} placeholder="Subtotal in INR, e.g. 25000" type="number" min="0" step="0.01" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
           </label>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Tax Preview</p>
@@ -406,9 +450,9 @@ export function InvoiceList() {
               {previewLoading ? <p className="text-sm text-slate-500">Resolving tax preview...</p> : null}
             </div>
             {preview ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {preview.tax_components.map((component) => (
-                  <div key={`${component.component_code}-${component.sort_order}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div key={`${component.component_code}-${component.sort_order}`} className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{component.component_code}</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900">{component.component_name}</p>
                     <p className="mt-2 text-sm text-slate-600">
@@ -449,12 +493,12 @@ export function InvoiceList() {
               <option value="overdue">Overdue</option>
             </select>
           </label>
-          <div className="flex gap-3">
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update' : 'Add'}</button>
-            {editingId ? <button type="button" onClick={resetForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Cancel</button> : null}
+          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
+            <button type="button" onClick={resetForm} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Manual Invoice' : 'Create Manual Invoice'}</button>
           </div>
         </form>
-      ) : null}
+      </Modal>
 
       <div className="overflow-hidden rounded-3xl border border-slate-200">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -574,6 +618,16 @@ export function InvoiceList() {
         </table>
       </div>
 
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Invoice"
+        message={deleteTarget ? `Delete invoice ${deleteTarget.invoice_number}?` : ''}
+        confirmLabel="Delete"
+        loading={deleteTarget ? deletingId === deleteTarget.id : false}
+      />
+
       {/* Void Modal */}
       {voidModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -660,6 +714,14 @@ export function InvoiceList() {
     </section>
   );
 }
+
+
+
+
+
+
+
+
 
 
 

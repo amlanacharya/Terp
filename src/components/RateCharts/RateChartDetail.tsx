@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { DutyType, RateChart, RateChartFixedRoute, RateChartItem, VehicleCategory } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
 import { RateChartItemForm } from './RateChartItemForm';
 
 interface RateChartDetailProps {
@@ -71,11 +72,15 @@ export function RateChartDetail({
 }: RateChartDetailProps) {
   const [editingItem, setEditingItem] = useState<RateChartItem | null>(null);
   const [editingRoute, setEditingRoute] = useState<RateChartFixedRoute | null>(null);
+  const [itemDeleteTarget, setItemDeleteTarget] = useState<RateChartItem | null>(null);
+  const [routeDeleteTarget, setRouteDeleteTarget] = useState<RateChartFixedRoute | null>(null);
   const [fixedRouteState, setFixedRouteState] = useState<FixedRouteFormState>(buildFixedRouteState(null));
 
   useEffect(() => {
     setEditingItem(null);
     setEditingRoute(null);
+    setItemDeleteTarget(null);
+    setRouteDeleteTarget(null);
     setFixedRouteState(buildFixedRouteState(null));
   }, [rateChart?.id]);
 
@@ -120,29 +125,37 @@ export function RateChartDetail({
     setFixedRouteState(buildFixedRouteState(null));
   }
 
-  async function handleItemDelete(item: RateChartItem) {
-    const confirmed = window.confirm(`Delete package ${item.package_label}?`);
-    if (!confirmed) {
-      return;
-    }
-
-    await onDeleteItem(item.id);
-    if (editingItem?.id === item.id) {
-      setEditingItem(null);
-    }
+  function handleItemDelete(item: RateChartItem) {
+    setItemDeleteTarget(item);
   }
 
-  async function handleFixedRouteDelete(route: RateChartFixedRoute) {
-    const confirmed = window.confirm(`Delete fixed route ${route.from_location} -> ${route.to_location}?`);
-    if (!confirmed) {
+  async function handleItemDeleteConfirm() {
+    if (!itemDeleteTarget) {
       return;
     }
 
-    await onDeleteFixedRoute(route.id);
-    if (editingRoute?.id === route.id) {
+    await onDeleteItem(itemDeleteTarget.id);
+    if (editingItem?.id === itemDeleteTarget.id) {
+      setEditingItem(null);
+    }
+    setItemDeleteTarget(null);
+  }
+
+  function handleFixedRouteDelete(route: RateChartFixedRoute) {
+    setRouteDeleteTarget(route);
+  }
+
+  async function handleFixedRouteDeleteConfirm() {
+    if (!routeDeleteTarget) {
+      return;
+    }
+
+    await onDeleteFixedRoute(routeDeleteTarget.id);
+    if (editingRoute?.id === routeDeleteTarget.id) {
       setEditingRoute(null);
       setFixedRouteState(buildFixedRouteState(null));
     }
+    setRouteDeleteTarget(null);
   }
 
   return (
@@ -322,7 +335,7 @@ export function RateChartDetail({
                           <tr key={item.id}>
                             <td className="px-4 py-3">
                               <div className="font-medium text-slate-900">{item.package_label}</div>
-                              <div className="text-xs text-slate-500">{item.package_code}{item.is_default ? ' • default' : ''}</div>
+                              <div className="text-xs text-slate-500">{item.package_code}{item.is_default ? ' - default' : ''}</div>
                             </td>
                             <td className="px-4 py-3 text-slate-600">
                               <div>{toDisplayValue(item.base_hours)} hr / {toDisplayValue(item.base_km)} km</div>
@@ -339,7 +352,7 @@ export function RateChartDetail({
                             {canManage ? (
                               <td className="px-4 py-3">
                                 <button type="button" onClick={() => setEditingItem(item)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button>
-                                <button type="button" onClick={() => void handleItemDelete(item)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
+                                <button type="button" onClick={() => handleItemDelete(item)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
                               </td>
                             ) : null}
                           </tr>
@@ -362,7 +375,7 @@ export function RateChartDetail({
                         {canManage ? (
                           <div className="mt-3 flex gap-2">
                             <button type="button" onClick={() => setEditingRoute(route)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit route</button>
-                            <button type="button" onClick={() => void handleFixedRouteDelete(route)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
+                            <button type="button" onClick={() => handleFixedRouteDelete(route)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button>
                           </div>
                         ) : null}
                       </div>
@@ -374,7 +387,26 @@ export function RateChartDetail({
           })}
         </article>
       ))}
+
+      <ConfirmModal
+        isOpen={itemDeleteTarget !== null}
+        onClose={() => setItemDeleteTarget(null)}
+        onConfirm={handleItemDeleteConfirm}
+        title="Delete Package"
+        message={itemDeleteTarget ? `Delete package ${itemDeleteTarget.package_label}?` : ''}
+        confirmLabel="Delete"
+        loading={itemSaving}
+      />
+
+      <ConfirmModal
+        isOpen={routeDeleteTarget !== null}
+        onClose={() => setRouteDeleteTarget(null)}
+        onConfirm={handleFixedRouteDeleteConfirm}
+        title="Delete Fixed Route"
+        message={routeDeleteTarget ? `Delete fixed route ${routeDeleteTarget.from_location} -> ${routeDeleteTarget.to_location}?` : ''}
+        confirmLabel="Delete"
+        loading={routeSaving}
+      />
     </section>
   );
 }
-

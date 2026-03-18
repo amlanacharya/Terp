@@ -8,6 +8,8 @@ import {
   RateChartSummary,
   VehicleCategory,
 } from '../../lib/types';
+import { ConfirmModal } from '../Layout/ConfirmModal';
+import { Modal } from '../Layout/Modal';
 import { RateChartDetail } from './RateChartDetail';
 
 interface ChartFormState {
@@ -67,12 +69,16 @@ export function RateChartList() {
   const [chartFormState, setChartFormState] = useState<ChartFormState>(initialChartForm);
   const [duplicateFormState, setDuplicateFormState] = useState<ChartFormState>({ ...initialChartForm, is_active: false });
   const [editingChartId, setEditingChartId] = useState<string | null>(null);
+  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RateChartSummary | null>(null);
   const [filterCustomerId, setFilterCustomerId] = useState('');
   const [loading, setLoading] = useState(true);
   const [chartSaving, setChartSaving] = useState(false);
   const [duplicateSaving, setDuplicateSaving] = useState(false);
   const [itemSaving, setItemSaving] = useState(false);
   const [routeSaving, setRouteSaving] = useState(false);
+  const [chartDeleting, setChartDeleting] = useState(false);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
@@ -93,6 +99,7 @@ export function RateChartList() {
     const chart = await api.get<RateChart>(`/rate-charts/${chartId}`);
     setSelectedChart(chart);
     setDuplicateFormState(buildDuplicateFormState(chart));
+    return chart;
   }
 
   useEffect(() => {
@@ -109,9 +116,17 @@ export function RateChartList() {
     void hydrate();
   }, []);
 
-  function resetChartForm() {
+  function openCreateChart() {
+    setError('');
     setEditingChartId(null);
     setChartFormState(initialChartForm);
+    setIsChartModalOpen(true);
+  }
+
+  function closeChartModal() {
+    setEditingChartId(null);
+    setChartFormState(initialChartForm);
+    setIsChartModalOpen(false);
   }
 
   function startChartEdit() {
@@ -119,8 +134,25 @@ export function RateChartList() {
       return;
     }
 
+    setError('');
     setEditingChartId(selectedChart.id);
     setChartFormState(buildChartFormState(selectedChart));
+    setIsChartModalOpen(true);
+  }
+
+  function openDuplicateModal() {
+    if (!selectedChart) {
+      return;
+    }
+
+    setError('');
+    setDuplicateFormState(buildDuplicateFormState(selectedChart));
+    setIsDuplicateModalOpen(true);
+  }
+
+  function closeDuplicateModal() {
+    setIsDuplicateModalOpen(false);
+    setDuplicateFormState(buildDuplicateFormState(selectedChart));
   }
 
   async function refreshAfterChartChange(chart: RateChart | null) {
@@ -155,7 +187,7 @@ export function RateChartList() {
         : await api.post<RateChart>('/rate-charts', payload);
 
       await refreshAfterChartChange(chart);
-      resetChartForm();
+      closeChartModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to save rate chart.');
     } finally {
@@ -183,6 +215,7 @@ export function RateChartList() {
       });
 
       await refreshAfterChartChange(duplicatedChart);
+      closeDuplicateModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to duplicate rate chart.');
     } finally {
@@ -190,22 +223,34 @@ export function RateChartList() {
     }
   }
 
-  async function handleDeleteChart(chart: RateChartSummary) {
-    const confirmed = window.confirm(`Delete rate chart ${chart.name}?`);
-    if (!confirmed) {
+  function handleDeleteChart(chart: RateChartSummary) {
+    setDeleteTarget(chart);
+  }
+
+  async function handleDeleteChartConfirm() {
+    if (!deleteTarget) {
       return;
     }
 
+    setChartDeleting(true);
+    setError('');
+
     try {
-      setError('');
-      await api.delete(`/rate-charts/${chart.id}`);
-      const shouldClearSelection = selectedChart?.id === chart.id;
+      await api.delete(`/rate-charts/${deleteTarget.id}`);
+      const shouldClearSelection = selectedChart?.id === deleteTarget.id;
+      setDeleteTarget(null);
       await refreshAfterChartChange(shouldClearSelection ? null : selectedChart);
       if (shouldClearSelection) {
-        resetChartForm();
+        setEditingChartId(null);
+        setChartFormState(initialChartForm);
+        setIsChartModalOpen(false);
+        setIsDuplicateModalOpen(false);
+        setDuplicateFormState({ ...initialChartForm, is_active: false });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete rate chart.');
+    } finally {
+      setChartDeleting(false);
     }
   }
 
@@ -283,106 +328,29 @@ export function RateChartList() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Rate Charts</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer pricing master</h2>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Maintain GT packages like `8HR/80KM`, `10HR/100KM`, and route-specific prices under each customer chart.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Rate Charts</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Customer pricing master</h2>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            Maintain GT packages like `8HR/80KM`, `10HR/100KM`, and route-specific prices under each customer chart.
+          </p>
+        </div>
+        {canManage ? (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={openCreateChart} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white">
+              Add Rate Chart
+            </button>
+            <button type="button" disabled={!selectedChart} onClick={startChartEdit} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60">
+              Edit Selected Chart
+            </button>
+            <button type="button" disabled={!selectedChart} onClick={openDuplicateModal} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60">
+              Duplicate Chart
+            </button>
+          </div>
+        ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-
-      {canManage ? (
-        <form onSubmit={handleChartSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-3">
-          <label className="text-sm font-semibold text-slate-800">
-            Customer
-            <select value={chartFormState.customer_id} onChange={(event) => setChartFormState((current) => ({ ...current, customer_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
-              <option value="">Select customer</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>{customer.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Chart Name
-            <input value={chartFormState.name} onChange={(event) => setChartFormState((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. RBI FY26" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 lg:mt-7">
-            <input type="checkbox" checked={chartFormState.is_active} onChange={(event) => setChartFormState((current) => ({ ...current, is_active: event.target.checked }))} />
-            Active chart
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Effective From
-            <input type="date" value={chartFormState.effective_from} onChange={(event) => setChartFormState((current) => ({ ...current, effective_from: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Effective To
-            <input type="date" value={chartFormState.effective_to} onChange={(event) => setChartFormState((current) => ({ ...current, effective_to: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
-            Notes
-            <textarea value={chartFormState.notes} onChange={(event) => setChartFormState((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Internal notes about this chart" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <div className="flex flex-wrap gap-3 lg:col-span-3">
-            <button type="submit" disabled={chartSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">
-              {chartSaving ? 'Saving...' : editingChartId ? 'Update Chart' : 'Create Chart'}
-            </button>
-            {editingChartId ? (
-              <button type="button" onClick={resetChartForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">
-                Cancel
-              </button>
-            ) : null}
-            {selectedChart && !editingChartId ? (
-              <button type="button" onClick={startChartEdit} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">
-                Edit Selected Chart Header
-              </button>
-            ) : null}
-          </div>
-        </form>
-      ) : null}
-
-      {selectedChart && canManage ? (
-        <form onSubmit={handleDuplicateSubmit} className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-5 lg:grid-cols-3">
-          <div className="lg:col-span-3">
-            <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Duplicate Chart</p>
-            <h3 className="mt-1 text-xl font-semibold text-slate-900">Copy {selectedChart.name} into a new effective window</h3>
-          </div>
-          <label className="text-sm font-semibold text-slate-800">
-            Target Customer
-            <select value={duplicateFormState.customer_id} onChange={(event) => setDuplicateFormState((current) => ({ ...current, customer_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
-              <option value="">Select customer</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>{customer.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            New Chart Name
-            <input value={duplicateFormState.name} onChange={(event) => setDuplicateFormState((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 lg:mt-7">
-            <input type="checkbox" checked={duplicateFormState.is_active} onChange={(event) => setDuplicateFormState((current) => ({ ...current, is_active: event.target.checked }))} />
-            Make duplicate active
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Effective From
-            <input type="date" value={duplicateFormState.effective_from} onChange={(event) => setDuplicateFormState((current) => ({ ...current, effective_from: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Effective To
-            <input type="date" value={duplicateFormState.effective_to} onChange={(event) => setDuplicateFormState((current) => ({ ...current, effective_to: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
-            Notes
-            <textarea value={duplicateFormState.notes} onChange={(event) => setDuplicateFormState((current) => ({ ...current, notes: event.target.value }))} rows={2} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <div className="lg:col-span-3">
-            <button type="submit" disabled={duplicateSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">
-              {duplicateSaving ? 'Duplicating...' : 'Duplicate Chart'}
-            </button>
-          </div>
-        </form>
-      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[360px,minmax(0,1fr)]">
         <aside className="space-y-4">
@@ -424,7 +392,7 @@ export function RateChartList() {
                     {selectedChart?.id === chart.id ? 'Refresh' : 'Open'}
                   </button>
                   {canManage ? (
-                    <button type="button" onClick={() => void handleDeleteChart(chart)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
+                    <button type="button" onClick={() => handleDeleteChart(chart)} disabled={chartDeleting} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">
                       Delete
                     </button>
                   ) : null}
@@ -450,6 +418,125 @@ export function RateChartList() {
           onDeleteFixedRoute={handleDeleteFixedRoute}
         />
       </div>
+
+      {canManage ? (
+        <Modal
+          isOpen={isChartModalOpen}
+          onClose={chartSaving ? () => undefined : closeChartModal}
+          title={editingChartId ? 'Edit Rate Chart' : 'Add Rate Chart'}
+          size="xl"
+          closeOnBackdrop={!chartSaving}
+          closeOnEsc={!chartSaving}
+        >
+          <form onSubmit={handleChartSubmit} className="grid gap-4 lg:grid-cols-3">
+            <label className="text-sm font-semibold text-slate-800">
+              Customer
+              <select value={chartFormState.customer_id} onChange={(event) => setChartFormState((current) => ({ ...current, customer_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
+                <option value="">Select customer</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>{customer.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Chart Name
+              <input value={chartFormState.name} onChange={(event) => setChartFormState((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. RBI FY26" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 lg:mt-7">
+              <input type="checkbox" checked={chartFormState.is_active} onChange={(event) => setChartFormState((current) => ({ ...current, is_active: event.target.checked }))} />
+              Active chart
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Effective From
+              <input type="date" value={chartFormState.effective_from} onChange={(event) => setChartFormState((current) => ({ ...current, effective_from: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Effective To
+              <input type="date" value={chartFormState.effective_to} onChange={(event) => setChartFormState((current) => ({ ...current, effective_to: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
+            <div className="hidden lg:block" />
+            <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
+              Notes
+              <textarea value={chartFormState.notes} onChange={(event) => setChartFormState((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Internal notes about this chart" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
+            <div className="flex flex-wrap gap-3 lg:col-span-3">
+              <button type="submit" disabled={chartSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">
+                {chartSaving ? 'Saving...' : editingChartId ? 'Update Chart' : 'Create Chart'}
+              </button>
+              <button type="button" onClick={closeChartModal} disabled={chartSaving} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {canManage && selectedChart ? (
+        <Modal
+          isOpen={isDuplicateModalOpen}
+          onClose={duplicateSaving ? () => undefined : closeDuplicateModal}
+          title="Duplicate Rate Chart"
+          size="xl"
+          closeOnBackdrop={!duplicateSaving}
+          closeOnEsc={!duplicateSaving}
+        >
+          <form onSubmit={handleDuplicateSubmit} className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-3">
+              <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Duplicate Chart</p>
+              <h3 className="mt-1 text-xl font-semibold text-slate-900">Copy {selectedChart.name} into a new effective window</h3>
+            </div>
+            <label className="text-sm font-semibold text-slate-800">
+              Target Customer
+              <select value={duplicateFormState.customer_id} onChange={(event) => setDuplicateFormState((current) => ({ ...current, customer_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required>
+                <option value="">Select customer</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>{customer.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              New Chart Name
+              <input value={duplicateFormState.name} onChange={(event) => setDuplicateFormState((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 lg:mt-7">
+              <input type="checkbox" checked={duplicateFormState.is_active} onChange={(event) => setDuplicateFormState((current) => ({ ...current, is_active: event.target.checked }))} />
+              Make duplicate active
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Effective From
+              <input type="date" value={duplicateFormState.effective_from} onChange={(event) => setDuplicateFormState((current) => ({ ...current, effective_from: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Effective To
+              <input type="date" value={duplicateFormState.effective_to} onChange={(event) => setDuplicateFormState((current) => ({ ...current, effective_to: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
+            <div className="hidden lg:block" />
+            <label className="text-sm font-semibold text-slate-800 lg:col-span-3">
+              Notes
+              <textarea value={duplicateFormState.notes} onChange={(event) => setDuplicateFormState((current) => ({ ...current, notes: event.target.value }))} rows={2} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
+            </label>
+            <div className="flex flex-wrap gap-3 lg:col-span-3">
+              <button type="submit" disabled={duplicateSaving} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-60">
+                {duplicateSaving ? 'Duplicating...' : 'Duplicate Chart'}
+              </button>
+              <button type="button" onClick={closeDuplicateModal} disabled={duplicateSaving} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-60">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteChartConfirm}
+        title="Delete Rate Chart"
+        message={deleteTarget ? `Delete rate chart ${deleteTarget.name}?` : ''}
+        confirmLabel="Delete"
+        loading={chartDeleting}
+      />
     </section>
   );
 }
+

@@ -14,6 +14,7 @@ const settings = {
 };
 
 const invoiceData = {
+  invoice_type: 'invoice' as const,
   invoice_number: 'GTINV-TST-001',
   invoice_date: '2026-03-18',
   booking_date: '2026-03-17',
@@ -164,4 +165,3 @@ describe('GT invoice PDF builders', () => {
     expect(countPages(combined)).toBe(countPages(invoiceOnly) + annexures.length);
   });
 });
-

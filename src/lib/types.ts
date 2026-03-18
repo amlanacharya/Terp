@@ -615,6 +615,8 @@ export interface Invoice {
   igst_amount: number;
   subtotal: number;
   total_amount: number;
+  collected_amount: number;
+  outstanding_amount: number;
   payment_status: string;
   due_date: string | null;
   remarks: string | null;
@@ -676,7 +678,36 @@ export interface CollectionInvoiceSummary {
   invoice_number: string;
   total_amount: number;
   payment_status: string;
+  invoice_type: 'invoice' | 'credit_note';
   customer: InvoiceCustomerSummary;
+}
+
+export type FinancialLedgerEventType =
+  | 'invoice_issued'
+  | 'invoice_deleted'
+  | 'payment_received'
+  | 'payment_amended'
+  | 'payment_reversed'
+  | 'refund_paid'
+  | 'refund_amended'
+  | 'refund_reversed'
+  | 'invoice_voided'
+  | 'credit_note_issued'
+  | 'credit_note_applied' // Reserved for future customer-credit knockoff flow.
+  | 'write_off';
+
+export interface FinancialLedgerEntry {
+  id: string;
+  event_type: FinancialLedgerEventType;
+  invoice_id: string;
+  invoice_number: string;
+  collection_id: string | null;
+  amount: number;
+  direction: 'AR_INCREASE' | 'AR_DECREASE';
+  description: string;
+  performed_by: string | null;
+  performed_by_name: string | null;
+  created_at: string;
 }
 
 export interface Collection {
@@ -753,6 +784,7 @@ export interface OutstandingInvoice {
   payment_status: string;
   customer: InvoiceCustomerSummary;
 }
+
 
 export interface CustomerOutstanding {
   customer_id: string;

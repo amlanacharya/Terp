@@ -3,6 +3,7 @@ import { PoolClient } from 'pg';
 import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
+import { formatLedgerAmount, writeLedgerEntry } from '../utils/ledger';
 import { calculateGst } from '../utils/gst';
 import { createGtInvoice, formatDutyTypeLabel } from '../utils/invoice-gt';
 import { buildDutySlipPdf, DutySlipVariant } from '../utils/pdf-duty-slip';
@@ -873,6 +874,19 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
       gstAmounts.total_amount,
     ]
   );
+
+
+
+  await writeLedgerEntry(client, {
+    event_type: 'invoice_issued',
+    customer_id: trip.customer_id,
+    invoice_id: invoiceResult.rows[0].id,
+    invoice_number: invoiceNumber,
+    amount: gstAmounts.total_amount,
+    direction: 'AR_INCREASE',
+    description: `Invoice ${invoiceNumber} issued for Rs.${formatLedgerAmount(gstAmounts.total_amount)}.`,
+    performed_by: userId,
+  });
 }
 
 router.get('/', authRequired, async (req, res) => {
@@ -1653,4 +1667,3 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
-

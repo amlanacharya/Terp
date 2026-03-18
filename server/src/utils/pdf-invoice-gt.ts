@@ -21,6 +21,7 @@ export interface GtInvoicePdfTaxComponent {
 }
 
 export interface GtInvoicePdfData {
+  invoice_type: 'invoice' | 'credit_note';
   invoice_number: string;
   invoice_date: string;
   booking_date: string | null;
@@ -67,7 +68,7 @@ function ensureSpace(doc: PdfDoc, neededHeight: number): void {
   doc.addPage();
 }
 
-function drawHeader(doc: PdfDoc, settings: Record<string, string>): void {
+function drawHeader(doc: PdfDoc, settings: Record<string, string>, invoiceType: GtInvoicePdfData['invoice_type']): void {
   const left = doc.page.margins.left;
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const top = doc.y;
@@ -80,7 +81,7 @@ function drawHeader(doc: PdfDoc, settings: Record<string, string>): void {
   doc.font('Helvetica').fontSize(10).text(settings.company_address || '-', left + 16, top + 40, {
     width: 280,
   });
-  doc.font('Helvetica-Bold').fontSize(18).text('GT INVOICE', left + width - 190, top + 22, {
+  doc.font('Helvetica-Bold').fontSize(18).text(invoiceType === 'credit_note' ? 'GT CREDIT NOTE' : 'GT INVOICE', left + width - 190, top + 22, {
     width: 170,
     align: 'right',
   });
@@ -290,7 +291,7 @@ export function numberToWords(value: number): string {
 }
 
 export function renderGtInvoiceContent(doc: PdfDoc, data: GtInvoicePdfData, settings: Record<string, string>): void {
-  drawHeader(doc, settings);
+  drawHeader(doc, settings, data.invoice_type);
 
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const left = doc.page.margins.left;

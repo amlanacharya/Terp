@@ -1,8 +1,11 @@
+import { QueryResultRow } from 'pg';
 import { Router } from 'express';
-import { query } from '../config/db';
+import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
+import { formatLedgerAmount, writeLedgerEntry } from '../utils/ledger';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
+import { Queryable } from '../utils/rate-engine';
 
 const router = Router();
 const collectionFields = [
@@ -16,17 +19,177 @@ const collectionFields = [
   'remarks',
 ] as const;
 
-async function ensureInvoiceCollectable(invoiceId: string): Promise<boolean> {
-  const result = await query<{ invoice_status: string }>('SELECT invoice_status FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
-  if (!result.rows[0]) {
+type SettlementDocumentType = 'invoice' | 'credit_note';
+
+type SettlementLedgerPhase = 'create' | 'amend_reversal' | 'amend_apply' | 'delete';
+
+interface CollectionInvoiceTargetRow extends QueryResultRow {
+  id: string;
+  customer_id: string;
+  invoice_number: string;
+  invoice_status: string;
+  invoice_type: SettlementDocumentType;
+}
+
+interface CollectionLedgerRow extends QueryResultRow {
+  id: string;
+  collection_number: string;
+  invoice_id: string;
+  amount: string;
+  invoice_number: string;
+  customer_id: string;
+  invoice_type: SettlementDocumentType;
+}
+
+function buildSettlementLedgerEntry(
+  invoice: CollectionInvoiceTargetRow,
+  collectionId: string,
+  collectionNumber: string,
+  amount: number,
+  phase: SettlementLedgerPhase,
+  performedBy: string | null
+) {
+  if (invoice.invoice_type === 'credit_note') {
+    if (phase === 'create') {
+      return {
+        event_type: 'refund_paid' as const,
+        customer_id: invoice.customer_id,
+        invoice_id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        collection_id: collectionId,
+        amount,
+        direction: 'AR_INCREASE' as const,
+        description: `Refund ${collectionNumber} of Rs.${formatLedgerAmount(amount)} paid against ${invoice.invoice_number}.`,
+        performed_by: performedBy,
+      };
+    }
+
+    if (phase === 'amend_reversal') {
+      return {
+        event_type: 'refund_amended' as const,
+        customer_id: invoice.customer_id,
+        invoice_id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        collection_id: collectionId,
+        amount,
+        direction: 'AR_DECREASE' as const,
+        description: `Refund ${collectionNumber} amended: previous Rs.${formatLedgerAmount(amount)} allocation reversed from ${invoice.invoice_number}.`,
+        performed_by: performedBy,
+      };
+    }
+
+    if (phase === 'amend_apply') {
+      return {
+        event_type: 'refund_amended' as const,
+        customer_id: invoice.customer_id,
+        invoice_id: invoice.id,
+        invoice_number: invoice.invoice_number,
+        collection_id: collectionId,
+        amount,
+        direction: 'AR_INCREASE' as const,
+        description: `Refund ${collectionNumber} amended to Rs.${formatLedgerAmount(amount)} against ${invoice.invoice_number}.`,
+        performed_by: performedBy,
+      };
+    }
+
+    return {
+      event_type: 'refund_reversed' as const,
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      collection_id: collectionId,
+      amount,
+      direction: 'AR_DECREASE' as const,
+      description: `Refund ${collectionNumber} of Rs.${formatLedgerAmount(amount)} reversed (deleted).`,
+      performed_by: performedBy,
+    };
+  }
+
+  if (phase === 'create') {
+    return {
+      event_type: 'payment_received' as const,
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      collection_id: collectionId,
+      amount,
+      direction: 'AR_DECREASE' as const,
+      description: `Payment ${collectionNumber} of Rs.${formatLedgerAmount(amount)} received against ${invoice.invoice_number}.`,
+      performed_by: performedBy,
+    };
+  }
+
+  if (phase === 'amend_reversal') {
+    return {
+      event_type: 'payment_amended' as const,
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      collection_id: collectionId,
+      amount,
+      direction: 'AR_INCREASE' as const,
+      description: `Payment ${collectionNumber} amended: previous Rs.${formatLedgerAmount(amount)} allocation reversed from ${invoice.invoice_number}.`,
+      performed_by: performedBy,
+    };
+  }
+
+  if (phase === 'amend_apply') {
+    return {
+      event_type: 'payment_amended' as const,
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      collection_id: collectionId,
+      amount,
+      direction: 'AR_DECREASE' as const,
+      description: `Payment ${collectionNumber} amended to Rs.${formatLedgerAmount(amount)} against ${invoice.invoice_number}.`,
+      performed_by: performedBy,
+    };
+  }
+
+  return {
+    event_type: 'payment_reversed' as const,
+    customer_id: invoice.customer_id,
+    invoice_id: invoice.id,
+    invoice_number: invoice.invoice_number,
+    collection_id: collectionId,
+    amount,
+    direction: 'AR_INCREASE' as const,
+    description: `Payment ${collectionNumber} of Rs.${formatLedgerAmount(amount)} reversed (deleted).`,
+    performed_by: performedBy,
+  };
+}
+
+async function loadInvoiceTarget(db: Queryable, invoiceId: string): Promise<CollectionInvoiceTargetRow | null> {
+  const result = await db.query<CollectionInvoiceTargetRow>(
+    `
+      SELECT id, customer_id, invoice_number, invoice_status, invoice_type
+      FROM invoices
+      WHERE id = $1
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [invoiceId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function ensureInvoiceSettleable(db: Queryable, invoiceId: string): Promise<CollectionInvoiceTargetRow> {
+  const invoice = await loadInvoiceTarget(db, invoiceId);
+  if (!invoice) {
     throw new Error('Invoice not found.');
   }
 
-  return result.rows[0].invoice_status === 'active';
+  if (invoice.invoice_status !== 'active') {
+    throw new Error('Collections are blocked for non-active invoices.');
+  }
+
+  return invoice;
 }
 
-async function syncInvoicePaymentStatus(invoiceId: string): Promise<void> {
-  await query(
+async function syncInvoicePaymentStatus(db: Queryable, invoiceId: string): Promise<void> {
+  await db.query(
     `
       UPDATE invoices
       SET
@@ -49,6 +212,29 @@ async function syncInvoicePaymentStatus(invoiceId: string): Promise<void> {
   );
 }
 
+async function loadCollectionLedgerRow(db: Queryable, collectionId: string): Promise<CollectionLedgerRow | null> {
+  const result = await db.query<CollectionLedgerRow>(
+    `
+      SELECT
+        col.id,
+        col.collection_number,
+        col.invoice_id,
+        col.amount::text AS amount,
+        inv.invoice_number,
+        inv.customer_id,
+        inv.invoice_type
+      FROM collections col
+      JOIN invoices inv ON inv.id = col.invoice_id
+      WHERE col.id = $1
+      LIMIT 1
+      FOR UPDATE OF col, inv
+    `,
+    [collectionId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
 router.get('/', authRequired, async (_req, res) => {
   try {
     const result = await query(
@@ -60,6 +246,7 @@ router.get('/', authRequired, async (_req, res) => {
             'invoice_number', inv.invoice_number,
             'total_amount', inv.total_amount,
             'payment_status', inv.payment_status,
+            'invoice_type', inv.invoice_type,
             'customer', json_build_object('id', cust.id, 'name', cust.name, 'customer_code', cust.customer_code)
           ) AS invoice
         FROM collections col
@@ -82,13 +269,13 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
     return;
   }
 
+  const client = await pool.connect();
   try {
-    if (!(await ensureInvoiceCollectable(String(payload.invoice_id)))) {
-      res.status(409).json({ message: 'Collections are blocked for void invoices.' });
-      return;
-    }
+    await client.query('BEGIN');
 
-    const result = await query(
+    const invoice = await ensureInvoiceSettleable(client, String(payload.invoice_id));
+    const amount = Number(payload.amount);
+    const result = await client.query(
       `
         INSERT INTO collections (
           collection_number, collection_date, invoice_id, amount, payment_mode,
@@ -103,7 +290,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
         payload.collection_number,
         payload.collection_date,
         payload.invoice_id,
-        payload.amount,
+        amount,
         payload.payment_mode,
         payload.reference_number ?? null,
         payload.bank_name ?? null,
@@ -112,74 +299,170 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
       ]
     );
 
-    await syncInvoicePaymentStatus(String(payload.invoice_id));
+    await syncInvoicePaymentStatus(client, String(payload.invoice_id));
+    await writeLedgerEntry(
+      client,
+      buildSettlementLedgerEntry(
+        invoice,
+        result.rows[0].id,
+        String(payload.collection_number),
+        amount,
+        'create',
+        req.user?.id ?? null
+      )
+    );
+
+    await client.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Creating collection failed:', error);
-    res.status(error instanceof Error && error.message === 'Invoice not found.' ? 404 : 500).json({
-      message: error instanceof Error ? error.message : 'Unable to create collection.',
+    const message = error instanceof Error ? error.message : 'Unable to create collection.';
+    const status = message === 'Invoice not found.' ? 404 : message === 'Collections are blocked for non-active invoices.' ? 409 : 500;
+    res.status(status).json({
+      message,
     });
+  } finally {
+    client.release();
   }
 });
 
 router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), async (req, res) => {
+  const collectionId = String(req.params.id);
   const payload = pickDefinedFields(req.body as Record<string, unknown>, collectionFields);
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No collection fields supplied for update.' });
     return;
   }
 
+  const client = await pool.connect();
   try {
-    const existing = await query<{ invoice_id: string }>(
-      'SELECT invoice_id FROM collections WHERE id = $1 LIMIT 1',
-      [req.params.id]
-    );
+    await client.query('BEGIN');
 
-    if (!existing.rows[0]) {
+    const existing = await loadCollectionLedgerRow(client, collectionId);
+    if (!existing) {
+      await client.query('ROLLBACK');
       res.status(404).json({ message: 'Collection not found.' });
       return;
     }
 
-    if (payload.invoice_id && !(await ensureInvoiceCollectable(String(payload.invoice_id)))) {
-      res.status(409).json({ message: 'Collections are blocked for void invoices.' });
-      return;
-    }
+    const hasInvoiceChange = Object.prototype.hasOwnProperty.call(payload, 'invoice_id')
+      && String(payload.invoice_id) !== existing.invoice_id;
+    const hasAmountChange = Object.prototype.hasOwnProperty.call(payload, 'amount')
+      && Number(payload.amount) !== Number(existing.amount);
+    const targetInvoice = hasInvoiceChange
+      ? await ensureInvoiceSettleable(client, String(payload.invoice_id))
+      : await ensureInvoiceSettleable(client, existing.invoice_id);
 
     const update = buildUpdateClause(payload);
-    const result = await query(
+    const result = await client.query(
       `UPDATE collections SET ${update.clause} WHERE id = $${update.values.length + 1} RETURNING *`,
-      [...update.values, req.params.id]
+      [...update.values, collectionId]
     );
 
-    await syncInvoicePaymentStatus(existing.rows[0].invoice_id);
-    if (payload.invoice_id && payload.invoice_id !== existing.rows[0].invoice_id) {
-      await syncInvoicePaymentStatus(String(payload.invoice_id));
+    const existingInvoiceTarget: CollectionInvoiceTargetRow = {
+      id: existing.invoice_id,
+      customer_id: existing.customer_id,
+      invoice_number: existing.invoice_number,
+      invoice_status: 'active',
+      invoice_type: existing.invoice_type,
+    };
+
+    const updatedAmount = Object.prototype.hasOwnProperty.call(payload, 'amount')
+      ? Number(payload.amount)
+      : Number(existing.amount);
+    const updatedCollectionNumber = Object.prototype.hasOwnProperty.call(payload, 'collection_number')
+      ? String(payload.collection_number)
+      : existing.collection_number;
+
+    await syncInvoicePaymentStatus(client, existing.invoice_id);
+    if (hasInvoiceChange) {
+      await syncInvoicePaymentStatus(client, targetInvoice.id);
     }
 
+    if (hasAmountChange || hasInvoiceChange) {
+      await writeLedgerEntry(
+        client,
+        buildSettlementLedgerEntry(
+          existingInvoiceTarget,
+          existing.id,
+          existing.collection_number,
+          Number(existing.amount),
+          'amend_reversal',
+          req.user?.id ?? null
+        )
+      );
+
+      await writeLedgerEntry(
+        client,
+        buildSettlementLedgerEntry(
+          targetInvoice,
+          existing.id,
+          updatedCollectionNumber,
+          updatedAmount,
+          'amend_apply',
+          req.user?.id ?? null
+        )
+      );
+    }
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Updating collection failed:', error);
-    res.status(error instanceof Error && error.message === 'Invoice not found.' ? 404 : 500).json({
-      message: error instanceof Error ? error.message : 'Unable to update collection.',
+    const message = error instanceof Error ? error.message : 'Unable to update collection.';
+    const status = message === 'Invoice not found.' ? 404 : message === 'Collections are blocked for non-active invoices.' ? 409 : 500;
+    res.status(status).json({
+      message,
     });
+  } finally {
+    client.release();
   }
 });
 
 router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
+  const collectionId = String(req.params.id);
+  const client = await pool.connect();
   try {
-    const result = await query('DELETE FROM collections WHERE id = $1 RETURNING id, invoice_id', [req.params.id]);
-    if (!result.rows[0]) {
+    await client.query('BEGIN');
+
+    const existing = await loadCollectionLedgerRow(client, collectionId);
+    if (!existing) {
+      await client.query('ROLLBACK');
       res.status(404).json({ message: 'Collection not found.' });
       return;
     }
 
-    await syncInvoicePaymentStatus(result.rows[0].invoice_id);
+    await client.query('DELETE FROM collections WHERE id = $1', [req.params.id]);
+    await syncInvoicePaymentStatus(client, existing.invoice_id);
+    await writeLedgerEntry(
+      client,
+      buildSettlementLedgerEntry(
+        {
+          id: existing.invoice_id,
+          customer_id: existing.customer_id,
+          invoice_number: existing.invoice_number,
+          invoice_status: 'active',
+          invoice_type: existing.invoice_type,
+        },
+        existing.id,
+        existing.collection_number,
+        Number(existing.amount),
+        'delete',
+        req.user?.id ?? null
+      )
+    );
+
+    await client.query('COMMIT');
     res.status(204).send();
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Deleting collection failed:', error);
     res.status(500).json({ message: getDeleteErrorMessage('collection', error) });
+  } finally {
+    client.release();
   }
 });
 
 export default router;
-

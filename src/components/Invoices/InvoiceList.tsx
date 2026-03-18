@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useState } from 'react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
-import { Customer, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
+import { Customer, FinancialLedgerEntry, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 
@@ -40,6 +40,80 @@ function roundCurrency(value: number): string {
 
 function formatTaxScope(scope: TaxPreviewResponse['applies_to']): string {
   return scope === 'inter_state' ? 'Inter-State' : 'Intra-State';
+}
+
+const dateTimeFormatter = new Intl.DateTimeFormat('en-IN', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return '-';
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : dateTimeFormatter.format(parsed);
+}
+
+function formatLedgerEventLabel(eventType: string): string {
+  const labels: Record<string, string> = {
+    invoice_issued: 'Invoice Issued',
+    invoice_deleted: 'Invoice Deleted',
+    payment_received: 'Payment Received',
+    payment_amended: 'Payment Amended',
+    payment_reversed: 'Payment Reversed',
+    refund_paid: 'Refund Paid',
+    refund_amended: 'Refund Amended',
+    refund_reversed: 'Refund Reversed',
+    invoice_voided: 'Invoice Voided',
+    credit_note_issued: 'Credit Note Issued',
+    credit_note_applied: 'Credit Note Applied',
+    write_off: 'Write Off',
+  };
+
+  return labels[eventType] ?? eventType.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function getLedgerDotClass(entry: FinancialLedgerEntry): string {
+  if (entry.event_type.startsWith('refund_')) {
+    return 'bg-amber-500';
+  }
+  if (entry.event_type === 'credit_note_issued') {
+    return 'bg-orange-500';
+  }
+  return entry.direction === 'AR_INCREASE' ? 'bg-rose-500' : 'bg-emerald-500';
+}
+
+function getLedgerDirectionLabel(entry: FinancialLedgerEntry): string {
+  switch (entry.event_type) {
+    case 'payment_received':
+      return 'Cash Inflow';
+    case 'payment_amended':
+      return entry.direction === 'AR_INCREASE' ? 'Amendment Reversal' : 'Amended Receipt';
+    case 'payment_reversed':
+      return 'Receipt Reversed';
+    case 'refund_paid':
+      return 'Cash Outflow';
+    case 'refund_amended':
+      return entry.direction === 'AR_DECREASE' ? 'Amendment Reversal' : 'Amended Refund';
+    case 'refund_reversed':
+      return 'Refund Reversed';
+    case 'credit_note_issued':
+      return 'Customer Credit Raised';
+    case 'invoice_deleted':
+    case 'write_off':
+      return 'AR Reduced';
+    case 'invoice_issued':
+      return 'AR Raised';
+    case 'invoice_voided':
+      return 'Memo';
+    default:
+      return entry.direction === 'AR_INCREASE' ? 'AR Raised' : 'AR Reduced';
+  }
 }
 
 function PaymentStatusBadge({ status }: { status: string }) {
@@ -94,6 +168,9 @@ export function InvoiceList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [openPdfMenuId, setOpenPdfMenuId] = useState<string | null>(null);
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [ledgerByInvoiceId, setLedgerByInvoiceId] = useState<Record<string, FinancialLedgerEntry[]>>({});
+  const [loadingLedgerId, setLoadingLedgerId] = useState<string | null>(null);
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const canVoid = profile ? ['admin', 'manager'].includes(profile.role) : false;
@@ -285,6 +362,7 @@ export function InvoiceList() {
         setSuccessMessage('Invoice voided successfully.');
       }
       if (editingId === voidModal.id) resetForm();
+      invalidateLedger(voidModal.id);
       await loadInvoices(showVoided);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to void invoice.');
@@ -302,6 +380,7 @@ export function InvoiceList() {
       setWriteOffModal(null);
       setWriteOffReason('');
       setSuccessMessage('Invoice marked as written off.');
+      invalidateLedger(writeOffModal.id);
       await loadInvoices(showVoided);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to write off invoice.');
@@ -360,6 +439,37 @@ export function InvoiceList() {
     }
   }
 
+
+  function invalidateLedger(invoiceId: string) {
+    setExpandedInvoiceId((current) => (current === invoiceId ? null : current));
+    setLedgerByInvoiceId((current) => {
+      const next = { ...current };
+      delete next[invoiceId];
+      return next;
+    });
+  }
+
+  async function handleToggleLedger(invoiceId: string) {
+    if (expandedInvoiceId === invoiceId) {
+      setExpandedInvoiceId(null);
+      return;
+    }
+
+    setExpandedInvoiceId(invoiceId);
+    if (ledgerByInvoiceId[invoiceId] || loadingLedgerId === invoiceId) {
+      return;
+    }
+
+    try {
+      setLoadingLedgerId(invoiceId);
+      const rows = await api.get<FinancialLedgerEntry[]>(`/invoices/${invoiceId}/ledger`);
+      setLedgerByInvoiceId((current) => ({ ...current, [invoiceId]: rows }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load financial history.');
+    } finally {
+      setLoadingLedgerId((current) => (current === invoiceId ? null : current));
+    }
+  }
   if (loading) {
     return <p className="text-sm text-slate-500">Loading invoices...</p>;
   }
@@ -527,84 +637,168 @@ export function InvoiceList() {
                 && ['pending', 'partial', 'overdue'].includes(invoice.payment_status);
               const hasAnnexurePdfOptions = Number(invoice.annexure_item_count ?? 0) > 0;
               const pdfBusy = actionLoading || pdfLoadingId === invoice.id;
+              const historyBusy = loadingLedgerId === invoice.id;
+              const historyOpen = expandedInvoiceId === invoice.id;
+              const ledgerEntries = ledgerByInvoiceId[invoice.id] ?? [];
               const rowClass = !isActive ? 'opacity-60' : '';
 
               return (
-                <tr key={invoice.id} className={rowClass}>
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    <div>{invoice.invoice_number}</div>
-                    <InvoiceLifecycleBadge invoice={invoice} />
-                  </td>
-                  <td className="px-4 py-3">{invoice.customer.name}</td>
-                  <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
-                  <td className="px-4 py-3">{invoice.duty_slip_number ?? '-'}</td>
-                  <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
-                  <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
-                  <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
-                  <td className="px-4 py-3">
-                    {isActive ? <PaymentStatusBadge status={invoice.payment_status} /> : null}
-                    {invoice.voided_at ? <div className="mt-1 text-xs text-slate-500">on {formatDate(invoice.voided_at)}</div> : null}
-                    {invoice.void_reason ? <div className="text-xs text-slate-400">{invoice.void_reason}</div> : null}
-                  </td>
-                  <td className="px-4 py-3">{formatCurrency(invoice.total_amount)}</td>
-                  <td className="px-4 py-3">
-                    {hasAnnexurePdfOptions ? (
-                      <div className="relative inline-block text-left">
-                        <button
-                          type="button"
-                          disabled={pdfBusy}
-                          onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
-                          className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
-                        >
+                <Fragment key={invoice.id}>
+                  <tr className={rowClass}>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      <div>{invoice.invoice_number}</div>
+                      <InvoiceLifecycleBadge invoice={invoice} />
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleLedger(invoice.id)}
+                        className="mt-2 text-xs font-medium text-sky-700 hover:text-sky-800"
+                      >
+                        {historyOpen ? 'Hide Financial History' : historyBusy ? 'Loading History...' : 'Financial History'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">{invoice.customer.name}</td>
+                    <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
+                    <td className="px-4 py-3">{invoice.duty_slip_number ?? '-'}</td>
+                    <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
+                    <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
+                    <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
+                    <td className="px-4 py-3">
+                      {isActive ? <PaymentStatusBadge status={invoice.payment_status} /> : null}
+                      {invoice.voided_at ? <div className="mt-1 text-xs text-slate-500">on {formatDate(invoice.voided_at)}</div> : null}
+                      {invoice.void_reason ? <div className="text-xs text-slate-400">{invoice.void_reason}</div> : null}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="font-medium text-slate-900">{formatCurrency(invoice.total_amount)}</div>
+                      {invoice.invoice_type === 'credit_note' ? (
+                        <>
+                          {invoice.payment_status === 'partial' ? (
+                            <div className="mt-0.5 text-xs">
+                              <span className="text-amber-600">{formatCurrency(invoice.collected_amount)} refunded</span>{' '}
+                              <span className="text-slate-500">{formatCurrency(invoice.outstanding_amount)} credit pending</span>
+                            </div>
+                          ) : null}
+                          {invoice.payment_status === 'completed' ? (
+                            <div className="mt-0.5 text-xs text-amber-600">Fully refunded</div>
+                          ) : null}
+                          {invoice.payment_status === 'pending' ? (
+                            <div className="mt-0.5 text-xs text-slate-400">No refund recorded</div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          {invoice.payment_status === 'partial' ? (
+                            <div className="mt-0.5 text-xs">
+                              <span className="text-emerald-600">{formatCurrency(invoice.collected_amount)} collected</span>{' '}
+                              <span className="text-rose-600">{formatCurrency(invoice.outstanding_amount)} due</span>
+                            </div>
+                          ) : null}
+                          {invoice.payment_status === 'completed' ? (
+                            <div className="mt-0.5 text-xs text-emerald-600">Fully collected</div>
+                          ) : null}
+                          {(invoice.payment_status === 'pending' || invoice.payment_status === 'overdue') ? (
+                            <div className="mt-0.5 text-xs text-slate-400">Nothing collected</div>
+                          ) : null}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {hasAnnexurePdfOptions ? (
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            disabled={pdfBusy}
+                            onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
+                            className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                          >
+                            {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                          </button>
+                          {openPdfMenuId === invoice.id ? (
+                            <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="block w-full px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                Customer Default
+                              </button>
+                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_only')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                Invoice Only
+                              </button>
+                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_with_annexures')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                Invoice + Annexures
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
                           {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
                         </button>
-                        {openPdfMenuId === invoice.id ? (
-                          <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="block w-full px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                              Customer Default
-                            </button>
-                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_only')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                              Invoice Only
-                            </button>
-                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_with_annexures')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                              Invoice + Annexures
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
-                        {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
-                      </button>
-                    )}
-                  </td>
-                  {canManage ? (
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {canEditInvoice ? (
-                          <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                            Edit
-                          </button>
-                        ) : null}
-                        {canEditInvoice ? (
-                          <button type="button" onClick={() => void handleDelete(invoice)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
-                            Delete
-                          </button>
-                        ) : null}
-                        {canVoidInvoice ? (
-                          <button type="button" onClick={() => { setVoidModal(invoice); setVoidReason(''); }} className="rounded-xl border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800">
-                            Void
-                          </button>
-                        ) : null}
-                        {canWriteOffInvoice ? (
-                          <button type="button" onClick={() => { setWriteOffModal(invoice); setWriteOffReason(''); }} className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700">
-                            Write Off
-                          </button>
-                        ) : null}
-                      </div>
+                      )}
                     </td>
+                    {canManage ? (
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {canEditInvoice ? (
+                            <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
+                              Edit
+                            </button>
+                          ) : null}
+                          {canEditInvoice ? (
+                            <button type="button" onClick={() => void handleDelete(invoice)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
+                              Delete
+                            </button>
+                          ) : null}
+                          {canVoidInvoice ? (
+                            <button type="button" onClick={() => { setVoidModal(invoice); setVoidReason(''); }} className="rounded-xl border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800">
+                              Void
+                            </button>
+                          ) : null}
+                          {canWriteOffInvoice ? (
+                            <button type="button" onClick={() => { setWriteOffModal(invoice); setWriteOffReason(''); }} className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700">
+                              Write Off
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                  {historyOpen ? (
+                    <tr className="bg-slate-50/70">
+                      <td colSpan={canManage ? 11 : 10} className="px-4 py-4">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h3 className="text-sm font-semibold text-slate-900">Financial History</h3>
+                            <span className="text-xs text-slate-500">{ledgerEntries.length} event{ledgerEntries.length === 1 ? '' : 's'}</span>
+                          </div>
+                          {historyBusy ? (
+                            <p className="mt-3 text-sm text-slate-500">Loading financial history...</p>
+                          ) : ledgerEntries.length === 0 ? (
+                            <p className="mt-3 text-sm text-slate-500">No financial events recorded yet.</p>
+                          ) : (
+                            <div className="mt-4 space-y-3">
+                              {ledgerEntries.map((entry) => (
+                                <div key={entry.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                                  <div className={`mt-1 h-2.5 w-2.5 rounded-full ${getLedgerDotClass(entry)}`} />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">{formatLedgerEventLabel(entry.event_type)}</span>
+                                      <span className="font-semibold text-slate-900">{formatCurrency(entry.amount)}</span>
+                                      <span className={`font-medium ${entry.direction === 'AR_INCREASE' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                        {getLedgerDirectionLabel(entry)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-sm text-slate-700">{entry.description}</p>
+                                    <div className="mt-1 text-xs text-slate-500">
+                                      {formatDateTime(entry.created_at)}
+                                      {entry.performed_by_name ? ` by ${entry.performed_by_name}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   ) : null}
-                </tr>
+                </Fragment>
               );
             })}
             {invoices.length === 0 ? (
@@ -679,7 +873,7 @@ export function InvoiceList() {
               Invoice <strong>{writeOffModal.invoice_number}</strong> will be marked as uncollectable bad debt.
             </p>
             <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm text-red-800">
-              Outstanding balance of {formatCurrency(writeOffModal.total_amount)} will be written off. This does not unlink trips or annexures.
+              Outstanding balance of {formatCurrency(writeOffModal.outstanding_amount)} will be written off. This does not unlink trips or annexures.
             </p>
             <label className="mt-4 block text-sm font-semibold text-slate-800">
               Reason <span className="font-normal text-slate-500">(required)</span>
@@ -714,12 +908,6 @@ export function InvoiceList() {
     </section>
   );
 }
-
-
-
-
-
-
 
 
 

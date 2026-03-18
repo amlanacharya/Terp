@@ -1,3 +1,4 @@
+import { QueryResultRow } from 'pg';
 import { Router } from 'express';
 import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
@@ -6,6 +7,8 @@ import { buildInterestNote, getGtInvoiceSettings } from '../utils/invoice-gt';
 import { AnnexurePdfData } from '../utils/pdf-annexure';
 import { buildGtInvoicePdf, buildGtInvoiceWithAnnexuresPdf } from '../utils/pdf-invoice-gt';
 import { buildInvoicePdf } from '../utils/pdf-invoice';
+import { formatLedgerAmount, writeLedgerEntry } from '../utils/ledger';
+import { Queryable } from '../utils/rate-engine';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 import { calculateInvoiceTaxes, persistInvoiceTaxSnapshots } from '../utils/tax-engine';
 
@@ -55,6 +58,7 @@ interface InvoiceListRow {
   sgst_amount: number | string;
   igst_amount: number | string;
   total_amount: number | string;
+  collected_amount: string;
   payment_status: string;
   due_date: string | null;
   remarks: string | null;
@@ -94,6 +98,20 @@ interface InvoiceItemTaxComponentRow extends InvoiceTaxComponentRow {
   invoice_item_id: string;
 }
 
+interface FinancialLedgerRow extends QueryResultRow {
+  id: string;
+  event_type: string;
+  invoice_id: string;
+  invoice_number: string;
+  collection_id: string | null;
+  amount: string;
+  direction: 'AR_INCREASE' | 'AR_DECREASE';
+  description: string;
+  performed_by: string | null;
+  performed_by_name: string | null;
+  created_at: string;
+}
+
 type InvoicePdfMode = 'invoice_only' | 'invoice_with_annexures';
 
 const invoicePdfModes: InvoicePdfMode[] = ['invoice_only', 'invoice_with_annexures'];
@@ -101,6 +119,7 @@ const invoicePdfModes: InvoicePdfMode[] = ['invoice_only', 'invoice_with_annexur
 interface InvoicePdfHeaderRow {
   id: string;
   customer_id: string;
+  invoice_type: 'invoice' | 'credit_note';
   invoice_number: string;
   invoice_date: string;
   due_date: string | null;
@@ -179,13 +198,18 @@ function normalizeTaxComponent(row: InvoiceTaxComponentRow) {
 }
 
 function normalizeInvoiceRow(row: InvoiceListRow) {
+  const totalAmount = Number(row.total_amount);
+  const collectedAmount = Number(row.collected_amount ?? 0);
+
   return {
     ...row,
     subtotal: Number(row.subtotal),
     cgst_amount: Number(row.cgst_amount),
     sgst_amount: Number(row.sgst_amount),
     igst_amount: Number(row.igst_amount),
-    total_amount: Number(row.total_amount),
+    total_amount: totalAmount,
+    collected_amount: collectedAmount,
+    outstanding_amount: Math.max(0, totalAmount - collectedAmount),
     total_km: toNumber(row.total_km),
     total_hours: toNumber(row.total_hours),
     item_count: Number(row.item_count),
@@ -205,7 +229,8 @@ async function loadInvoiceSummary(invoiceId: string): Promise<InvoiceListRow | n
           ELSE 'manual'
         END AS source_type,
         (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id) AS item_count,
-        (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) AS annexure_item_count
+        (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) AS annexure_item_count,
+        COALESCE((SELECT SUM(c.amount) FROM collections c WHERE c.invoice_id = i.id), 0)::text AS collected_amount
       FROM invoices i
       JOIN customers c ON c.id = i.customer_id
       WHERE i.id = $1
@@ -252,8 +277,8 @@ async function loadInvoiceTaxComponents(invoiceId: string) {
   };
 }
 
-async function isSourceLinkedInvoice(invoiceId: string): Promise<boolean> {
-  const linkedResult = await query<{ id: string }>(
+async function isSourceLinkedInvoice(invoiceId: string, db: Queryable = { query }): Promise<boolean> {
+  const linkedResult = await db.query<{ id: string }>(
     'SELECT id FROM invoice_items WHERE invoice_id = $1 AND (trip_id IS NOT NULL OR annexure_id IS NOT NULL) LIMIT 1',
     [invoiceId]
   );
@@ -261,8 +286,8 @@ async function isSourceLinkedInvoice(invoiceId: string): Promise<boolean> {
   return Boolean(linkedResult.rows[0]);
 }
 
-async function isVoidInvoice(invoiceId: string): Promise<boolean> {
-  const result = await query<{ invoice_status: string }>('SELECT invoice_status FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
+async function isVoidInvoice(invoiceId: string, db: Queryable = { query }): Promise<boolean> {
+  const result = await db.query<{ invoice_status: string }>('SELECT invoice_status FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
   if (!result.rows[0]) return false;
   return result.rows[0].invoice_status !== 'active';
 }
@@ -270,13 +295,14 @@ async function isVoidInvoice(invoiceId: string): Promise<boolean> {
 async function createOrUpdateManualInvoice(
   payload: Record<string, unknown>,
   userId: string | null,
-  existingInvoiceId?: string
+  existingInvoiceId?: string,
+  db: Queryable = { query }
 ): Promise<string> {
   if (!payload.invoice_number || !payload.invoice_date || !payload.customer_id || payload.subtotal === undefined) {
     throw new Error('Missing required invoice fields.');
   }
 
-  const customerResult = await query<{
+  const customerResult = await db.query<{
     id: string;
     gstin: string | null;
     address: string | null;
@@ -286,7 +312,7 @@ async function createOrUpdateManualInvoice(
     throw new Error('Customer not found.');
   }
 
-  const settings = await getGtInvoiceSettings({ query });
+  const settings = await getGtInvoiceSettings(db);
   const resolvedCustomerGstin = typeof payload.customer_gstin === 'string' && payload.customer_gstin.trim().length > 0
     ? payload.customer_gstin.trim()
     : customer.gstin;
@@ -294,7 +320,7 @@ async function createOrUpdateManualInvoice(
     ? payload.billing_address.trim()
     : customer.address;
   const paymentTermsDays = payload.payment_terms_days == null ? null : Number(payload.payment_terms_days);
-  const taxCalculation = await calculateInvoiceTaxes({ query }, {
+  const taxCalculation = await calculateInvoiceTaxes(db, {
     items: [{ taxable_base: Number(payload.subtotal), hsn_code: null }],
     companyGstin: settings.company_gstin,
     customerGstin: resolvedCustomerGstin,
@@ -305,9 +331,9 @@ async function createOrUpdateManualInvoice(
 
   let invoiceId = existingInvoiceId ?? null;
   if (invoiceId) {
-    await query('DELETE FROM invoice_item_tax_components WHERE invoice_id = $1', [invoiceId]);
-    await query('DELETE FROM invoice_tax_components WHERE invoice_id = $1', [invoiceId]);
-    await query('DELETE FROM invoice_items WHERE invoice_id = $1', [invoiceId]);
+    await db.query('DELETE FROM invoice_item_tax_components WHERE invoice_id = $1', [invoiceId]);
+    await db.query('DELETE FROM invoice_tax_components WHERE invoice_id = $1', [invoiceId]);
+    await db.query('DELETE FROM invoice_items WHERE invoice_id = $1', [invoiceId]);
 
     const updatePayload = {
       invoice_number: payload.invoice_number,
@@ -335,12 +361,12 @@ async function createOrUpdateManualInvoice(
       remarks: payload.remarks ?? null,
     };
     const update = buildUpdateClause(updatePayload);
-    await query(
+    await db.query(
       `UPDATE invoices SET ${update.clause}, updated_at = now() WHERE id = $${update.values.length + 1}`,
       [...update.values, invoiceId]
     );
   } else {
-    const result = await query<{ id: string }>(
+    const result = await db.query<{ id: string }>(
       `
         INSERT INTO invoices (
           invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
@@ -388,7 +414,7 @@ async function createOrUpdateManualInvoice(
     invoiceId = result.rows[0].id;
   }
 
-  const itemResult = await query<{ id: string }>(
+  const itemResult = await db.query<{ id: string }>(
     `
       INSERT INTO invoice_items (
         invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
@@ -415,7 +441,7 @@ async function createOrUpdateManualInvoice(
     ]
   );
 
-  await persistInvoiceTaxSnapshots({ query }, {
+  await persistInvoiceTaxSnapshots(db, {
     invoiceId,
     items: [{ invoiceItemId: itemResult.rows[0].id, tax: taxCalculation.items[0] }],
     taxComponents: taxCalculation.tax_components,
@@ -440,7 +466,8 @@ router.get('/', authRequired, async (req, res) => {
             ELSE 'manual'
           END AS source_type,
           (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id) AS item_count,
-          (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) AS annexure_item_count
+          (SELECT COUNT(*)::text FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) AS annexure_item_count,
+          COALESCE((SELECT SUM(c.amount) FROM collections c WHERE c.invoice_id = i.id), 0)::text AS collected_amount
         FROM invoices i
         JOIN customers c ON c.id = i.customer_id
         WHERE ($1 OR i.invoice_status = 'active')
@@ -475,6 +502,7 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
           SELECT
             i.id,
             i.customer_id,
+            i.invoice_type,
             i.invoice_number,
             i.invoice_date::text,
             i.due_date::text,
@@ -565,6 +593,7 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
     );
 
     const gtInvoiceData = {
+      invoice_type: invoice.invoice_type,
       invoice_number: invoice.invoice_number,
       invoice_date: invoice.invoice_date,
       booking_date: invoice.booking_date,
@@ -692,6 +721,42 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
   }
 });
 
+router.get('/:id/ledger', authRequired, async (req, res) => {
+  const invoiceId = String(req.params.id);
+
+  try {
+    const result = await query<FinancialLedgerRow>(
+      `
+        SELECT
+          l.id,
+          l.event_type,
+          l.invoice_id,
+          l.invoice_number,
+          l.collection_id,
+          l.amount::text AS amount,
+          l.direction,
+          l.description,
+          l.performed_by,
+          p.full_name AS performed_by_name,
+          l.created_at::text AS created_at
+        FROM financial_ledger l
+        LEFT JOIN profiles p ON p.id = l.performed_by
+        WHERE l.invoice_id = $1
+        ORDER BY l.created_at ASC, l.id ASC
+      `,
+      [invoiceId]
+    );
+
+    res.json(result.rows.map((row) => ({
+      ...row,
+      amount: Number(row.amount),
+    })));
+  } catch (error) {
+    console.error('Fetching invoice ledger failed:', error);
+    res.status(500).json({ message: 'Unable to fetch invoice ledger.' });
+  }
+});
+
 router.get('/:id', authRequired, async (req, res) => {
   const invoiceId = String(req.params.id);
   try {
@@ -779,14 +844,39 @@ router.get('/:id', authRequired, async (req, res) => {
 
 router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, invoiceFields);
+  const client = await pool.connect();
 
   try {
-    const invoiceId = await createOrUpdateManualInvoice(payload, req.user?.id ?? null);
+    await client.query('BEGIN');
+    const invoiceId = await createOrUpdateManualInvoice(payload, req.user?.id ?? null, undefined, client);
+    const invoiceResult = await client.query<{ customer_id: string; invoice_number: string; total_amount: string }>(
+      'SELECT customer_id, invoice_number, total_amount::text AS total_amount FROM invoices WHERE id = $1 LIMIT 1',
+      [invoiceId]
+    );
+    const createdInvoice = invoiceResult.rows[0];
+
+    await writeLedgerEntry(client, {
+      event_type: 'invoice_issued',
+      customer_id: createdInvoice.customer_id,
+      invoice_id: invoiceId,
+      invoice_number: createdInvoice.invoice_number,
+      amount: Number(createdInvoice.total_amount),
+      direction: 'AR_INCREASE',
+      description: `Invoice ${createdInvoice.invoice_number} issued for Rs.${formatLedgerAmount(Number(createdInvoice.total_amount))}.`,
+      performed_by: req.user?.id ?? null,
+    });
+
+    await client.query('COMMIT');
     const invoice = await loadInvoiceSummary(invoiceId);
     res.status(201).json(normalizeInvoiceRow(invoice as InvoiceListRow));
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Creating invoice failed:', error);
-    res.status(400).json({ message: error instanceof Error ? error.message : 'Unable to create invoice.' });
+    const message = error instanceof Error ? error.message : 'Unable to create invoice.';
+    const status = message === 'Missing required invoice fields.' || message === 'Customer not found.' ? 400 : 500;
+    res.status(status).json({ message });
+  } finally {
+    client.release();
   }
 });
 
@@ -820,12 +910,14 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
 
     const invoiceResult = await client.query<{
       id: string;
+      customer_id: string;
       invoice_number: string;
       invoice_type: string;
       invoice_status: string;
+      total_amount: string;
       total_collected: string;
     }>(
-      `SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_status,
+      `SELECT i.id, i.customer_id, i.invoice_number, i.invoice_type, i.invoice_status, i.total_amount::text,
               COALESCE((
                 SELECT SUM(c.amount)
                 FROM collections c
@@ -856,11 +948,13 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
       return;
     }
 
+    const collectedAmount = Number(inv.total_collected);
     let creditNoteId: string | null = null;
+    let creditNoteNumber: string | null = null;
 
-    if (Number(inv.total_collected) > 0) {
-      const cnNumber = `${inv.invoice_number}-CN`;
-      const cnRemarks = `Credit note for voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
+    if (collectedAmount > 0) {
+      creditNoteNumber = `${inv.invoice_number}-CN`;
+      const cnRemarks = `Credit note for refund received on voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
 
       const cnResult = await client.query<{ id: string }>(
         `INSERT INTO invoices (
@@ -870,12 +964,12 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
            invoice_type, reference_invoice_id, invoice_status, created_by
          ) SELECT
            $2, CURRENT_DATE, customer_id, billing_address, customer_gstin,
-           subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
-           'completed', CURRENT_DATE, $3,
-           'credit_note', id, 'active', $4
+           $3, 0, 0, 0, $3,
+           'pending', CURRENT_DATE, $4,
+           'credit_note', id, 'active', $5
          FROM invoices WHERE id = $1
          RETURNING id`,
-        [invoiceId, cnNumber, cnRemarks, req.user?.id ?? null]
+        [invoiceId, creditNoteNumber, collectedAmount, cnRemarks, req.user?.id ?? null]
       );
       creditNoteId = cnResult.rows[0].id;
 
@@ -883,24 +977,11 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
         `INSERT INTO invoice_items (
            invoice_id, description, hsn_code, quantity, rate, amount,
            cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
-         ) SELECT
-           $2, description, hsn_code, quantity, rate, amount,
-           cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
-         FROM invoice_items WHERE invoice_id = $1`,
-        [invoiceId, creditNoteId]
-      );
-
-      await client.query(
-        `INSERT INTO invoice_tax_components (
-           invoice_id, tax_component_id, component_code, component_name,
-           applies_to, hsn_code, taxable_base, rate, is_percentage,
-           flat_amount, tax_amount, sort_order
-         ) SELECT
-           $2, tax_component_id, component_code, component_name,
-           applies_to, hsn_code, taxable_base, rate, is_percentage,
-           flat_amount, tax_amount, sort_order
-         FROM invoice_tax_components WHERE invoice_id = $1`,
-        [invoiceId, creditNoteId]
+         ) VALUES (
+           $1, $2, NULL, 1, $3, $3,
+           0, 0, 0, 0, 0, 0, $3
+         )`,
+        [creditNoteId, `Refund credit for voided invoice ${inv.invoice_number}`, collectedAmount]
       );
     }
 
@@ -925,6 +1006,30 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
        WHERE id = $1`,
       [invoiceId, reason, req.user?.id ?? null]
     );
+
+    await writeLedgerEntry(client, {
+      event_type: 'invoice_voided',
+      customer_id: inv.customer_id,
+      invoice_id: invoiceId,
+      invoice_number: inv.invoice_number,
+      amount: 0,
+      direction: 'AR_DECREASE',
+      description: `Invoice ${inv.invoice_number} voided.${creditNoteNumber ? ` Credit note ${creditNoteNumber} for Rs.${formatLedgerAmount(collectedAmount)} issued for received amount.` : ''}${reason ? ` Reason: ${reason}` : ''}`,
+      performed_by: req.user?.id ?? null,
+    });
+
+    if (creditNoteId && creditNoteNumber) {
+      await writeLedgerEntry(client, {
+        event_type: 'credit_note_issued',
+        customer_id: inv.customer_id,
+        invoice_id: creditNoteId,
+        invoice_number: creditNoteNumber,
+        amount: collectedAmount,
+        direction: 'AR_DECREASE',
+        description: `Credit note ${creditNoteNumber} of Rs.${formatLedgerAmount(collectedAmount)} issued for received amount on voided invoice ${inv.invoice_number}.`,
+        performed_by: req.user?.id ?? null,
+      });
+    }
 
     await client.query('COMMIT');
 
@@ -952,38 +1057,81 @@ router.post('/:id/write-off', authRequired, roleCheck(['admin']), async (req, re
   const reason = typeof req.body?.reason === 'string' && req.body.reason.trim().length > 0
     ? req.body.reason.trim()
     : null;
+  const client = await pool.connect();
 
   try {
-    const existing = await query<{ invoice_status: string; invoice_type: string }>(
-      'SELECT invoice_status, invoice_type FROM invoices WHERE id = $1 LIMIT 1',
+    await client.query('BEGIN');
+
+    const existing = await client.query<{
+      customer_id: string;
+      invoice_number: string;
+      invoice_status: string;
+      invoice_type: string;
+      total_amount: string;
+      total_collected: string;
+    }>(
+      `
+        SELECT
+          i.customer_id,
+            i.invoice_type,
+            i.invoice_number,
+          i.invoice_status,
+          i.invoice_type,
+          i.total_amount::text,
+          COALESCE((SELECT SUM(c.amount) FROM collections c WHERE c.invoice_id = i.id), 0)::text AS total_collected
+        FROM invoices i
+        WHERE i.id = $1
+        LIMIT 1
+        FOR UPDATE OF i
+      `,
       [invoiceId]
     );
     const inv = existing.rows[0];
     if (!inv) {
+      await client.query('ROLLBACK');
       res.status(404).json({ message: 'Invoice not found.' });
       return;
     }
     if (inv.invoice_type === 'credit_note') {
+      await client.query('ROLLBACK');
       res.status(409).json({ message: 'Credit notes cannot be written off.' });
       return;
     }
     if (inv.invoice_status !== 'active') {
+      await client.query('ROLLBACK');
       res.status(409).json({ message: `Invoice is already ${inv.invoice_status}.` });
       return;
     }
 
-    await query(
+    const outstandingAmount = Math.max(0, Number(inv.total_amount) - Number(inv.total_collected));
+
+    await client.query(
       `UPDATE invoices
        SET invoice_status = 'written_off', void_reason = $2, voided_at = now(), voided_by = $3, updated_at = now()
        WHERE id = $1`,
       [invoiceId, reason, req.user?.id ?? null]
     );
 
+    await writeLedgerEntry(client, {
+      event_type: 'write_off',
+      customer_id: inv.customer_id,
+      invoice_id: invoiceId,
+      invoice_number: inv.invoice_number,
+      amount: outstandingAmount,
+      direction: 'AR_DECREASE',
+      description: `Outstanding Rs.${formatLedgerAmount(outstandingAmount)} on ${inv.invoice_number} written off.${reason ? ` Reason: ${reason}` : ''}`,
+      performed_by: req.user?.id ?? null,
+    });
+
+    await client.query('COMMIT');
     const invoice = await loadInvoiceSummary(invoiceId);
     res.json(normalizeInvoiceRow(invoice as InvoiceListRow));
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Writing off invoice failed:', error);
     res.status(500).json({ message: 'Unable to write off invoice.' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1017,41 +1165,68 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), 
 
 router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
   const invoiceId = String(req.params.id);
+  const client = await pool.connect();
 
   try {
-    const collectionCheck = await query<{ count: string }>(
-      'SELECT COUNT(*)::text AS count FROM collections WHERE invoice_id = $1',
-      [invoiceId]
-    );
-    if (Number(collectionCheck.rows[0]?.count) > 0) {
-      res.status(400).json({ message: 'Invoice has collections recorded. Use void to cancel it instead.' });
-      return;
-    }
+    await client.query('BEGIN');
 
-    if (await isVoidInvoice(invoiceId)) {
-      res.status(409).json({ message: 'Void invoices cannot be deleted.' });
-      return;
-    }
-
-    if (await isSourceLinkedInvoice(invoiceId)) {
-      res.status(409).json({ message: 'Delete is blocked for GT source-linked invoices.' });
-      return;
-    }
-
-    const result = await query('DELETE FROM invoices WHERE id = $1 RETURNING id', [invoiceId]);
-    if (!result.rows[0]) {
+    const invoiceResult = await client.query<{
+      id: string;
+      customer_id: string;
+      invoice_number: string;
+      total_amount: string;
+    }>('SELECT id, customer_id, invoice_number, total_amount::text AS total_amount FROM invoices WHERE id = $1 LIMIT 1 FOR UPDATE', [invoiceId]);
+    const invoice = invoiceResult.rows[0];
+    if (!invoice) {
+      await client.query('ROLLBACK');
       res.status(404).json({ message: 'Invoice not found.' });
       return;
     }
 
+    const collectionCheck = await client.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM collections WHERE invoice_id = $1',
+      [invoiceId]
+    );
+    if (Number(collectionCheck.rows[0]?.count) > 0) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ message: 'Invoice has collections recorded. Use void to cancel it instead.' });
+      return;
+    }
+
+    if (await isVoidInvoice(invoiceId, client)) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ message: 'Void invoices cannot be deleted.' });
+      return;
+    }
+
+    if (await isSourceLinkedInvoice(invoiceId, client)) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ message: 'Delete is blocked for GT source-linked invoices.' });
+      return;
+    }
+
+    await writeLedgerEntry(client, {
+      event_type: 'invoice_deleted',
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      amount: Number(invoice.total_amount),
+      direction: 'AR_DECREASE',
+      description: `Invoice ${invoice.invoice_number} deleted (no collections) for Rs.${formatLedgerAmount(Number(invoice.total_amount))}.`,
+      performed_by: req.user?.id ?? null,
+    });
+
+    await client.query('DELETE FROM invoices WHERE id = $1', [invoiceId]);
+    await client.query('COMMIT');
+
     res.status(204).send();
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Deleting invoice failed:', error);
     res.status(500).json({ message: getDeleteErrorMessage('invoice', error) });
+  } finally {
+    client.release();
   }
 });
 
 export default router;
-
-
-

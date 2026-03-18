@@ -4,6 +4,7 @@ import {
   resolveInvoiceTaxScope,
 } from './tax-engine';
 import { Queryable } from './rate-engine';
+import { formatLedgerAmount, writeLedgerEntry } from './ledger';
 
 export interface GtInvoiceSettings {
   invoice_prefix: string;
@@ -254,6 +255,17 @@ export async function createGtInvoice(
     invoiceId,
     items: createdItems,
     taxComponents: taxCalculation.tax_components,
+  });
+
+  await writeLedgerEntry(db, {
+    event_type: 'invoice_issued',
+    customer_id: header.customer_id,
+    invoice_id: invoiceId,
+    invoice_number: invoiceNumber,
+    amount: taxCalculation.total_amount,
+    direction: 'AR_INCREASE',
+    description: `Invoice ${invoiceNumber} issued for Rs.${formatLedgerAmount(taxCalculation.total_amount)}.`,
+    performed_by: header.created_by,
   });
 
   return {

@@ -11,12 +11,17 @@ router.get('/stats', authRequired, async (_req, res) => {
       query<{ count: string }>('SELECT COUNT(*)::text AS count FROM drivers'),
       query<{ count: string }>('SELECT COUNT(*)::text AS count FROM vehicles'),
       query<{ count: string }>('SELECT COUNT(*)::text AS count FROM customers'),
-      query<{ count: string }>('SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_status = \'active\''),
+      query<{ count: string }>("SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'"),
       query<{ invoiced_amount: string; collected_amount: string }>(
         `
           SELECT
-            COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoice_status = 'active'), 0)::text AS invoiced_amount,
-            COALESCE((SELECT SUM(amount) FROM collections), 0)::text AS collected_amount
+            COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'), 0)::text AS invoiced_amount,
+            COALESCE((
+              SELECT SUM(col.amount)
+              FROM collections col
+              JOIN invoices inv ON inv.id = col.invoice_id
+              WHERE inv.invoice_type = 'invoice'
+            ), 0)::text AS collected_amount
         `
       ),
       query(
@@ -31,7 +36,9 @@ router.get('/stats', authRequired, async (_req, res) => {
             json_build_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer
           FROM invoices i
           JOIN customers c ON c.id = i.customer_id
-          WHERE i.invoice_status = 'active' AND i.payment_status IN ('pending', 'partial', 'overdue')
+          WHERE i.invoice_status = 'active'
+            AND i.invoice_type = 'invoice'
+            AND i.payment_status IN ('pending', 'partial', 'overdue')
           ORDER BY COALESCE(i.due_date, i.invoice_date) ASC, i.created_at DESC
           LIMIT 10
         `
@@ -59,4 +66,3 @@ router.get('/stats', authRequired, async (_req, res) => {
 });
 
 export default router;
-

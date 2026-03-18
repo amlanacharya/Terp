@@ -20,6 +20,7 @@ interface InvoicePdfTaxComponent {
 }
 
 interface InvoicePdfData {
+  invoice_type: 'invoice' | 'credit_note';
   invoice_number: string;
   invoice_date: string;
   due_date: string | null;
@@ -232,7 +233,7 @@ export function buildInvoicePdf(
     doc.font('Helvetica').fontSize(10).text(settings.company_address || '-', left + 16, top + 38, {
       width: 260,
     });
-    doc.font('Helvetica-Bold').fontSize(18).text('TAX INVOICE', left + pageWidth - 180, top + 18, {
+    doc.font('Helvetica-Bold').fontSize(18).text(invoice.invoice_type === 'credit_note' ? 'CREDIT NOTE' : 'TAX INVOICE', left + pageWidth - 180, top + 18, {
       width: 160,
       align: 'right',
     });
@@ -312,5 +313,3 @@ export function buildInvoicePdf(
     doc.end();
   });
 }
-
-

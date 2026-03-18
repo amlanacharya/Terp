@@ -39,6 +39,8 @@ export function CollectionList() {
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
+  const selectedInvoice = invoices.find((invoice) => invoice.id === formState.invoice_id) ?? null;
+  const selectedDocumentIsCreditNote = selectedInvoice?.invoice_type === 'credit_note';
 
   async function loadCollections() {
     setCollections(await api.get<Collection[]>('/collections'));
@@ -88,7 +90,7 @@ export function CollectionList() {
       await loadCollections();
       closeModal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to record collection.');
+      setError(err instanceof Error ? err.message : 'Unable to record settlement.');
     } finally {
       setSaving(false);
     }
@@ -106,7 +108,7 @@ export function CollectionList() {
       setDeleteTarget(null);
       await loadCollections();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete collection.');
+      setError(err instanceof Error ? err.message : 'Unable to delete settlement.');
     } finally {
       setDeletingId(null);
     }
@@ -120,8 +122,8 @@ export function CollectionList() {
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Payment Receipts</p>
-          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Receipt register</h2>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Receipts & Refunds</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Settlement register</h2>
         </div>
         {canManage ? (
           <button
@@ -129,7 +131,7 @@ export function CollectionList() {
             onClick={openCreate}
             className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
           >
-            Add Receipt
+            Record Settlement
           </button>
         ) : null}
       </div>
@@ -138,8 +140,8 @@ export function CollectionList() {
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr>
-              <th className="px-4 py-3">Collection</th>
-              <th className="px-4 py-3">Invoice</th>
+              <th className="px-4 py-3">Settlement</th>
+              <th className="px-4 py-3">Document</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Mode</th>
@@ -150,10 +152,16 @@ export function CollectionList() {
           <tbody className="divide-y divide-slate-100 bg-white">
             {collections.map((collection) => {
               const rowBusy = deletingId === collection.id;
+              const isRefund = collection.invoice.invoice_type === 'credit_note';
 
               return (
                 <tr key={collection.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{collection.collection_number}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    <div>{collection.collection_number}</div>
+                    <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${isRefund ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {isRefund ? 'Refund' : 'Receipt'}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">{collection.invoice.invoice_number}</td>
                   <td className="px-4 py-3">{collection.invoice.customer.name}</td>
                   <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
@@ -176,24 +184,24 @@ export function CollectionList() {
       <Modal
         isOpen={isModalOpen}
         onClose={saving ? () => undefined : closeModal}
-        title="Record Payment Receipt"
+        title={selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment Receipt'}
         size="lg"
         closeOnBackdrop={!saving}
         closeOnEsc={!saving}
       >
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
           <label className="text-sm font-semibold text-slate-800">
-            Receipt Number
+            {selectedDocumentIsCreditNote ? 'Refund Number' : 'Receipt Number'}
             <input
               value={formState.collection_number}
               onChange={(event) => setFormState((current) => ({ ...current, collection_number: event.target.value }))}
-              placeholder="Receipt number, e.g. RCPT-00021"
+              placeholder={selectedDocumentIsCreditNote ? 'Refund number, e.g. RFND-00021' : 'Receipt number, e.g. RCPT-00021'}
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             />
           </label>
           <label className="text-sm font-semibold text-slate-800">
-            Receipt Date
+            {selectedDocumentIsCreditNote ? 'Refund Date' : 'Receipt Date'}
             <input
               type="date"
               value={formState.collection_date}
@@ -203,27 +211,27 @@ export function CollectionList() {
             />
           </label>
           <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
-            Customer Invoice
+            Invoice / Credit Note
             <select
               value={formState.invoice_id}
               onChange={(event) => setFormState((current) => ({ ...current, invoice_id: event.target.value }))}
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
               required
             >
-              <option value="">Select invoice to receive payment against</option>
+              <option value="">Select document</option>
               {invoices.map((invoice) => (
                 <option key={invoice.id} value={invoice.id}>
-                  {invoice.invoice_number} - {invoice.customer.name}
+                  {invoice.invoice_type === 'credit_note' ? 'Credit Note' : 'Invoice'} {invoice.invoice_number} - {invoice.customer.name}
                 </option>
               ))}
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-800">
-            Amount Received
+            {selectedDocumentIsCreditNote ? 'Amount Refunded' : 'Amount Received'}
             <input
               value={formState.amount}
               onChange={(event) => setFormState((current) => ({ ...current, amount: event.target.value }))}
-              placeholder="Amount received in INR, e.g. 15000"
+              placeholder={selectedDocumentIsCreditNote ? 'Amount refunded in INR, e.g. 15000' : 'Amount received in INR, e.g. 15000'}
               type="number"
               min="0"
               className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
@@ -264,7 +272,7 @@ export function CollectionList() {
           </label>
           <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
             <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : 'Record Payment'}</button>
+            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment'}</button>
           </div>
         </form>
       </Modal>
@@ -273,8 +281,8 @@ export function CollectionList() {
         isOpen={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
-        title="Delete Receipt"
-        message={deleteTarget ? `Delete collection ${deleteTarget.collection_number}?` : ''}
+        title="Delete Settlement"
+        message={deleteTarget ? `Delete settlement ${deleteTarget.collection_number}?` : ''}
         confirmLabel="Delete"
         loading={deleteTarget ? deletingId === deleteTarget.id : false}
       />

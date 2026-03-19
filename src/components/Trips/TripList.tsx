@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,6 +39,10 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   const [activeCalculation, setActiveCalculation] = useState<RateCalculationResult | null>(null);
   const [deleteTripTarget, setDeleteTripTarget] = useState<Trip | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [filterCustomerId, setFilterCustomerId] = useState('');
+  const [filterDriverId, setFilterDriverId] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [metricSaving, setMetricSaving] = useState(false);
@@ -296,6 +300,45 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     }
   }
 
+  const visibleTrips = useMemo(
+    () =>
+      trips.filter((trip) => {
+        const normalizedTripDate = trip.trip_date.slice(0, 10);
+
+        if (filterCustomerId && trip.customer_id !== filterCustomerId) {
+          return false;
+        }
+        if (filterDriverId && trip.driver_id !== filterDriverId) {
+          return false;
+        }
+        if (dateFrom && normalizedTripDate < dateFrom) {
+          return false;
+        }
+        if (dateTo && normalizedTripDate > dateTo) {
+          return false;
+        }
+
+        return true;
+      }),
+    [dateFrom, dateTo, filterCustomerId, filterDriverId, trips]
+  );
+
+  const visibleCustomers = useMemo(
+    () => customers.filter((customer) => trips.some((trip) => trip.customer_id === customer.id) || customer.id === filterCustomerId),
+    [customers, filterCustomerId, trips]
+  );
+  const visibleDrivers = useMemo(
+    () => drivers.filter((driver) => trips.some((trip) => trip.driver_id === driver.id) || driver.id === filterDriverId),
+    [drivers, filterDriverId, trips]
+  );
+
+  function clearFilters() {
+    setFilterCustomerId('');
+    setFilterDriverId('');
+    setDateFrom('');
+    setDateTo('');
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading trips...</p>;
   }
@@ -304,12 +347,12 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     <section className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Trips</p>
-          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Duty slip operations</h2>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Duty Slips</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">Live duty slip register</h2>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-sm text-slate-600">
-            Status filter
+            Status
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2">
               <option value="all">All</option>
               <option value="scheduled">Scheduled</option>
@@ -318,139 +361,148 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
               <option value="cancelled">Cancelled</option>
             </select>
           </label>
-          {canManage ? <button type="button" onClick={openCreateTrip} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">New Duty Slip</button> : null}
+          <label className="text-sm text-slate-600">
+            Customer
+            <select value={filterCustomerId} onChange={(event) => setFilterCustomerId(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2">
+              <option value="">All customers</option>
+              {visibleCustomers.map((customer) => (
+                <option key={customer.id} value={customer.id}>{customer.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-slate-600">
+            Driver
+            <select value={filterDriverId} onChange={(event) => setFilterDriverId(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2">
+              <option value="">All drivers</option>
+              {visibleDrivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>{driver.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-slate-600">
+            Date From
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2" />
+          </label>
+          <label className="text-sm text-slate-600">
+            Date To
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="mt-2 block rounded-2xl border border-slate-300 px-4 py-2" />
+          </label>
+          <button type="button" onClick={clearFilters} className="rounded-2xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700">
+            Clear Filters
+          </button>
+          {canManage ? <button type="button" onClick={openCreateTrip} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white">New Duty Slip</button> : null}
         </div>
       </div>
 
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">{notice}</div> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-5 py-4">
+      {selectedTrip ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-[0.22em] text-sky-600">Selected Duty Slip</p>
+              <h3 className="mt-2 text-2xl font-semibold text-slate-900">{selectedTrip.trip_number}</h3>
+              <p className="mt-1 text-sm text-slate-500">{selectedTrip.customer.name} • {selectedTrip.from_location} to {selectedTrip.to_location}</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={() => void handleDownloadPdf(selectedTrip.id)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Duty Slip PDF</button>
+              <button type="button" onClick={() => void handleDownloadPdf(selectedTrip.id, 'internal')} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Internal PDF</button>
+              {canManage ? <button type="button" onClick={() => void startEdit(selectedTrip)} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white">Edit Duty Slip</button> : null}
+              {canManage && !selectedTrip.parent_trip && !selectedTrip.direct_invoice_id && Number(selectedTrip.annexure_count ?? 0) === 0 ? <button type="button" disabled={billing || Number(selectedTrip.trip_amount ?? 0) <= 0} onClick={() => void handleDirectBill(selectedTrip.id)} className="rounded-2xl border border-sky-300 px-4 py-2 text-sm font-medium text-sky-700 disabled:opacity-60">{billing ? 'Billing...' : 'Bill Trip'}</button> : null}
+              <button type="button" onClick={() => setSelectedTrip(null)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Clear</button>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Trip Date
+              <div className="mt-1 font-semibold text-slate-900">{formatDate(selectedTrip.trip_date)}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Driver
+              <div className="mt-1 font-semibold text-slate-900">{selectedTrip.driver.name}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Vehicle
+              <div className="mt-1 font-semibold text-slate-900">{selectedTrip.vehicle.vehicle_number}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Status
+              <div className="mt-1 font-semibold text-slate-900">{selectedTrip.status}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Trip Amount
+              <div className="mt-1 font-semibold text-slate-900">{formatCurrency(selectedTrip.trip_amount)}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Annexures
+              <div className="mt-1 font-semibold text-slate-900">{selectedTrip.billed_annexure_count ?? 0} / {selectedTrip.annexure_count ?? 0} billed</div>
+            </div>
+          </div>
+          {selectedTrip.parent_trip ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">This trip is linked to parent trip {selectedTrip.parent_trip.trip_number}. Billing is controlled from the parent duty slip.</div> : null}
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
             <p className="text-sm uppercase tracking-[0.22em] text-slate-500">Parent Duty Slips</p>
             <h3 className="mt-2 text-xl font-semibold text-slate-900">Live duty slip register</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
-                <tr>
-                  <th className="px-4 py-3">Trip</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Route</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Billing</th>
-                  <th className="px-4 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {trips.map((tripRow) => {
-                  const billingLabel = tripRow.parent_trip_id
-                    ? 'Child'
-                    : tripRow.direct_invoice_id
-                      ? 'Direct billed'
-                      : Number(tripRow.billed_annexure_count ?? 0) > 0
-                        ? `${tripRow.billed_annexure_count}/${tripRow.annexure_count ?? 0} annexures billed`
-                        : Number(tripRow.annexure_count ?? 0) > 0
-                          ? `${tripRow.annexure_count} annexures`
-                          : 'Pending';
+          <div className="text-sm text-slate-500">Showing {visibleTrips.length} of {trips.length} duty slips</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Trip</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Driver</th>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Route</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Billing</th>
+                <th className="px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {visibleTrips.map((tripRow) => {
+                const billingLabel = tripRow.parent_trip_id
+                  ? 'Child'
+                  : tripRow.direct_invoice_id
+                    ? 'Direct billed'
+                    : Number(tripRow.billed_annexure_count ?? 0) > 0
+                      ? `${tripRow.billed_annexure_count}/${tripRow.annexure_count ?? 0} annexures billed`
+                      : Number(tripRow.annexure_count ?? 0) > 0
+                        ? `${tripRow.annexure_count} annexures`
+                        : 'Pending';
 
-                  return (
-                    <tr key={tripRow.id} className={selectedTrip?.id === tripRow.id ? 'bg-sky-50/70' : ''}>
-                      <td className="px-4 py-3"><button type="button" onClick={() => void openTripById(tripRow.id)} className="text-left font-medium text-slate-900 underline-offset-4 hover:underline">{tripRow.trip_number}</button></td>
-                      <td className="px-4 py-3 text-slate-700">{tripRow.customer.name}</td>
-                      <td className="px-4 py-3 text-slate-700">{formatDate(tripRow.trip_date)}</td>
-                      <td className="px-4 py-3 text-slate-700">{tripRow.from_location} to {tripRow.to_location}</td>
-                      <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{tripRow.status}</span></td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{formatCurrency(tripRow.trip_amount)}</td>
-                      <td className="px-4 py-3 text-slate-600">{billingLabel}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => void openTripById(tripRow.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open</button>
-                          {canManage ? <button type="button" onClick={() => void startEdit(tripRow)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
-                          {canManage ? <button type="button" onClick={() => setDeleteTripTarget(tripRow)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {trips.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filter.</td></tr> : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div>
-            <p className="text-sm uppercase tracking-[0.22em] text-sky-600">Selected Trip</p>
-            <h3 className="mt-2 text-2xl font-semibold text-slate-900">{selectedTrip?.trip_number ?? 'No trip selected'}</h3>
-            <p className="mt-1 text-sm text-slate-500">{selectedTrip ? selectedTrip.customer.name : 'Open a duty slip from the list to review billing status and edit it.'}</p>
-          </div>
-
-          {selectedTrip ? (
-            <>
-              <dl className="grid gap-4 text-sm text-slate-600 md:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Trip Date</dt>
-                  <dd>{formatDate(selectedTrip.trip_date)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Duty Type</dt>
-                  <dd>{selectedTrip.duty_type ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Vehicle</dt>
-                  <dd>{selectedTrip.vehicle.vehicle_number}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Driver</dt>
-                  <dd>{selectedTrip.driver.name}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Route</dt>
-                  <dd>{selectedTrip.from_location} to {selectedTrip.to_location}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Status</dt>
-                  <dd>{selectedTrip.status}</dd>
-                </div>
-              </dl>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Trip Amount
-                  <div className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(selectedTrip.trip_amount)}</div>
-                </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Calculated Amount
-                  <div className="mt-1 text-lg font-semibold text-slate-900">{selectedTrip.calculated_amount == null ? '-' : formatCurrency(Number(selectedTrip.calculated_amount))}</div>
-                </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Direct Invoice
-                  <div className="mt-1 font-semibold text-slate-900">{selectedTrip.direct_invoice_id ? 'Created' : 'Not billed'}</div>
-                </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Annexures
-                  <div className="mt-1 font-semibold text-slate-900">{selectedTrip.billed_annexure_count ?? 0} / {selectedTrip.annexure_count ?? 0} billed</div>
-                </div>
-              </div>
-
-              {selectedTrip.parent_trip ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">This trip is linked to parent trip {selectedTrip.parent_trip.trip_number}. Billing is controlled from the parent duty slip.</div> : null}
-
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={() => void handleDownloadPdf(selectedTrip.id)} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Duty Slip PDF</button>
-                <button type="button" onClick={() => void handleDownloadPdf(selectedTrip.id, 'internal')} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700">Internal PDF</button>
-                {canManage ? <button type="button" onClick={() => void startEdit(selectedTrip)} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white">Edit Duty Slip</button> : null}
-                {canManage && !selectedTrip.parent_trip && !selectedTrip.direct_invoice_id && Number(selectedTrip.annexure_count ?? 0) === 0 ? <button type="button" disabled={billing || Number(selectedTrip.trip_amount ?? 0) <= 0} onClick={() => void handleDirectBill(selectedTrip.id)} className="rounded-2xl border border-sky-300 px-5 py-3 text-sm font-medium text-sky-700 disabled:opacity-60">{billing ? 'Billing...' : 'Bill Trip'}</button> : null}
-              </div>
-            </>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">Open a duty slip to review it or launch the tabbed editor.</div>
-          )}
-        </section>
-      </div>
+                return (
+                  <tr key={tripRow.id} className={selectedTrip?.id === tripRow.id ? 'bg-sky-50/70' : ''}>
+                    <td className="px-4 py-3"><button type="button" onClick={() => void openTripById(tripRow.id)} className="text-left font-medium text-slate-900 underline-offset-4 hover:underline">{tripRow.trip_number}</button></td>
+                    <td className="px-4 py-3 text-slate-700">{tripRow.customer.name}</td>
+                    <td className="px-4 py-3 text-slate-700">{tripRow.driver.name}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatDate(tripRow.trip_date)}</td>
+                    <td className="px-4 py-3 text-slate-700">{tripRow.from_location} to {tripRow.to_location}</td>
+                    <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{tripRow.status}</span></td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{formatCurrency(tripRow.trip_amount)}</td>
+                    <td className="px-4 py-3 text-slate-600">{billingLabel}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void openTripById(tripRow.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open</button>
+                        {canManage ? <button type="button" onClick={() => void startEdit(tripRow)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
+                        {canManage ? <button type="button" onClick={() => setDeleteTripTarget(tripRow)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {visibleTrips.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filters.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {canManage ? (
         <Modal
@@ -495,4 +547,3 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     </section>
   );
 }
-

@@ -1210,7 +1210,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
         RETURNING id
       `,
       [
-        tripNumber, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
+        tripNumber.trip_number, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
         payload.trip_date, payload.duty_type ?? null, payload.booked_by ?? null, payload.report_to ?? null,
         payload.vehicle_category_id ?? null, payload.rate_chart_id ?? null, payload.rate_chart_item_id ?? null,
         payload.rate_chart_fixed_route_id ?? null, payload.start_time ?? null, payload.end_time ?? null,
@@ -1229,7 +1229,14 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
 
     const trip = await getTripById(client as unknown as Queryable, result.rows[0].id);
     await client.query('COMMIT');
-    res.status(201).json(trip);
+    res.status(201).json(
+      tripNumber.wrapped
+        ? {
+            ...trip,
+            warning: 'Duty slip number sequence wrapped from 99999 to 00001. Contact the IT team to take a backup/archive of older invoices and trip records.',
+          }
+        : trip
+    );
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Creating trip failed:', error);

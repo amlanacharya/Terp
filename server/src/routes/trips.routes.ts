@@ -1418,7 +1418,7 @@ router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountan
           c.gstin AS customer_gstin,
           c.credit_days AS customer_credit_days,
           v.vehicle_number,
-          COALESCE(vc.name, v.vehicle_type) AS vehicle_type_label,
+          COALESCE(vc.name, v.vehicle_type::text) AS vehicle_type_label,
           EXISTS(SELECT 1 FROM annexures a WHERE a.trip_id = t.id) AS has_annexures,
           (
             SELECT ii.invoice_id
@@ -1674,5 +1674,6 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
 
 

@@ -2,7 +2,7 @@
 **Role:** Senior Solution & System Design Architect
 **Objective:** Make TravelERP configurable at the micro level - like Finnone / SAP - where master data and config drive invoicing, receipting, settlement, and enquiry without code changes per client.
 
-**Last reviewed against codebase:** 2026-03-17
+**Last reviewed against codebase:** 2026-03-19
 
 ---
 
@@ -25,10 +25,12 @@ That delivered a strong GT baseline, but the platform gap remains: trip charges 
 
 | Area | Status | Current Evidence | Scaling Implication |
 |---|---|---|---|
-| GT Phase 4 - Annexures + GT invoice PDF | Done | `004_annexures_invoices.sql`, `annexures.routes.ts`, `annexure-builder.ts`, `pdf-annexure.ts`, `pdf-invoice-gt.ts`, `AnnexureList.tsx` | Phase 6 normalization must preserve trip / annexure lineage |
+| GT Phase 4 - Annexures + GT invoice PDF | Done | `annexures.routes.ts`, `annexure-builder.ts`, `pdf-annexure.ts`, `pdf-invoice-gt.ts`, `AnnexureList.tsx`, consolidated annexure schema | Phase 6 normalization must preserve trip / annexure lineage |
 | GT Phase 5 - Dynamic tax components | Done | `005_tax_components.sql`, `tax-engine.ts`, `tax-components.routes.ts`, `TaxComponentList.tsx` | Phase 9 extends this baseline instead of replacing it |
 | Invoice lifecycle baseline | Done and now factored into this plan | `006_void_invoices.sql`, `invoices.routes.ts`, `src/lib/types.ts` | Number series, approval, reporting, and GL must support `invoice`, `credit_note`, `void`, `written_off` |
+| Duty-slip workflow enhancement layer | Done | `DutySlipForm.tsx` 5-tab editor, GT auto-numbering in `auto-code.ts`, parent-trip annexure flow, standalone annexure billing page | Scale phases must layer on top of the current GT duty-slip UX, not replace it |
 | Duty-slip metric lineage | Done and now factored into this plan | `trip_travel_metrics`, `source_metric_id`, annexure-builder validation | Charge normalization must retain enough audit linkage for annexure-derived billing |
+| Resource allocation / availability control | Not started | `trips` stores one `vehicle_id` + one `driver_id`, but there is no overlap validation, no reservation ledger, and no relief-driver / vehicle-swap model | Impossible live operations can still be recorded; this must become an explicit scale-phase capability |
 | Settlement engine | Not started | `settlements.routes.ts` is still manual CRUD + PDF | Phase 7 still required |
 | Charge registry / allocation / number series | Not started | No `charge_types`, `document_charge_configs`, `charge_party_configs`, `trip_charge_lines`, `charge_allocations`, `number_series` tables yet | Phases 6-8 remain open |
 
@@ -43,6 +45,7 @@ That delivered a strong GT baseline, but the platform gap remains: trip charges 
 | Tax | `tax_components` + `invoice_tax_components` + `invoice_item_tax_components` exist | Still cannot express charge-type-specific taxability, thresholds, compound taxes, or per-customer exemptions |
 | Settlements | Fully manual - user enters totals, advances, deductions | No settlement engine; no config-driven deduction priority or split logic |
 | Charge allocation | None | Cannot split toll / parking / allowance / TDS across owner, driver, company, customer |
+| Resource assignment | Each trip has exactly one `vehicle_id` and one `driver_id`, but there is no overlap / shortage validation | System can record 4 trips in progress with only 3 active drivers or 3 vehicles unless the operator catches it manually |
 | Document numbering | Invoice numbers still use `system_settings.invoice_prefix` + row count; other documents are still manual/prefix-based | No yearly reset, no per-customer series, no credit-note series, no concurrency-safe sequencing |
 | Approval flow | None | Cannot require approval for invoice / credit note / void / write-off above thresholds |
 | Invoice lifecycle | `invoice_type`, `reference_invoice_id`, `invoice_status`, and void/write-off metadata now exist | Lifecycle is not yet governed by config, approval, numbering, reporting, or GL rules |
@@ -288,6 +291,66 @@ Replaces the `system_settings` key-value prefix with a proper series table that 
 - `GT/INV/00001/25-26` - default invoice series, yearly reset in April
 - `GT/CN/00001/25-26` - dedicated credit-note series
 - `RBI/INV/00023` - per-customer series for RBI
+
+---
+
+## Cross-Cutting Requirement - Fleet and Driver Capacity Control
+
+This constraint is now explicit and should not remain an operator-only responsibility.
+
+**Current limitation in code:**
+
+- A trip can only point to one `vehicle_id` and one `driver_id`.
+- Trip status supports `scheduled`, `in_progress`, `completed`, and `cancelled`.
+- There is currently no backend rule that checks whether the same driver or vehicle is already committed to another overlapping trip.
+- There is currently no model for relief driver handover, mid-trip vehicle replacement, or temporary unassignment.
+
+**Operational failure cases that must be modeled:**
+
+- 4 trips are marked `in_progress`, but only 3 active drivers exist.
+- 4 trips are marked `in_progress`, but only 3 active vehicles exist.
+- 3 vehicles and 2 drivers are available, but operators still need to plan 4 bookings across time windows.
+- One trip starts with Driver A and Vehicle X, then Driver B relieves mid-duty or Vehicle Y replaces Vehicle X because of breakdown.
+
+**Platform requirement from this point onward:**
+
+- The system must distinguish `planned allocation`, `live allocation`, and `historical allocation`.
+- A driver or vehicle may be assigned to multiple trips only when time windows do not overlap, or when the earlier allocation is explicitly ended before the next begins.
+- `in_progress` trips must block conflicting active assignments unless an explicit reassignment / relief action is recorded.
+- Capacity checks must use only active master records (`drivers.is_active`, `vehicles.is_active`) and must fail fast in the backend, not only in the UI.
+- Reassignment history must be auditable so duty-slip PDF, invoice, settlement, and incident review can explain who actually drove and which vehicle actually operated at each stage.
+
+**Recommended data-model extension:**
+
+**New table: `trip_resource_allocations`**
+
+| Column | Type | Description |
+|---|---|---|
+| id | uuid PK | |
+| trip_id | uuid FK trips | |
+| resource_type | enum | `driver` / `vehicle` |
+| resource_id | uuid | FK to `drivers` or `vehicles` by type |
+| allocation_role | enum | `primary` / `relief` / `replacement` |
+| start_at | timestamptz | When this resource actually became active on the trip |
+| end_at | timestamptz null | Null while still active |
+| status | enum | `planned` / `active` / `released` / `cancelled` |
+| notes | text null | Breakdown, handover, shortage reason, etc. |
+| created_by | uuid null | Audit |
+| created_at | timestamptz | |
+
+**Rules:**
+
+1. At most one active primary vehicle per trip at a time.
+2. At most one active primary driver per trip at a time.
+3. The same driver cannot be `active` on overlapping trips unless one allocation is ended first and the overlap is explicitly resolved.
+4. The same vehicle cannot be `active` on overlapping trips unless one allocation is ended first and the overlap is explicitly resolved.
+5. `trips.vehicle_id` and `trips.driver_id` remain as current snapshot fields for compatibility, but the allocation table becomes the operational source of truth in the scale phases.
+
+**Phasing recommendation:**
+
+- Phase 6A: add backend conflict checks for current `trips.vehicle_id` and `trips.driver_id` using trip status plus open-ended allocation logic.
+- Phase 6B: introduce `trip_resource_allocations` and reassignment APIs.
+- Phase 7: make settlements read the final historical driver/vehicle allocation instead of assuming one immutable pair per trip.
 
 ---
 

@@ -72,9 +72,12 @@ function drawSectionTitle(doc: PdfDoc, title: string): void {
   doc.moveDown(1.4);
 }
 
-function drawLabelValue(doc: PdfDoc, x: number, y: number, label: string, value: string, width: number): void {
+function drawLabelValue(doc: PdfDoc, x: number, y: number, label: string, value: string, width: number): number {
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(label, x, y, { width });
-  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(value, x, y + 12, { width });
+  const labelHeight = doc.heightOfString(label, { width });
+  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(value, x, y + labelHeight + 2, { width });
+  const valueHeight = doc.heightOfString(value, { width });
+  return Math.max(26, labelHeight + valueHeight + 10);
 }
 
 function drawInfoBox(
@@ -85,19 +88,26 @@ function drawInfoBox(
   title: string,
   rows: Array<{ label: string; value: string }>
 ): number {
-  const contentHeight = Math.max(76, 18 + rows.length * 26);
+  const innerWidth = width - 24;
+  const rowHeights = rows.map((row) => {
+    doc.font('Helvetica-Bold').fontSize(9);
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10);
+    const valueHeight = doc.heightOfString(row.value, { width: innerWidth });
+    return Math.max(26, labelHeight + valueHeight + 10);
+  });
+  const contentHeight = Math.max(76, 36 + rowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0));
 
   doc.save();
   doc.roundedRect(x, y, width, contentHeight, 8).lineWidth(1).stroke('#cbd5e1');
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text(title, x + 12, y + 10, {
-    width: width - 24,
+    width: innerWidth,
   });
   doc.moveTo(x + 12, y + 28).lineTo(x + width - 12, y + 28).stroke('#e2e8f0');
 
   let rowY = y + 36;
   rows.forEach((row) => {
-    drawLabelValue(doc, x + 12, rowY, row.label, row.value, width - 24);
-    rowY += 26;
+    rowY += drawLabelValue(doc, x + 12, rowY, row.label, row.value, innerWidth);
   });
   doc.restore();
 
@@ -132,6 +142,7 @@ function drawInvoiceTable(doc: PdfDoc, items: InvoicePdfItem[]): void {
   const startX = doc.page.margins.left;
   const widths = [24, 158, 42, 36, 58, 60, 54, 63];
   const headers = ['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount', 'GST', 'Total'];
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
   let y = drawTableHeader(doc, headers, widths, startX, doc.y);
 
   items.forEach((item, index) => {
@@ -152,7 +163,10 @@ function drawInvoiceTable(doc: PdfDoc, items: InvoicePdfItem[]): void {
       doc.heightOfString(values[1], { width: widths[1] - 8, align: 'left' }) + 10
     );
 
-    ensureSpace(doc, rowHeight + 20);
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawTableHeader(doc, headers, widths, startX, doc.y);
+    }
 
     let x = startX;
     values.forEach((value, cellIndex) => {
@@ -298,12 +312,12 @@ export function buildInvoicePdf(
     if (settings.bank_name || settings.bank_account || settings.bank_ifsc) {
       drawSectionTitle(doc, 'Bank Details');
       const bankTop = doc.y;
-      drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
+      const bankBoxHeight = drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
         { label: 'Bank Name', value: settings.bank_name || '-' },
         { label: 'Account Number', value: settings.bank_account || '-' },
         { label: 'IFSC Code', value: settings.bank_ifsc || '-' },
       ]);
-      doc.y = bankTop + 92;
+      doc.y = bankTop + bankBoxHeight + 12;
     }
 
     ensureSpace(doc, 40);

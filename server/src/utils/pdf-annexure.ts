@@ -78,20 +78,31 @@ function drawInfoBox(
   title: string,
   rows: Array<{ label: string; value: string }>
 ): number {
-  const contentHeight = Math.max(92, 18 + rows.length * 26);
+  const innerWidth = width - 24;
+  const rowHeights = rows.map((row) => {
+    doc.font('Helvetica-Bold').fontSize(9);
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10);
+    const valueHeight = doc.heightOfString(row.value, { width: innerWidth });
+    return Math.max(26, labelHeight + valueHeight + 10);
+  });
+  const contentHeight = Math.max(92, 36 + rowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0));
 
   doc.save();
   doc.roundedRect(x, y, width, contentHeight, 8).lineWidth(1).stroke('#cbd5e1');
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text(title, x + 12, y + 10, {
-    width: width - 24,
+    width: innerWidth,
   });
   doc.moveTo(x + 12, y + 28).lineTo(x + width - 12, y + 28).stroke('#e2e8f0');
 
   let rowY = y + 36;
-  rows.forEach((row) => {
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(row.label, x + 12, rowY, { width: width - 24 });
-    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(row.value, x + 12, rowY + 12, { width: width - 24 });
-    rowY += 26;
+  rows.forEach((row, index) => {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(row.label, x + 12, rowY, { width: innerWidth });
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(row.value, x + 12, rowY + labelHeight + 2, {
+      width: innerWidth,
+    });
+    rowY += rowHeights[index];
   });
   doc.restore();
 

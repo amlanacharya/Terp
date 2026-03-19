@@ -176,9 +176,12 @@ function drawSectionTitle(doc: PdfDoc, title: string): void {
   doc.moveDown(1.4);
 }
 
-function drawLabelValue(doc: PdfDoc, x: number, y: number, label: string, value: string, width: number): void {
+function drawLabelValue(doc: PdfDoc, x: number, y: number, label: string, value: string, width: number): number {
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(label, x, y, { width });
-  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(value, x, y + 12, { width });
+  const labelHeight = doc.heightOfString(label, { width });
+  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(value, x, y + labelHeight + 2, { width });
+  const valueHeight = doc.heightOfString(value, { width });
+  return Math.max(26, labelHeight + valueHeight + 10);
 }
 
 function drawInfoBox(
@@ -189,19 +192,26 @@ function drawInfoBox(
   title: string,
   rows: Array<{ label: string; value: string }>
 ): number {
-  const contentHeight = Math.max(88, 18 + rows.length * 26);
+  const innerWidth = width - 24;
+  const rowHeights = rows.map((row) => {
+    doc.font('Helvetica-Bold').fontSize(9);
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10);
+    const valueHeight = doc.heightOfString(row.value, { width: innerWidth });
+    return Math.max(26, labelHeight + valueHeight + 10);
+  });
+  const contentHeight = Math.max(88, 36 + rowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0));
 
   doc.save();
   doc.roundedRect(x, y, width, contentHeight, 8).lineWidth(1).stroke('#cbd5e1');
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text(title, x + 12, y + 10, {
-    width: width - 24,
+    width: innerWidth,
   });
   doc.moveTo(x + 12, y + 28).lineTo(x + width - 12, y + 28).stroke('#e2e8f0');
 
   let rowY = y + 36;
   rows.forEach((row) => {
-    drawLabelValue(doc, x + 12, rowY, row.label, row.value, width - 24);
-    rowY += 26;
+    rowY += drawLabelValue(doc, x + 12, rowY, row.label, row.value, innerWidth);
   });
   doc.restore();
 
@@ -242,6 +252,7 @@ function drawMetricsTable(doc: PdfDoc, metrics: DutySlipPdfMetric[]): void {
   const startX = doc.page.margins.left;
   const widths = [28, 102, 66, 102, 66, 60, 60];
   const headers = ['#', 'Start', 'Start KM', 'End', 'End KM', 'Seg KM', 'Seg Hrs'];
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
   let y = drawTableHeader(doc, headers, widths, startX, doc.y);
 
   metrics.forEach((metric) => {
@@ -263,7 +274,10 @@ function drawMetricsTable(doc: PdfDoc, metrics: DutySlipPdfMetric[]): void {
       doc.heightOfString(values[3], { width: widths[3] - 8 }) + 10
     );
 
-    ensureSpace(doc, rowHeight + 20);
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawTableHeader(doc, headers, widths, startX, doc.y);
+    }
 
     let x = startX;
     values.forEach((value, index) => {
@@ -286,11 +300,15 @@ function drawAmountTable(doc: PdfDoc, lineItems: DutySlipPdfLineItem[]): void {
   const startX = doc.page.margins.left;
   const widths = [280, 150];
   const headers = ['Charge Head', 'Amount'];
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
   let y = drawTableHeader(doc, headers, widths, startX, doc.y);
 
   rows.forEach((row) => {
-    const rowHeight = 22;
-    ensureSpace(doc, rowHeight + 20);
+    const rowHeight = Math.max(22, doc.heightOfString(row.label, { width: widths[0] - 12 }) + 10);
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawTableHeader(doc, headers, widths, startX, doc.y);
+    }
 
     doc.rect(startX, y, widths[0], rowHeight).stroke('#cbd5e1');
     doc.rect(startX + widths[0], y, widths[1], rowHeight).stroke('#cbd5e1');
@@ -404,14 +422,16 @@ function renderInternalDutySlipContent(doc: PdfDoc, dutySlip: DutySlipPdfData, s
 
   if (dutySlip.remarks) {
     drawSectionTitle(doc, 'Remarks');
-    ensureSpace(doc, 60);
-    doc.roundedRect(left, doc.y, pageWidth, 56, 8).stroke('#cbd5e1');
-    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(dutySlip.remarks, left + 12, doc.y + 12, {
+    doc.font('Helvetica').fontSize(10);
+    const remarksBoxHeight = Math.max(40, doc.heightOfString(dutySlip.remarks, { width: pageWidth - 24 }) + 24);
+    ensureSpace(doc, remarksBoxHeight + 12);
+    const remarksY = doc.y;
+    doc.roundedRect(left, remarksY, pageWidth, remarksBoxHeight, 8).stroke('#cbd5e1');
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(dutySlip.remarks, left + 12, remarksY + 12, {
       width: pageWidth - 24,
     });
-    doc.y += 70;
+    doc.y = remarksY + remarksBoxHeight + 8;
   }
-
   ensureSpace(doc, 40);
   doc.font('Helvetica').fontSize(9).fillColor('#64748b').text('Computer-generated duty slip', {
     align: 'center',
@@ -570,13 +590,17 @@ function drawExternalExpensesTable(doc: PdfDoc, expenses: DutySlipExpense[]): vo
   const left = doc.page.margins.left;
   const widths = [120, 265, 130];
   const headers = ['Expense Type', 'Description', 'Amount'];
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
   let y = drawTableHeader(doc, headers, widths, left, doc.y);
   let totalAmount = 0;
 
   expenses.forEach((expense) => {
     const description = expense.description && expense.description.trim().length > 0 ? expense.description : '-';
     const rowHeight = Math.max(24, doc.heightOfString(description, { width: widths[1] - 10 }) + 10);
-    ensureSpace(doc, rowHeight + 20);
+    if (y + rowHeight > bottomLimit) {
+      doc.addPage();
+      y = drawTableHeader(doc, headers, widths, left, doc.y);
+    }
 
     doc.rect(left, y, widths[0], rowHeight).stroke('#cbd5e1');
     doc.rect(left + widths[0], y, widths[1], rowHeight).stroke('#cbd5e1');
@@ -596,7 +620,10 @@ function drawExternalExpensesTable(doc: PdfDoc, expenses: DutySlipExpense[]): vo
   });
 
   const totalHeight = 24;
-  ensureSpace(doc, totalHeight + 20);
+  if (y + totalHeight > bottomLimit) {
+    doc.addPage();
+    y = drawTableHeader(doc, headers, widths, left, doc.y);
+  }
   doc.rect(left, y, widths[0] + widths[1], totalHeight).stroke('#111827');
   doc.rect(left + widths[0] + widths[1], y, widths[2], totalHeight).stroke('#111827');
   doc.font('Helvetica-Bold').fontSize(9).fillColor('#111827').text('Total Incurred', left + 6, y + 7, {
@@ -654,7 +681,12 @@ function drawExternalRemarks(doc: PdfDoc, remarks: string | null): void {
     return;
   }
 
-  drawExternalFieldLine(doc, 'REMARKS', remarks, { labelWidth: 90, lineCount: Math.max(1, Math.ceil(remarks.length / 90)) });
+  const labelWidth = 90;
+  const valueWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right - labelWidth;
+  doc.font('Helvetica').fontSize(10);
+  const textHeight = doc.heightOfString(remarks, { width: valueWidth, lineGap: 2 });
+  const lineCount = Math.max(1, Math.ceil(textHeight / 18));
+  drawExternalFieldLine(doc, 'REMARKS', remarks, { labelWidth, lineCount });
 }
 
 function drawExternalSignatureBlock(doc: PdfDoc, settings: Record<string, string>): void {

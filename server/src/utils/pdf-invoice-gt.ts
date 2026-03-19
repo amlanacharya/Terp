@@ -112,20 +112,31 @@ function drawInfoBox(
   title: string,
   rows: Array<{ label: string; value: string }>
 ): number {
-  const contentHeight = Math.max(108, 18 + rows.length * 24);
+  const innerWidth = width - 24;
+  const rowHeights = rows.map((row) => {
+    doc.font('Helvetica-Bold').fontSize(9);
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10);
+    const valueHeight = doc.heightOfString(row.value, { width: innerWidth });
+    return Math.max(24, labelHeight + valueHeight + 9);
+  });
+  const contentHeight = Math.max(108, 36 + rowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0));
 
   doc.save();
   doc.roundedRect(x, y, width, contentHeight, 8).lineWidth(1).stroke('#cbd5e1');
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text(title, x + 12, y + 10, {
-    width: width - 24,
+    width: innerWidth,
   });
   doc.moveTo(x + 12, y + 28).lineTo(x + width - 12, y + 28).stroke('#e2e8f0');
 
   let rowY = y + 36;
-  rows.forEach((row) => {
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(row.label, x + 12, rowY, { width: width - 24 });
-    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(row.value, x + 12, rowY + 11, { width: width - 24 });
-    rowY += 24;
+  rows.forEach((row, index) => {
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#475569').text(row.label, x + 12, rowY, { width: innerWidth });
+    const labelHeight = doc.heightOfString(row.label, { width: innerWidth });
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(row.value, x + 12, rowY + labelHeight + 2, {
+      width: innerWidth,
+    });
+    rowY += rowHeights[index];
   });
   doc.restore();
 
@@ -323,40 +334,49 @@ export function renderGtInvoiceContent(doc: PdfDoc, data: GtInvoicePdfData, sett
   drawTotalsBox(doc, data);
 
   drawSectionTitle(doc, 'Amount In Words');
-  ensureSpace(doc, 52);
-  doc.roundedRect(left, doc.y, pageWidth, 44, 8).stroke('#cbd5e1');
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text(numberToWords(data.total_amount), left + 12, doc.y + 14, {
+  const amountText = numberToWords(data.total_amount);
+  doc.font('Helvetica-Bold').fontSize(11);
+  const amountBoxHeight = Math.max(44, doc.heightOfString(amountText, { width: pageWidth - 24 }) + 28);
+  ensureSpace(doc, amountBoxHeight + 8);
+  const amountY = doc.y;
+  doc.roundedRect(left, amountY, pageWidth, amountBoxHeight, 8).stroke('#cbd5e1');
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text(amountText, left + 12, amountY + 14, {
     width: pageWidth - 24,
   });
-  doc.y += 58;
+  doc.y = amountY + amountBoxHeight + 8;
 
   drawSectionTitle(doc, 'Notes');
-  ensureSpace(doc, 72);
-  doc.roundedRect(left, doc.y, pageWidth, 64, 8).stroke('#cbd5e1');
-  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(`Payment terms: ${data.payment_terms_days ?? 0} day(s)`, left + 12, doc.y + 12, {
-    width: pageWidth - 24,
-  });
-  doc.text(`Interest note: ${data.interest_note || '-'}`, left + 12, doc.y + 30, {
-    width: pageWidth - 24,
-  });
+  const noteLines = [
+    `Payment terms: ${data.payment_terms_days ?? 0} day(s)`,
+    `Interest note: ${data.interest_note || '-'}`,
+  ];
   if (data.remarks) {
-    doc.text(`Remarks: ${data.remarks}`, left + 12, doc.y + 48, {
+    noteLines.push(`Remarks: ${data.remarks}`);
+  }
+  doc.font('Helvetica').fontSize(10);
+  const noteHeights = noteLines.map((line) => doc.heightOfString(line, { width: pageWidth - 24 }));
+  const notesHeight = Math.max(64, 24 + noteHeights.reduce((sum, height) => sum + height, 0) + ((noteLines.length - 1) * 6));
+  ensureSpace(doc, notesHeight + 8);
+  const sectionY = doc.y;
+  doc.roundedRect(left, sectionY, pageWidth, notesHeight, 8).stroke('#cbd5e1');
+  let textY = sectionY + 12;
+  noteLines.forEach((line, index) => {
+    doc.font('Helvetica').fontSize(10).fillColor('#111827').text(line, left + 12, textY, {
       width: pageWidth - 24,
     });
-    doc.y += 80;
-  } else {
-    doc.y += 70;
-  }
+    textY += noteHeights[index] + 6;
+  });
+  doc.y = sectionY + notesHeight + 8;
 
   if (settings.bank_name || settings.bank_account || settings.bank_ifsc) {
     drawSectionTitle(doc, 'Bank Details');
     const bankTop = doc.y;
-    drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
+    const bankBoxHeight = drawInfoBox(doc, left, bankTop, pageWidth, 'Payment Information', [
       { label: 'Bank Name', value: settings.bank_name || '-' },
       { label: 'Account Number', value: settings.bank_account || '-' },
       { label: 'IFSC Code', value: settings.bank_ifsc || '-' },
     ]);
-    doc.y = bankTop + 100;
+    doc.y = bankTop + bankBoxHeight + 12;
   }
 
   ensureSpace(doc, 40);

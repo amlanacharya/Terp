@@ -403,7 +403,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
             <div>
               <p className="text-sm uppercase tracking-[0.22em] text-sky-600">Selected Duty Slip</p>
               <h3 className="mt-2 text-2xl font-semibold text-slate-900">{selectedTrip.trip_number}</h3>
-              <p className="mt-1 text-sm text-slate-500">{selectedTrip.customer.name} • {selectedTrip.from_location} to {selectedTrip.to_location}</p>
+              <p className="mt-1 text-sm text-slate-500">{selectedTrip.customer.name} - {selectedTrip.from_location} to {selectedTrip.to_location}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button type="button" onClick={() => void handleDownloadPdf(selectedTrip.id)} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700">Duty Slip PDF</button>

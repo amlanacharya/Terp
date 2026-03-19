@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner } from '../../lib/types';
@@ -11,9 +11,16 @@ interface OwnerFormState {
   contact_person: string;
   phone: string;
   email: string;
+  address: string;
   city: string;
   state: string;
+  pincode: string;
   gstin: string;
+  pan: string;
+  aadhar_number: string;
+  bank_name: string;
+  bank_account: string;
+  ifsc_code: string;
   is_active: boolean;
 }
 
@@ -23,9 +30,16 @@ const initialForm: OwnerFormState = {
   contact_person: '',
   phone: '',
   email: '',
+  address: '',
   city: '',
   state: '',
+  pincode: '',
   gstin: '',
+  pan: '',
+  aadhar_number: '',
+  bank_name: '',
+  bank_account: '',
+  ifsc_code: '',
   is_active: true,
 };
 
@@ -36,12 +50,14 @@ export function OwnerList() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Owner | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
+  const filteredOwners = useMemo(() => (showInactive ? owners : owners.filter((owner) => owner.is_active !== false)), [owners, showInactive]);
 
   async function loadOwners() {
     setOwners(await api.get<Owner[]>('/owners'));
@@ -75,9 +91,16 @@ export function OwnerList() {
       contact_person: owner.contact_person ?? '',
       phone: owner.phone ?? '',
       email: owner.email ?? '',
+      address: owner.address ?? '',
       city: owner.city ?? '',
       state: owner.state ?? '',
+      pincode: owner.pincode ?? '',
       gstin: owner.gstin ?? '',
+      pan: owner.pan ?? '',
+      aadhar_number: owner.aadhar_number ?? '',
+      bank_name: owner.bank_name ?? '',
+      bank_account: owner.bank_account ?? '',
+      ifsc_code: owner.ifsc_code ?? '',
       is_active: owner.is_active,
     });
     setIsModalOpen(true);
@@ -94,15 +117,29 @@ export function OwnerList() {
     setSaving(true);
     setError('');
 
+    if (formState.aadhar_number && !/^[0-9]{12}$/.test(formState.aadhar_number)) {
+      setError('Aadhaar number must be exactly 12 digits.');
+      setSaving(false);
+      return;
+    }
+
     try {
       const payload = {
-        ...formState,
+        name: formState.name,
         contact_person: formState.contact_person || null,
         phone: formState.phone || null,
         email: formState.email || null,
+        address: formState.address || null,
         city: formState.city || null,
         state: formState.state || null,
+        pincode: formState.pincode || null,
         gstin: formState.gstin || null,
+        pan: formState.pan || null,
+        aadhar_number: formState.aadhar_number || null,
+        bank_name: formState.bank_name || null,
+        bank_account: formState.bank_account || null,
+        ifsc_code: formState.ifsc_code || null,
+        is_active: formState.is_active,
       };
 
       if (editingId) {
@@ -152,134 +189,67 @@ export function OwnerList() {
           <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Vehicle Owners</p>
           <h2 className="mt-2 text-3xl font-semibold text-slate-900">Vehicle owner master</h2>
         </div>
-        {canManage ? (
-          <button
-            type="button"
-            onClick={openCreate}
-            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
-          >
-            Add Vehicle Owner
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} />
+            Include Inactive
+          </label>
+          {canManage ? <button type="button" onClick={openCreate} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white">Add Vehicle Owner</button> : null}
+        </div>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       <div className="grid gap-4 xl:grid-cols-2">
-        {owners.map((owner) => {
+        {filteredOwners.map((owner) => {
           const rowBusy = deletingId === owner.id;
-
           return (
-            <article key={owner.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
+            <article key={owner.id} className={`rounded-3xl border p-5 shadow-sm ${owner.is_active ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50/70 opacity-70'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{owner.code}</p>
                   <h3 className="mt-1 text-xl font-semibold text-slate-900">{owner.name}</h3>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {owner.is_active ? 'Active' : 'Inactive'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {!owner.is_active ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Inactive</span> : null}
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{owner.is_active ? 'Active' : 'Inactive'}</span>
+                </div>
               </div>
-              {canManage ? (
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={rowBusy}
-                    onClick={() => startEdit(owner)}
-                    className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
-                  >
-                    Edit owner
-                  </button>
-                  <button
-                    type="button"
-                    disabled={rowBusy}
-                    onClick={() => setDeleteTarget(owner)}
-                    className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ) : null}
+              {canManage ? <div className="mt-3 flex gap-2"><button type="button" disabled={rowBusy} onClick={() => startEdit(owner)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit owner</button><button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(owner)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button></div> : null}
               <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Contact</dt>
-                  <dd>{owner.contact_person ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Phone</dt>
-                  <dd>{owner.phone ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Location</dt>
-                  <dd>
-                    {owner.city ?? '-'}, {owner.state ?? '-'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">GSTIN</dt>
-                  <dd>{owner.gstin ?? '-'}</dd>
-                </div>
+                <div><dt className="font-medium text-slate-500">Contact</dt><dd>{owner.contact_person ?? '-'}</dd></div>
+                <div><dt className="font-medium text-slate-500">Phone</dt><dd>{owner.phone ?? '-'}</dd></div>
+                <div><dt className="font-medium text-slate-500">Location</dt><dd>{owner.city ?? '-'}, {owner.state ?? '-'}</dd></div>
+                <div><dt className="font-medium text-slate-500">GST / PAN</dt><dd>{owner.gstin ?? '-'}</dd><dd className="text-xs text-slate-500">PAN: {owner.pan ?? '-'}</dd></div>
+                <div><dt className="font-medium text-slate-500">Aadhaar</dt><dd>{owner.aadhar_number ?? '-'}</dd></div>
+                <div><dt className="font-medium text-slate-500">Bank</dt><dd>{owner.bank_name ?? '-'}</dd><dd className="text-xs text-slate-500">{owner.bank_account ?? '-'}</dd></div>
               </dl>
             </article>
           );
         })}
       </div>
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={saving ? () => undefined : closeModal}
-        title={editingId ? 'Edit Vehicle Owner' : 'Add Vehicle Owner'}
-        size="lg"
-        closeOnBackdrop={!saving}
-        closeOnEsc={!saving}
-      >
+      <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={editingId ? 'Edit Vehicle Owner' : 'Add Vehicle Owner'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-800">
-            Owner Code
-            <input value={formState.code} onChange={(event) => setFormState((current) => ({ ...current, code: event.target.value }))} placeholder="Owner code, e.g. OWN-001" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Owner Name
-            <input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} placeholder="Owner name, e.g. Sai Tours" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Contact Person
-            <input value={formState.contact_person} onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))} placeholder="Contact person, e.g. Mehul Shah" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Phone Number
-            <input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number, e.g. 9876543210" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Email
-            <input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} placeholder="Email, e.g. owner@company.com" type="email" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            City
-            <input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} placeholder="City, e.g. Cuttack" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            State
-            <input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} placeholder="State, e.g. Odisha" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            GSTIN
-            <input value={formState.gstin} onChange={(event) => setFormState((current) => ({ ...current, gstin: event.target.value }))} placeholder="GSTIN, e.g. 21ABCDE1234F1Z5" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" />
-          </label>
-          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Vehicle Owner' : 'Create Vehicle Owner'}</button>
-          </div>
+          <label className="text-sm font-semibold text-slate-800">Owner Code<input value={editingId ? formState.code : 'Auto-generated on save'} readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal text-slate-500" /></label>
+          <label className="text-sm font-semibold text-slate-800">Owner Name<input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required /></label>
+          <label className="text-sm font-semibold text-slate-800">Contact Person<input value={formState.contact_person} onChange={(event) => setFormState((current) => ({ ...current, contact_person: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Phone Number<input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Email<input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} type="email" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">GSTIN<input value={formState.gstin} onChange={(event) => setFormState((current) => ({ ...current, gstin: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">PAN<input value={formState.pan} onChange={(event) => setFormState((current) => ({ ...current, pan: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Aadhaar Number<input value={formState.aadhar_number} onChange={(event) => setFormState((current) => ({ ...current, aadhar_number: event.target.value }))} maxLength={12} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">Address<textarea value={formState.address} onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))} rows={3} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">City<input value={formState.city} onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">State<input value={formState.state} onChange={(event) => setFormState((current) => ({ ...current, state: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Pincode<input value={formState.pincode} onChange={(event) => setFormState((current) => ({ ...current, pincode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Bank Name<input value={formState.bank_name} onChange={(event) => setFormState((current) => ({ ...current, bank_name: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Bank Account<input value={formState.bank_account} onChange={(event) => setFormState((current) => ({ ...current, bank_account: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">IFSC Code<input value={formState.ifsc_code} onChange={(event) => setFormState((current) => ({ ...current, ifsc_code: event.target.value.toUpperCase() }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 lg:col-span-2"><input type="checkbox" checked={formState.is_active} onChange={(event) => setFormState((current) => ({ ...current, is_active: event.target.checked }))} />Active vehicle owner</label>
+          <div className="flex justify-end gap-3 pt-2 lg:col-span-2"><button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button><button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Vehicle Owner' : 'Create Vehicle Owner'}</button></div>
         </form>
       </Modal>
 
-      <ConfirmModal
-        isOpen={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Vehicle Owner"
-        message={deleteTarget ? `Delete vehicle owner ${deleteTarget.name}?` : ''}
-        confirmLabel="Delete"
-        loading={deleteTarget ? deletingId === deleteTarget.id : false}
-      />
+      <ConfirmModal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteConfirm} title="Delete Vehicle Owner" message={deleteTarget ? `Delete vehicle owner ${deleteTarget.name}?` : ''} confirmLabel="Delete" loading={deleteTarget ? deletingId === deleteTarget.id : false} />
     </section>
   );
 }

@@ -10,11 +10,12 @@ interface AnnexureListProps {
   parentTrip?: TripDetail | null;
   embedded?: boolean;
   onOpenTrip?: (tripId: string) => void;
+  onChange?: () => Promise<void> | void;
 }
 
 type SelectionMode = 'metric_rows' | 'date_range';
 
-export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }: AnnexureListProps) {
+export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip, onChange }: AnnexureListProps) {
   const { profile } = useAuth();
   const [parentTrips, setParentTrips] = useState<Trip[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string>(parentTrip?.id ?? '');
@@ -185,6 +186,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
         end_date: selectionMode === 'date_range' ? rangeEnd : undefined,
       });
       await refreshForTrip(selectedParent.id);
+      await onChange?.();
       closeCreateModal();
       setNotice('Annexure created.');
     } catch (err) {
@@ -210,6 +212,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
       await api.delete(`/annexures/${deleteTarget.id}`);
       setDeleteTarget(null);
       await refreshForTrip(selectedParent.id);
+      await onChange?.();
       setNotice('Annexure deleted.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete annexure.');
@@ -229,6 +232,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
       setNotice('');
       const invoice = await api.put<{ invoice_number: string }>(`/annexures/${annexure.id}/bill`, {});
       await refreshForTrip(selectedParent.id);
+      await onChange?.();
       setNotice(`Invoice ${invoice.invoice_number} created.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to bill annexure.');
@@ -251,6 +255,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
         annexure_ids: selectedAnnexureIds,
       });
       await refreshForTrip(selectedParent.id);
+      await onChange?.();
       setNotice(`Invoice ${invoice.invoice_number} created for selected annexures.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to bill selected annexures.');
@@ -370,13 +375,13 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
                       <td className="px-4 py-3">
                         <input type="checkbox" checked={selectedAnnexureIds.includes(annexure.id)} disabled={annexure.is_billed} onChange={() => toggleAnnexure(annexure.id)} />
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{annexure.annexure_number}<div className="text-xs text-slate-500">Child: {annexure.child_trip.trip_number}</div></td>
+                      <td className="px-4 py-3 font-medium text-slate-900">{annexure.annexure_number}</td>
                       <td className="px-4 py-3">{formatDate(annexure.start_date)} to {formatDate(annexure.end_date)}</td>
                       <td className="px-4 py-3">{annexure.total_km.toFixed(2)} km<div className="text-xs text-slate-500">{annexure.total_hours.toFixed(2)} hrs</div></td>
                       <td className="px-4 py-3">{formatCurrency(annexure.calculated_amount)}</td>
                       <td className="px-4 py-3">{annexure.invoice_number ?? (annexure.is_billed ? 'Linked' : '-')}</td>
                       <td className="px-4 py-3">
-                        {onOpenTrip ? <button type="button" onClick={() => onOpenTrip(annexure.trip_id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open Trip</button> : null}
+                        {onOpenTrip ? <button type="button" onClick={() => onOpenTrip(annexure.parent_trip.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open Trip</button> : null}
                         <button type="button" onClick={() => void handleDownloadPdf(annexure)} className="ml-2 rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">PDF</button>
                         {!annexure.is_billed && canBill ? <button type="button" onClick={() => void handleBillSingle(annexure)} className="ml-2 rounded-xl border border-sky-300 px-3 py-1.5 text-xs font-medium text-sky-700">Bill</button> : null}
                         {!annexure.is_billed && canCreate ? <button type="button" onClick={() => void handleDeleteAnnexure(annexure)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
@@ -494,6 +499,7 @@ export function AnnexureList({ parentTrip = null, embedded = false, onOpenTrip }
     </section>
   );
 }
+
 
 
 

@@ -3,7 +3,7 @@ import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { DashboardStats } from '../../lib/types';
 
-const statCards: Array<{ key: keyof DashboardStats; label: string; accent: string }> = [
+const statCards: Array<{ key: 'trips' | 'drivers' | 'vehicles' | 'customers' | 'invoices'; label: string; accent: string }> = [
   { key: 'trips', label: 'Trips', accent: 'bg-sky-100 text-sky-700' },
   { key: 'drivers', label: 'Drivers', accent: 'bg-emerald-100 text-emerald-700' },
   { key: 'vehicles', label: 'Vehicles', accent: 'bg-amber-100 text-amber-700' },

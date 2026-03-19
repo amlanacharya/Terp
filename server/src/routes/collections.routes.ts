@@ -1,6 +1,7 @@
 import { QueryResultRow } from 'pg';
 import { Router } from 'express';
 import pool, { query } from '../config/db';
+import { generateNextCode } from '../utils/auto-code';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { formatLedgerAmount, writeLedgerEntry } from '../utils/ledger';
@@ -264,7 +265,7 @@ router.get('/', authRequired, async (_req, res) => {
 
 router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, collectionFields);
-  if (!payload.collection_number || !payload.collection_date || !payload.invoice_id || !payload.amount || !payload.payment_mode) {
+  if (!payload.collection_date || !payload.invoice_id || !payload.amount || !payload.payment_mode) {
     res.status(400).json({ message: 'Missing required collection fields.' });
     return;
   }
@@ -275,6 +276,12 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
 
     const invoice = await ensureInvoiceSettleable(client, String(payload.invoice_id));
     const amount = Number(payload.amount);
+    const collectionNumber = await generateNextCode(client, {
+      table: 'collections',
+      column: 'collection_number',
+      prefix: 'GT-RCPT',
+      padLength: 4,
+    });
     const result = await client.query(
       `
         INSERT INTO collections (
@@ -287,7 +294,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
         RETURNING *
       `,
       [
-        payload.collection_number,
+        collectionNumber,
         payload.collection_date,
         payload.invoice_id,
         amount,
@@ -305,7 +312,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
       buildSettlementLedgerEntry(
         invoice,
         result.rows[0].id,
-        String(payload.collection_number),
+        collectionNumber,
         amount,
         'create',
         req.user?.id ?? null
@@ -466,3 +473,4 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+

@@ -82,8 +82,10 @@ export function CollectionList() {
 
     try {
       await api.post('/collections', {
-        ...formState,
+        collection_date: formState.collection_date,
+        invoice_id: formState.invoice_id,
         amount: Number(formState.amount),
+        payment_mode: formState.payment_mode,
         reference_number: formState.reference_number || null,
         bank_name: formState.bank_name || null,
       });
@@ -125,15 +127,7 @@ export function CollectionList() {
           <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Receipts & Refunds</p>
           <h2 className="mt-2 text-3xl font-semibold text-slate-900">Settlement register</h2>
         </div>
-        {canManage ? (
-          <button
-            type="button"
-            onClick={openCreate}
-            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
-          >
-            Record Settlement
-          </button>
-        ) : null}
+        {canManage ? <button type="button" onClick={openCreate} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white">Record Settlement</button> : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       <div className="overflow-hidden rounded-3xl border border-slate-200">
@@ -156,24 +150,13 @@ export function CollectionList() {
 
               return (
                 <tr key={collection.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    <div>{collection.collection_number}</div>
-                    <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${isRefund ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {isRefund ? 'Refund' : 'Receipt'}
-                    </div>
-                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900"><div>{collection.collection_number}</div><div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${isRefund ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{isRefund ? 'Refund' : 'Receipt'}</div></td>
                   <td className="px-4 py-3">{collection.invoice.invoice_number}</td>
                   <td className="px-4 py-3">{collection.invoice.customer.name}</td>
                   <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
                   <td className="px-4 py-3">{collection.payment_mode}</td>
                   <td className="px-4 py-3">{formatCurrency(collection.amount)}</td>
-                  {canManage ? (
-                    <td className="px-4 py-3">
-                      <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">
-                        Delete
-                      </button>
-                    </td>
-                  ) : null}
+                  {canManage ? <td className="px-4 py-3"><button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button></td> : null}
                 </tr>
               );
             })}
@@ -181,111 +164,20 @@ export function CollectionList() {
         </table>
       </div>
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={saving ? () => undefined : closeModal}
-        title={selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment Receipt'}
-        size="lg"
-        closeOnBackdrop={!saving}
-        closeOnEsc={!saving}
-      >
+      <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment Receipt'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-800">
-            {selectedDocumentIsCreditNote ? 'Refund Number' : 'Receipt Number'}
-            <input
-              value={formState.collection_number}
-              onChange={(event) => setFormState((current) => ({ ...current, collection_number: event.target.value }))}
-              placeholder={selectedDocumentIsCreditNote ? 'Refund number, e.g. RFND-00021' : 'Receipt number, e.g. RCPT-00021'}
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            {selectedDocumentIsCreditNote ? 'Refund Date' : 'Receipt Date'}
-            <input
-              type="date"
-              value={formState.collection_date}
-              onChange={(event) => setFormState((current) => ({ ...current, collection_date: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">
-            Invoice / Credit Note
-            <select
-              value={formState.invoice_id}
-              onChange={(event) => setFormState((current) => ({ ...current, invoice_id: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            >
-              <option value="">Select document</option>
-              {invoices.map((invoice) => (
-                <option key={invoice.id} value={invoice.id}>
-                  {invoice.invoice_type === 'credit_note' ? 'Credit Note' : 'Invoice'} {invoice.invoice_number} - {invoice.customer.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            {selectedDocumentIsCreditNote ? 'Amount Refunded' : 'Amount Received'}
-            <input
-              value={formState.amount}
-              onChange={(event) => setFormState((current) => ({ ...current, amount: event.target.value }))}
-              placeholder={selectedDocumentIsCreditNote ? 'Amount refunded in INR, e.g. 15000' : 'Amount received in INR, e.g. 15000'}
-              type="number"
-              min="0"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-              required
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Payment Mode
-            <select
-              value={formState.payment_mode}
-              onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))}
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            >
-              <option value="cash">Cash</option>
-              <option value="cheque">Cheque</option>
-              <option value="bank_transfer">Bank transfer</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-            </select>
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Reference Number
-            <input
-              value={formState.reference_number}
-              onChange={(event) => setFormState((current) => ({ ...current, reference_number: event.target.value }))}
-              placeholder="UTR / cheque no. / transaction ref."
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-800">
-            Bank Name
-            <input
-              value={formState.bank_name}
-              onChange={(event) => setFormState((current) => ({ ...current, bank_name: event.target.value }))}
-              placeholder="Bank name, e.g. HDFC Bank"
-              className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-            />
-          </label>
-          <div className="lg:col-span-2 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button>
-            <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment'}</button>
-          </div>
+          <label className="text-sm font-semibold text-slate-800">{selectedDocumentIsCreditNote ? 'Refund Number' : 'Receipt Number'}<input value="Auto-generated on save" readOnly className="mt-2 w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 font-normal text-slate-500" /></label>
+          <label className="text-sm font-semibold text-slate-800">{selectedDocumentIsCreditNote ? 'Refund Date' : 'Receipt Date'}<input type="date" value={formState.collection_date} onChange={(event) => setFormState((current) => ({ ...current, collection_date: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required /></label>
+          <label className="text-sm font-semibold text-slate-800 lg:col-span-2">Invoice / Credit Note<select value={formState.invoice_id} onChange={(event) => setFormState((current) => ({ ...current, invoice_id: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required><option value="">Select document</option>{invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_type === 'credit_note' ? 'Credit Note' : 'Invoice'} {invoice.invoice_number} - {invoice.customer.name}</option>)}</select></label>
+          <label className="text-sm font-semibold text-slate-800">{selectedDocumentIsCreditNote ? 'Amount Refunded' : 'Amount Received'}<input value={formState.amount} onChange={(event) => setFormState((current) => ({ ...current, amount: event.target.value }))} type="number" min="0" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" required /></label>
+          <label className="text-sm font-semibold text-slate-800">Payment Mode<select value={formState.payment_mode} onChange={(event) => setFormState((current) => ({ ...current, payment_mode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"><option value="cash">Cash</option><option value="cheque">Cheque</option><option value="bank_transfer">Bank transfer</option><option value="upi">UPI</option><option value="card">Card</option></select></label>
+          <label className="text-sm font-semibold text-slate-800">Reference Number<input value={formState.reference_number} onChange={(event) => setFormState((current) => ({ ...current, reference_number: event.target.value }))} placeholder="UTR / cheque no. / transaction ref." className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <label className="text-sm font-semibold text-slate-800">Bank Name<input value={formState.bank_name} onChange={(event) => setFormState((current) => ({ ...current, bank_name: event.target.value }))} placeholder="Bank name" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+          <div className="flex justify-end gap-3 pt-2 lg:col-span-2"><button type="button" onClick={closeModal} disabled={saving} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700 disabled:opacity-60">Cancel</button><button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment'}</button></div>
         </form>
       </Modal>
 
-      <ConfirmModal
-        isOpen={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDeleteConfirm}
-        title="Delete Settlement"
-        message={deleteTarget ? `Delete settlement ${deleteTarget.collection_number}?` : ''}
-        confirmLabel="Delete"
-        loading={deleteTarget ? deletingId === deleteTarget.id : false}
-      />
+      <ConfirmModal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} onConfirm={handleDeleteConfirm} title="Delete Settlement" message={deleteTarget ? `Delete settlement ${deleteTarget.collection_number}?` : ''} confirmLabel="Delete" loading={deleteTarget ? deletingId === deleteTarget.id : false} />
     </section>
   );
 }

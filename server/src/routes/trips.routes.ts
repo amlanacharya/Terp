@@ -19,6 +19,7 @@ import {
   TripTravelMetricRecord,
   aggregateTripTravelMetrics,
 } from '../utils/trip-metrics';
+import { generateNextTripNumber } from '../utils/auto-code';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 
 const router = Router();
@@ -368,12 +369,12 @@ function getTripDetailSelect(): string {
     ) AS expense_summary ON expense_summary.trip_id = t.id
     LEFT JOIN (
       SELECT
-        parent_trip_id,
+        trip_id,
         COUNT(*) AS annexure_count,
         COUNT(*) FILTER (WHERE is_billed = true) AS billed_annexure_count
       FROM annexures
-      GROUP BY parent_trip_id
-    ) AS annexure_summary ON annexure_summary.parent_trip_id = t.id
+      GROUP BY trip_id
+    ) AS annexure_summary ON annexure_summary.trip_id = t.id
     LEFT JOIN (
       SELECT DISTINCT ON (ii.trip_id)
         ii.trip_id,
@@ -540,7 +541,7 @@ function normalizeTripPayload(source: Record<string, unknown>): Record<string, u
 
 function validateTripPayload(payload: Record<string, unknown>, requireAllFields: boolean, tripId?: string): string | null {
   if (requireAllFields) {
-    const requiredFields = ['trip_number', 'customer_id', 'vehicle_id', 'driver_id', 'trip_date', 'from_location', 'to_location'];
+    const requiredFields = ['customer_id', 'vehicle_id', 'driver_id', 'trip_date', 'from_location', 'to_location'];
     if (requiredFields.some((field) => payload[field] === undefined || payload[field] === '')) {
       return 'Missing required trip fields.';
     }
@@ -548,9 +549,6 @@ function validateTripPayload(payload: Record<string, unknown>, requireAllFields:
 
   if (Object.prototype.hasOwnProperty.call(payload, 'duty_type') && payload.duty_type !== null && !isDutyType(payload.duty_type)) {
     return 'Invalid duty type.';
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, 'trip_number') && (!payload.trip_number || typeof payload.trip_number !== 'string')) {
-    return 'Trip number cannot be empty.';
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'from_location') && (!payload.from_location || typeof payload.from_location !== 'string')) {
     return 'From location cannot be empty.';
@@ -756,7 +754,7 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
         t.duty_type,
         t.vehicle_category_id,
         t.rate_chart_id,
-        COALESCE((SELECT COUNT(*)::text FROM annexures a WHERE a.parent_trip_id = t.id), '0') AS annexure_count
+        COALESCE((SELECT COUNT(*)::text FROM annexures a WHERE a.trip_id = t.id), '0') AS annexure_count
       FROM trips t
       JOIN customers c ON c.id = t.customer_id
       WHERE t.id = $1
@@ -894,11 +892,12 @@ router.get('/', authRequired, async (req, res) => {
 
   try {
     const values: unknown[] = [];
-    const whereClause = status ? 'WHERE t.status = $1' : '';
+    const filters = ['t.parent_trip_id IS NULL'];
     if (status) {
       values.push(status);
+      filters.push(`t.status = $${values.length}`);
     }
-
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
     const result = await query<TripDetailRow>(`
       ${getTripDetailSelect()}
       ${whereClause}
@@ -1183,6 +1182,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
 
   try {
     await client.query('BEGIN');
+    const tripNumber = await generateNextTripNumber(client);
 
     const result = await client.query<{ id: string }>(
       `
@@ -1210,7 +1210,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
         RETURNING id
       `,
       [
-        payload.trip_number, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
+        tripNumber, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
         payload.trip_date, payload.duty_type ?? null, payload.booked_by ?? null, payload.report_to ?? null,
         payload.vehicle_category_id ?? null, payload.rate_chart_id ?? null, payload.rate_chart_item_id ?? null,
         payload.rate_chart_fixed_route_id ?? null, payload.start_time ?? null, payload.end_time ?? null,
@@ -1412,7 +1412,7 @@ router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountan
           c.credit_days AS customer_credit_days,
           v.vehicle_number,
           COALESCE(vc.name, v.vehicle_type) AS vehicle_type_label,
-          EXISTS(SELECT 1 FROM annexures a WHERE a.parent_trip_id = t.id) AS has_annexures,
+          EXISTS(SELECT 1 FROM annexures a WHERE a.trip_id = t.id) AS has_annexures,
           (
             SELECT ii.invoice_id
             FROM invoice_items ii
@@ -1667,3 +1667,5 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
+
+

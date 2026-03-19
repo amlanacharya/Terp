@@ -69,8 +69,7 @@ const invoiceData = {
 const annexures = [
   {
     annexure_number: 'ANN-02',
-    parent_trip_number: 'GT-TRP-2001',
-    child_trip_number: 'GT-TRP-2001-A02',
+    duty_slip_number: 'GT-TRP-2001',
     customer_name: 'MCL Mining Division',
     vehicle_number: 'OD02AB1234',
     vehicle_type_label: 'CRYSTA',
@@ -88,8 +87,7 @@ const annexures = [
   },
   {
     annexure_number: 'ANN-03',
-    parent_trip_number: 'GT-TRP-2001',
-    child_trip_number: 'GT-TRP-2001-A03',
+    duty_slip_number: 'GT-TRP-2001',
     customer_name: 'MCL Mining Division',
     vehicle_number: 'OD02AB1234',
     vehicle_type_label: 'CRYSTA',

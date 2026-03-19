@@ -12,6 +12,9 @@ const pool = new Pool(
       }
 );
 
+pool.on('error', (error) => {
+  console.error('Unexpected PostgreSQL pool error:', error);
+});
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -24,3 +27,4 @@ export async function testConnection(): Promise<void> {
 }
 
 export default pool;
+

@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Login } from './components/Auth/Login';
@@ -9,7 +9,7 @@ import { DriverList } from './components/Drivers/DriverList';
 import { VehicleList } from './components/Vehicles/VehicleList';
 import { VehicleCategoryList } from './components/VehicleCategories/VehicleCategoryList';
 import { RateChartList } from './components/RateCharts/RateChartList';
-import { AnnexureList } from './components/Annexures/AnnexureList';
+import { AnnexureListPage } from './components/Annexures/AnnexureListPage';
 import { TaxComponentList } from './components/TaxConfig/TaxComponentList';
 import { CustomerList } from './components/Customers/CustomerList';
 import { InvoiceList } from './components/Invoices/InvoiceList';
@@ -27,9 +27,27 @@ import { PageKey } from './lib/types';
 function AppContent() {
   const { user } = useAuth();
   const [currentPage, setCurrentPage] = useState<PageKey>('dashboard');
+  const [pageInstanceKey, setPageInstanceKey] = useState(0);
+  const [pendingTripOpenId, setPendingTripOpenId] = useState<string | null>(null);
 
   if (!user) {
     return <Login />;
+  }
+
+  function handleNavigate(page: PageKey) {
+    if (page !== 'trips') {
+      setPendingTripOpenId(null);
+    }
+    if (page !== currentPage) {
+      setCurrentPage(page);
+    }
+    setPageInstanceKey((current) => current + 1);
+  }
+
+  function handleOpenTripFromAnnexures(tripId: string) {
+    setPendingTripOpenId(tripId);
+    setCurrentPage('trips');
+    setPageInstanceKey((current) => current + 1);
   }
 
   const renderContent = () => {
@@ -39,7 +57,7 @@ function AppContent() {
       case 'leads':
         return <ProtectedRoute><LeadList /></ProtectedRoute>;
       case 'trips':
-        return <ProtectedRoute><TripList /></ProtectedRoute>;
+        return <ProtectedRoute><TripList openTripId={pendingTripOpenId} openTripInEditor={Boolean(pendingTripOpenId)} onOpenTripHandled={() => setPendingTripOpenId(null)} /></ProtectedRoute>;
       case 'drivers':
         return <ProtectedRoute><DriverList /></ProtectedRoute>;
       case 'vehicles':
@@ -49,7 +67,7 @@ function AppContent() {
       case 'rate-charts':
         return <ProtectedRoute><RateChartList /></ProtectedRoute>;
       case 'annexures':
-        return <ProtectedRoute><AnnexureList /></ProtectedRoute>;
+        return <ProtectedRoute><AnnexureListPage onOpenTrip={handleOpenTripFromAnnexures} /></ProtectedRoute>;
       case 'tax-config':
         return <ProtectedRoute allowedRoles={['admin', 'accountant']}><TaxComponentList /></ProtectedRoute>;
       case 'customers':
@@ -75,11 +93,13 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <Header onNavigate={setCurrentPage} />
+      <Header onNavigate={handleNavigate} />
       <div className="mx-auto flex max-w-[1600px] gap-6 px-4 py-6 lg:px-6">
-        <Sidebar onNavigate={setCurrentPage} currentPage={currentPage} />
+        <Sidebar onNavigate={handleNavigate} currentPage={currentPage} />
         <main className="min-w-0 flex-1 rounded-3xl bg-white p-6 shadow-sm lg:p-8">
-          {renderContent()}
+          <div key={`${currentPage}:${pageInstanceKey}`}>
+            {renderContent()}
+          </div>
         </main>
       </div>
     </div>
@@ -95,5 +115,3 @@ function App() {
 }
 
 export default App;
-
-

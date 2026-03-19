@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS customers (
   state text,
   pincode text,
   gstin text,
+  pan text,
+  sac_code text,
+  vendor_code text,
   credit_limit numeric(15,2) DEFAULT 0,
   credit_days integer DEFAULT 0,
   default_duty_start_time time,
@@ -62,6 +65,7 @@ CREATE TABLE IF NOT EXISTS owners_vendors (
   pincode text,
   gstin text,
   pan text,
+  aadhar_number text,
   bank_name text,
   bank_account text,
   ifsc_code text,
@@ -86,6 +90,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   emergency_contact text,
   emergency_phone text,
   pan text,
+  aadhar_number text,
   bank_name text,
   bank_account text,
   ifsc_code text,
@@ -453,8 +458,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE TABLE IF NOT EXISTS annexures (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   annexure_number text NOT NULL,
-  parent_trip_id uuid NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
-  trip_id uuid NOT NULL UNIQUE REFERENCES trips(id) ON DELETE CASCADE,
+  trip_id uuid NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
   start_date date NOT NULL,
   end_date date NOT NULL,
   start_km numeric(10,2) NOT NULL,
@@ -479,6 +483,17 @@ CREATE TABLE IF NOT EXISTS annexures (
     (is_billed = false AND invoice_id IS NULL)
     OR (is_billed = true AND invoice_id IS NOT NULL)
   )
+);
+
+CREATE TABLE IF NOT EXISTS annexure_metrics (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  annexure_id uuid NOT NULL REFERENCES annexures(id) ON DELETE CASCADE,
+  metric_id uuid NOT NULL REFERENCES trip_travel_metrics(id) ON DELETE CASCADE,
+  seq integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (metric_id),
+  UNIQUE (annexure_id, seq),
+  CHECK (seq > 0)
 );
 CREATE TABLE IF NOT EXISTS invoice_items (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -673,10 +688,11 @@ CREATE INDEX IF NOT EXISTS idx_invoice_tax_components_invoice ON invoice_tax_com
 CREATE INDEX IF NOT EXISTS idx_invoice_tax_components_component ON invoice_tax_components(component_code);
 CREATE INDEX IF NOT EXISTS idx_invoice_item_tax_components_item ON invoice_item_tax_components(invoice_item_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_item_tax_components_invoice ON invoice_item_tax_components(invoice_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_annexures_parent_number_unique ON annexures(parent_trip_id, annexure_number);
-CREATE INDEX IF NOT EXISTS idx_annexures_parent_trip ON annexures(parent_trip_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annexures_trip_number_unique ON annexures(trip_id, annexure_number);
+CREATE INDEX IF NOT EXISTS idx_annexures_trip ON annexures(trip_id);
 CREATE INDEX IF NOT EXISTS idx_annexures_invoice ON annexures(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_annexures_billed ON annexures(is_billed);
+CREATE INDEX IF NOT EXISTS idx_annexure_metrics_annexure ON annexure_metrics(annexure_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_items_annexure ON invoice_items(annexure_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_items_annexure_unique ON invoice_items(annexure_id) WHERE annexure_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicle_categories_name_unique ON vehicle_categories (LOWER(name));
@@ -725,3 +741,4 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('trip_prefix', 'TRP', 'Trip Number Prefix'),
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
+

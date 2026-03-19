@@ -148,7 +148,11 @@ export interface Customer {
   address?: string | null;
   city: string | null;
   state: string | null;
+  pincode?: string | null;
   gstin?: string | null;
+  pan?: string | null;
+  sac_code?: string | null;
+  vendor_code?: string | null;
   credit_limit: number;
   credit_days: number;
   default_duty_start_time: string | null;
@@ -223,9 +227,16 @@ export interface Owner {
   contact_person: string | null;
   phone: string | null;
   email: string | null;
+  address: string | null;
   city: string | null;
   state: string | null;
+  pincode: string | null;
   gstin: string | null;
+  pan: string | null;
+  aadhar_number: string | null;
+  bank_name: string | null;
+  bank_account: string | null;
+  ifsc_code: string | null;
   is_active: boolean;
 }
 
@@ -235,10 +246,20 @@ export interface Driver {
   name: string;
   phone: string;
   email: string | null;
+  address: string | null;
   city: string | null;
   state: string | null;
   license_number: string;
   license_expiry: string;
+  date_of_birth: string | null;
+  blood_group: string | null;
+  emergency_contact: string | null;
+  emergency_phone: string | null;
+  pan: string | null;
+  aadhar_number: string | null;
+  bank_name: string | null;
+  bank_account: string | null;
+  ifsc_code: string | null;
   default_vehicle_id: string | null;
   night_halt_rate: number | null;
   ot_per_hour: number | null;
@@ -541,14 +562,8 @@ export interface TripCalculationResponse {
   calculation: RateCalculationResult;
 }
 
-export interface AnnexureTripSummary {
-  id: string;
-  trip_number: string;
-  trip_date: string;
-  duty_type: DutyType | null;
-  trip_amount: number;
-  calculated_amount: number | null;
-  status: string;
+export interface TripSaveResponse extends TripDetail {
+  warning?: string | null;
 }
 
 export interface AnnexureParentTripDetail {
@@ -579,7 +594,6 @@ export interface Annexure {
   created_at: string;
   updated_at: string;
   parent_trip: AnnexureParentTripDetail;
-  child_trip: AnnexureTripSummary;
   customer: InvoiceCustomerSummary;
   vehicle: TripVehicleSummary;
   vehicle_category: VehicleCategory | null;
@@ -904,3 +918,4 @@ export interface SystemSetting {
   description: string | null;
   updated_at: string;
 }
+

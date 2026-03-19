@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { query } from '../config/db';
+import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
+import { generateNextCode } from '../utils/auto-code';
 import { RateEngineError, loadActiveRateChartDetail } from '../utils/rate-engine';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 
@@ -17,6 +18,9 @@ const customerFields = [
   'state',
   'pincode',
   'gstin',
+  'pan',
+  'sac_code',
+  'vendor_code',
   'credit_limit',
   'credit_days',
   'default_duty_start_time',
@@ -33,6 +37,10 @@ function isNegativeNumber(value: unknown): boolean {
 
 function isInvoicePdfMode(value: unknown): value is (typeof invoicePdfModes)[number] {
   return typeof value === 'string' && invoicePdfModes.includes(value as (typeof invoicePdfModes)[number]);
+}
+
+function isPanValid(value: unknown): boolean {
+  return typeof value === 'string' && /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(value);
 }
 
 router.get('/', authRequired, async (_req, res) => {
@@ -69,11 +77,10 @@ router.get('/:id/rate-chart', authRequired, async (req, res) => {
   }
 });
 
-
 router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, customerFields);
-  if (!payload.customer_code || !payload.name) {
-    res.status(400).json({ message: 'Customer code and name are required.' });
+  if (!payload.name) {
+    res.status(400).json({ message: 'Customer name is required.' });
     return;
   }
 
@@ -87,22 +94,36 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
     return;
   }
 
+  if (payload.pan !== undefined && payload.pan !== null && payload.pan !== '' && !isPanValid(payload.pan)) {
+    res.status(400).json({ message: 'Customer PAN must be in AAAAA9999A format.' });
+    return;
+  }
+
+  const client = await pool.connect();
   try {
-    const result = await query(
+    await client.query('BEGIN');
+    const customerCode = await generateNextCode(client, {
+      table: 'customers',
+      column: 'customer_code',
+      prefix: 'GT-CUST',
+      padLength: 4,
+    });
+
+    const result = await client.query(
       `
         INSERT INTO customers (
           customer_code, name, contact_person, phone, email, address, city, state,
-          pincode, gstin, credit_limit, credit_days, default_duty_start_time,
-          default_duty_end_time, default_duty_hours, invoice_pdf_mode, is_active
+          pincode, gstin, pan, sac_code, vendor_code, credit_limit, credit_days,
+          default_duty_start_time, default_duty_end_time, default_duty_hours, invoice_pdf_mode, is_active
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13,
-          $14, $15, $16, $17
+          $9, $10, $11, $12, $13, $14, $15,
+          $16, $17, $18, $19, $20
         )
         RETURNING *
       `,
       [
-        payload.customer_code,
+        customerCode,
         payload.name,
         payload.contact_person ?? null,
         payload.phone ?? null,
@@ -112,6 +133,9 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
         payload.state ?? null,
         payload.pincode ?? null,
         payload.gstin ?? null,
+        payload.pan ?? null,
+        payload.sac_code ?? null,
+        payload.vendor_code ?? null,
         payload.credit_limit ?? 0,
         payload.credit_days ?? 0,
         payload.default_duty_start_time ?? null,
@@ -122,10 +146,14 @@ router.post('/', authRequired, roleCheck(['admin', 'manager']), async (req, res)
       ]
     );
 
+    await client.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Creating customer failed:', error);
     res.status(500).json({ message: 'Unable to create customer.' });
+  } finally {
+    client.release();
   }
 });
 
@@ -143,6 +171,11 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, re
 
   if (payload.invoice_pdf_mode !== undefined && !isInvoicePdfMode(payload.invoice_pdf_mode)) {
     res.status(400).json({ message: 'Invalid invoice PDF mode.' });
+    return;
+  }
+
+  if (payload.pan !== undefined && payload.pan !== null && payload.pan !== '' && !isPanValid(payload.pan)) {
+    res.status(400).json({ message: 'Customer PAN must be in AAAAA9999A format.' });
     return;
   }
 
@@ -181,9 +214,3 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
 });
 
 export default router;
-
-
-
-
-
-

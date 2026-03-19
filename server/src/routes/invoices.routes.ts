@@ -167,8 +167,7 @@ interface InvoicePdfItemRow {
   night_halts: number | null;
   calculated_amount: string | null;
   annexure_is_billed: boolean | null;
-  parent_trip_number: string | null;
-  child_trip_number: string | null;
+  duty_slip_number: string | null;
   annexure_vehicle_number: string | null;
   annexure_vehicle_type_label: string | null;
   vehicle_category_name: string | null;
@@ -557,17 +556,15 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
             a.night_halts,
             a.calculated_amount::text,
             a.is_billed AS annexure_is_billed,
-            parent_t.trip_number AS parent_trip_number,
-            child_t.trip_number AS child_trip_number,
+            t.trip_number AS duty_slip_number,
             v.vehicle_number AS annexure_vehicle_number,
             COALESCE(vc.name, v.vehicle_type::text) AS annexure_vehicle_type_label,
             vc.name AS vehicle_category_name
           FROM invoice_items ii
           LEFT JOIN annexures a ON a.id = ii.annexure_id
-          LEFT JOIN trips parent_t ON parent_t.id = a.parent_trip_id
-          LEFT JOIN trips child_t ON child_t.id = a.trip_id
-          LEFT JOIN vehicles v ON v.id = parent_t.vehicle_id
-          LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
+          LEFT JOIN trips t ON t.id = a.trip_id
+          LEFT JOIN vehicles v ON v.id = t.vehicle_id
+          LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
           WHERE ii.invoice_id = $1
           ORDER BY ii.created_at ASC
         `,
@@ -645,8 +642,7 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
               item.total_hours == null ||
               item.night_halts == null ||
               item.calculated_amount == null ||
-              !item.parent_trip_number ||
-              !item.child_trip_number ||
+              !item.duty_slip_number ||
               !item.annexure_vehicle_number ||
               !item.annexure_vehicle_type_label
             ) {
@@ -655,8 +651,7 @@ router.get('/:id/pdf', authRequired, async (req, res) => {
 
             return {
               annexure_number: item.annexure_number,
-              parent_trip_number: item.parent_trip_number,
-              child_trip_number: item.child_trip_number,
+              duty_slip_number: item.duty_slip_number,
               customer_name: invoice.customer_name,
               vehicle_number: item.annexure_vehicle_number,
               vehicle_type_label: item.annexure_vehicle_type_label,

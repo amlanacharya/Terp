@@ -4,8 +4,7 @@ type PdfDoc = InstanceType<typeof PDFDocument>;
 
 export interface AnnexurePdfData {
   annexure_number: string;
-  parent_trip_number: string;
-  child_trip_number: string;
+  duty_slip_number: string;
   customer_name: string;
   vehicle_number: string;
   vehicle_type_label: string;
@@ -134,8 +133,7 @@ export function renderAnnexureContent(doc: PdfDoc, data: AnnexurePdfData, settin
 
   const leftHeight = drawInfoBox(doc, left, top, boxWidth, 'Annexure Identity', [
     { label: 'Annexure Number', value: data.annexure_number },
-    { label: 'Parent Duty Slip', value: data.parent_trip_number },
-    { label: 'Child Duty Slip', value: data.child_trip_number },
+    { label: 'Duty Slip Number', value: data.duty_slip_number },
     { label: 'Customer', value: data.customer_name },
   ]);
   const rightHeight = drawInfoBox(doc, left + boxWidth + gap, top, boxWidth, 'Vehicle And Billing', [

@@ -5,7 +5,7 @@ import { createAnnexureFromParent } from '../utils/annexure-builder';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { createGtInvoice, formatDutyTypeLabel, getGtInvoiceSettings } from '../utils/invoice-gt';
 import { buildAnnexurePdf } from '../utils/pdf-annexure';
-import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
+import { pickDefinedFields } from '../utils/sql';
 
 const router = Router();
 const annexureUpdateFields = ['annexure_number'] as const;
@@ -13,7 +13,6 @@ const annexureUpdateFields = ['annexure_number'] as const;
 interface AnnexureDetailRow {
   id: string;
   annexure_number: string;
-  parent_trip_id: string;
   trip_id: string;
   start_date: string;
   end_date: string;
@@ -35,15 +34,6 @@ interface AnnexureDetailRow {
     duty_type: string | null;
     from_location: string;
     to_location: string;
-  };
-  child_trip: {
-    id: string;
-    trip_number: string;
-    trip_date: string;
-    duty_type: string | null;
-    trip_amount: number | string;
-    calculated_amount: number | string | null;
-    status: string;
   };
   customer: {
     id: string;
@@ -67,7 +57,6 @@ interface AnnexureDetailRow {
 interface AnnexureBillingRow {
   id: string;
   annexure_number: string;
-  parent_trip_id: string;
   trip_id: string;
   start_date: string;
   end_date: string;
@@ -75,8 +64,8 @@ interface AnnexureBillingRow {
   total_hours: string;
   calculated_amount: string;
   is_billed: boolean;
-  parent_trip_number: string;
-  parent_trip_date: string;
+  trip_number: string;
+  trip_date: string;
   duty_type: string | null;
   from_location: string;
   to_location: string;
@@ -102,12 +91,23 @@ function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function mapAnnexureRow(row: AnnexureDetailRow) {
+  return {
+    ...row,
+    parent_trip_id: row.trip_id,
+    start_km: Number(row.start_km),
+    end_km: Number(row.end_km),
+    total_km: Number(row.total_km),
+    total_hours: Number(row.total_hours),
+    calculated_amount: Number(row.calculated_amount),
+  };
+}
+
 function getAnnexureSelect(whereClause = ''): string {
   return `
     SELECT
       a.id,
       a.annexure_number,
-      a.parent_trip_id,
       a.trip_id,
       a.start_date::text,
       a.end_date::text,
@@ -123,22 +123,13 @@ function getAnnexureSelect(whereClause = ''): string {
       a.updated_at,
       inv.invoice_number,
       json_build_object(
-        'id', parent_t.id,
-        'trip_number', parent_t.trip_number,
-        'trip_date', parent_t.trip_date::text,
-        'duty_type', parent_t.duty_type,
-        'from_location', parent_t.from_location,
-        'to_location', parent_t.to_location
+        'id', t.id,
+        'trip_number', t.trip_number,
+        'trip_date', t.trip_date::text,
+        'duty_type', t.duty_type,
+        'from_location', t.from_location,
+        'to_location', t.to_location
       ) AS parent_trip,
-      json_build_object(
-        'id', child_t.id,
-        'trip_number', child_t.trip_number,
-        'trip_date', child_t.trip_date::text,
-        'duty_type', child_t.duty_type,
-        'trip_amount', child_t.trip_amount,
-        'calculated_amount', child_t.calculated_amount,
-        'status', child_t.status
-      ) AS child_trip,
       json_build_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer,
       json_build_object('id', v.id, 'vehicle_number', v.vehicle_number, 'vehicle_type', v.vehicle_type) AS vehicle,
       CASE
@@ -146,16 +137,15 @@ function getAnnexureSelect(whereClause = ''): string {
         ELSE json_build_object('id', vc.id, 'name', vc.name, 'description', vc.description, 'is_active', vc.is_active)
       END AS vehicle_category,
       COALESCE((
-        SELECT json_agg(ttm.source_metric_id ORDER BY ttm.seq) FILTER (WHERE ttm.source_metric_id IS NOT NULL)
-        FROM trip_travel_metrics ttm
-        WHERE ttm.trip_id = a.trip_id
+        SELECT json_agg(am.metric_id ORDER BY am.seq)
+        FROM annexure_metrics am
+        WHERE am.annexure_id = a.id
       ), '[]'::json) AS source_metric_ids
     FROM annexures a
-    JOIN trips parent_t ON parent_t.id = a.parent_trip_id
-    JOIN trips child_t ON child_t.id = a.trip_id
-    JOIN customers c ON c.id = parent_t.customer_id
-    JOIN vehicles v ON v.id = parent_t.vehicle_id
-    LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
+    JOIN trips t ON t.id = a.trip_id
+    JOIN customers c ON c.id = t.customer_id
+    JOIN vehicles v ON v.id = t.vehicle_id
+    LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
     LEFT JOIN invoices inv ON inv.id = a.invoice_id AND inv.invoice_status = 'active'
     ${whereClause}
   `;
@@ -172,7 +162,6 @@ async function loadAnnexureBillingRows(ids: string[]): Promise<AnnexureBillingRo
       SELECT
         a.id,
         a.annexure_number,
-        a.parent_trip_id,
         a.trip_id,
         a.start_date::text,
         a.end_date::text,
@@ -180,11 +169,11 @@ async function loadAnnexureBillingRows(ids: string[]): Promise<AnnexureBillingRo
         a.total_hours::text,
         a.calculated_amount::text,
         a.is_billed,
-        parent_t.trip_number AS parent_trip_number,
-        parent_t.trip_date::text AS parent_trip_date,
-        parent_t.duty_type,
-        parent_t.from_location,
-        parent_t.to_location,
+        t.trip_number,
+        t.trip_date::text,
+        t.duty_type,
+        t.from_location,
+        t.to_location,
         c.id AS customer_id,
         c.name AS customer_name,
         c.address AS customer_address,
@@ -193,10 +182,10 @@ async function loadAnnexureBillingRows(ids: string[]): Promise<AnnexureBillingRo
         v.vehicle_number,
         COALESCE(vc.name, v.vehicle_type::text) AS vehicle_type_label
       FROM annexures a
-      JOIN trips parent_t ON parent_t.id = a.parent_trip_id
-      JOIN customers c ON c.id = parent_t.customer_id
-      JOIN vehicles v ON v.id = parent_t.vehicle_id
-      LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
+      JOIN trips t ON t.id = a.trip_id
+      JOIN customers c ON c.id = t.customer_id
+      JOIN vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
       WHERE a.id = ANY($1::uuid[])
       ORDER BY a.start_date ASC, a.created_at ASC
     `,
@@ -210,9 +199,11 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
   const annexureIds = Array.isArray(body.annexure_ids)
     ? body.annexure_ids.filter((value): value is string => typeof value === 'string')
     : [];
-  const parentTripId = typeof body.parent_trip_id === 'string' && body.parent_trip_id.trim().length > 0
+  const tripId = typeof body.parent_trip_id === 'string' && body.parent_trip_id.trim().length > 0
     ? body.parent_trip_id.trim()
-    : null;
+    : typeof body.trip_id === 'string' && body.trip_id.trim().length > 0
+      ? body.trip_id.trim()
+      : null;
   const startDate = typeof body.start_date === 'string' && body.start_date.trim().length > 0 ? body.start_date.trim() : null;
   const endDate = typeof body.end_date === 'string' && body.end_date.trim().length > 0 ? body.end_date.trim() : null;
 
@@ -220,12 +211,12 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
     return loadAnnexureBillingRows(annexureIds);
   }
 
-  if (!parentTripId) {
-    throw new Error('Parent trip is required when annexure IDs are not supplied.');
+  if (!tripId) {
+    throw new Error('Trip is required when annexure IDs are not supplied.');
   }
 
-  const values: unknown[] = [parentTripId];
-  let whereClause = 'WHERE a.parent_trip_id = $1 AND a.is_billed = false';
+  const values: unknown[] = [tripId];
+  let whereClause = 'WHERE a.trip_id = $1 AND a.is_billed = false';
 
   if (startDate) {
     values.push(startDate);
@@ -241,7 +232,6 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
       SELECT
         a.id,
         a.annexure_number,
-        a.parent_trip_id,
         a.trip_id,
         a.start_date::text,
         a.end_date::text,
@@ -249,11 +239,11 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
         a.total_hours::text,
         a.calculated_amount::text,
         a.is_billed,
-        parent_t.trip_number AS parent_trip_number,
-        parent_t.trip_date::text AS parent_trip_date,
-        parent_t.duty_type,
-        parent_t.from_location,
-        parent_t.to_location,
+        t.trip_number,
+        t.trip_date::text,
+        t.duty_type,
+        t.from_location,
+        t.to_location,
         c.id AS customer_id,
         c.name AS customer_name,
         c.address AS customer_address,
@@ -262,10 +252,10 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
         v.vehicle_number,
         COALESCE(vc.name, v.vehicle_type::text) AS vehicle_type_label
       FROM annexures a
-      JOIN trips parent_t ON parent_t.id = a.parent_trip_id
-      JOIN customers c ON c.id = parent_t.customer_id
-      JOIN vehicles v ON v.id = parent_t.vehicle_id
-      LEFT JOIN vehicle_categories vc ON vc.id = parent_t.vehicle_category_id
+      JOIN trips t ON t.id = a.trip_id
+      JOIN customers c ON c.id = t.customer_id
+      JOIN vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN vehicle_categories vc ON vc.id = t.vehicle_category_id
       ${whereClause}
       ORDER BY a.start_date ASC, a.created_at ASC
     `,
@@ -275,28 +265,85 @@ async function resolveBulkBillRows(body: Record<string, unknown>): Promise<Annex
   return result.rows;
 }
 
+async function loadAnnexureMetricSnapshot(client: { query: typeof query }, annexureId: string) {
+  const result = await client.query<{
+    start_date: string;
+    end_date: string;
+    start_km: string;
+    end_km: string;
+    total_km: string;
+    total_hours: string;
+    night_halts: number;
+  }>(
+    `
+      SELECT
+        MIN(ttm.start_date)::text AS start_date,
+        MAX(COALESCE(ttm.end_date, ttm.start_date))::text AS end_date,
+        MIN(ttm.start_km)::text AS start_km,
+        MAX(COALESCE(ttm.end_km, ttm.start_km))::text AS end_km,
+        COALESCE(SUM(COALESCE(ttm.end_km, ttm.start_km) - ttm.start_km), 0)::text AS total_km,
+        COALESCE(SUM(
+          CASE
+            WHEN ttm.end_date IS NOT NULL AND ttm.end_time IS NOT NULL
+              THEN EXTRACT(EPOCH FROM ((ttm.end_date + ttm.end_time) - (ttm.start_date + ttm.start_time))) / 3600
+            ELSE 0
+          END
+        ), 0)::text AS total_hours,
+        GREATEST(0, (MAX(COALESCE(ttm.end_date, ttm.start_date)) - MIN(ttm.start_date)))::integer AS night_halts
+      FROM annexure_metrics am
+      JOIN trip_travel_metrics ttm ON ttm.id = am.metric_id
+      WHERE am.annexure_id = $1
+    `,
+    [annexureId]
+  );
+
+  return result.rows[0] ?? null;
+}
+
 router.get('/annexures', authRequired, async (req, res) => {
   try {
-    const parentTripId = typeof req.query.parent_trip_id === 'string' ? req.query.parent_trip_id : null;
-    const result = parentTripId
-      ? await query<AnnexureDetailRow>(`${getAnnexureSelect('WHERE a.parent_trip_id = $1')} ORDER BY a.start_date DESC, a.created_at DESC`, [parentTripId])
-      : await query<AnnexureDetailRow>(`${getAnnexureSelect()} ORDER BY a.start_date DESC, a.created_at DESC`);
+    const values: unknown[] = [];
+    const filters: string[] = [];
+    const tripId = typeof req.query.parent_trip_id === 'string' && req.query.parent_trip_id.trim().length > 0
+      ? req.query.parent_trip_id.trim()
+      : typeof req.query.trip_id === 'string' && req.query.trip_id.trim().length > 0
+        ? req.query.trip_id.trim()
+        : null;
+    const customerId = typeof req.query.customer_id === 'string' && req.query.customer_id.trim().length > 0 ? req.query.customer_id.trim() : null;
+    const dateFrom = typeof req.query.date_from === 'string' && req.query.date_from.trim().length > 0 ? req.query.date_from.trim() : null;
+    const dateTo = typeof req.query.date_to === 'string' && req.query.date_to.trim().length > 0 ? req.query.date_to.trim() : null;
+    const isBilled = typeof req.query.is_billed === 'string'
+      ? req.query.is_billed === 'true'
+        ? true
+        : req.query.is_billed === 'false'
+          ? false
+          : null
+      : null;
 
-    res.json(
-      result.rows.map((row) => ({
-        ...row,
-        start_km: Number(row.start_km),
-        end_km: Number(row.end_km),
-        total_km: Number(row.total_km),
-        total_hours: Number(row.total_hours),
-        calculated_amount: Number(row.calculated_amount),
-        child_trip: {
-          ...row.child_trip,
-          trip_amount: Number(row.child_trip.trip_amount),
-          calculated_amount: toNumber(row.child_trip.calculated_amount),
-        },
-      }))
-    );
+    if (tripId) {
+      values.push(tripId);
+      filters.push(`a.trip_id = $${values.length}`);
+    }
+    if (customerId) {
+      values.push(customerId);
+      filters.push(`t.customer_id = $${values.length}`);
+    }
+    if (dateFrom) {
+      values.push(dateFrom);
+      filters.push(`a.start_date >= $${values.length}`);
+    }
+    if (dateTo) {
+      values.push(dateTo);
+      filters.push(`a.end_date <= $${values.length}`);
+    }
+    if (isBilled !== null) {
+      values.push(isBilled);
+      filters.push(`a.is_billed = $${values.length}`);
+    }
+
+    const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const result = await query<AnnexureDetailRow>(`${getAnnexureSelect(whereClause)} ORDER BY t.trip_date DESC, a.start_date DESC, a.created_at DESC`, values);
+    res.json(result.rows.map(mapAnnexureRow));
   } catch (error) {
     console.error('Fetching annexures failed:', error);
     res.status(500).json({ message: 'Unable to fetch annexures.' });
@@ -305,22 +352,8 @@ router.get('/annexures', authRequired, async (req, res) => {
 
 router.get('/trips/:id/annexures', authRequired, async (req, res) => {
   try {
-    const result = await query<AnnexureDetailRow>(`${getAnnexureSelect('WHERE a.parent_trip_id = $1')} ORDER BY a.start_date DESC, a.created_at DESC`, [req.params.id]);
-    res.json(
-      result.rows.map((row) => ({
-        ...row,
-        start_km: Number(row.start_km),
-        end_km: Number(row.end_km),
-        total_km: Number(row.total_km),
-        total_hours: Number(row.total_hours),
-        calculated_amount: Number(row.calculated_amount),
-        child_trip: {
-          ...row.child_trip,
-          trip_amount: Number(row.child_trip.trip_amount),
-          calculated_amount: toNumber(row.child_trip.calculated_amount),
-        },
-      }))
-    );
+    const result = await query<AnnexureDetailRow>(`${getAnnexureSelect('WHERE a.trip_id = $1')} ORDER BY a.start_date DESC, a.created_at DESC`, [req.params.id]);
+    res.json(result.rows.map(mapAnnexureRow));
   } catch (error) {
     console.error('Fetching trip annexures failed:', error);
     res.status(500).json({ message: 'Unable to fetch trip annexures.' });
@@ -333,33 +366,17 @@ router.post('/trips/:id/annexures', authRequired, roleCheck(['admin', 'manager',
   try {
     await client.query('BEGIN');
     const created = await createAnnexureFromParent(client, {
-      parent_trip_id: String(req.params.id),
+      trip_id: String(req.params.id),
       annexure_number: typeof req.body.annexure_number === 'string' ? req.body.annexure_number : null,
       selection_mode: req.body.selection_mode === 'date_range' ? 'date_range' : 'metric_rows',
       metric_ids: Array.isArray(req.body.metric_ids) ? req.body.metric_ids.filter((value: unknown): value is string => typeof value === 'string') : undefined,
       start_date: typeof req.body.start_date === 'string' ? req.body.start_date : undefined,
       end_date: typeof req.body.end_date === 'string' ? req.body.end_date : undefined,
-      force_sync_trip_amount: req.body.force_sync_trip_amount === true,
-      created_by: req.user?.id ?? null,
     });
 
     const annexureResult = await client.query<AnnexureDetailRow>(`${getAnnexureSelect('WHERE a.id = $1')} LIMIT 1`, [created.annexure_id]);
     await client.query('COMMIT');
-
-    const annexure = annexureResult.rows[0];
-    res.status(201).json({
-      ...annexure,
-      start_km: Number(annexure.start_km),
-      end_km: Number(annexure.end_km),
-      total_km: Number(annexure.total_km),
-      total_hours: Number(annexure.total_hours),
-      calculated_amount: Number(annexure.calculated_amount),
-      child_trip: {
-        ...annexure.child_trip,
-        trip_amount: Number(annexure.child_trip.trip_amount),
-        calculated_amount: toNumber(annexure.child_trip.calculated_amount),
-      },
-    });
+    res.status(201).json(mapAnnexureRow(annexureResult.rows[0]));
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Creating annexure failed:', error);
@@ -378,21 +395,20 @@ router.post('/annexures/bulk-bill', authRequired, roleCheck(['admin', 'manager',
     if (rows.length === 0) {
       throw new Error('No unbilled annexures matched the selected criteria.');
     }
-
-    const parentTripId = rows[0].parent_trip_id;
-    if (rows.some((row) => row.parent_trip_id !== parentTripId)) {
-      throw new Error('Grouped billing must use annexures from the same parent trip.');
+    if (rows.some((row) => row.customer_id !== rows[0].customer_id)) {
+      throw new Error('Grouped billing must use annexures from the same customer.');
     }
     if (rows.some((row) => row.is_billed)) {
       throw new Error('One or more selected annexures are already billed.');
     }
 
-    const invoiceDate = typeof req.body.invoice_date === 'string' && req.body.invoice_date.trim().length > 0
-      ? req.body.invoice_date.trim()
-      : todayDateOnly();
-    const remarks = typeof req.body.remarks === 'string' && req.body.remarks.trim().length > 0
-      ? req.body.remarks.trim()
-      : `Annexure billing for ${rows[0].parent_trip_number}`;
+    const invoiceDate = typeof req.body.invoice_date === 'string' && req.body.invoice_date.trim().length > 0 ? req.body.invoice_date.trim() : todayDateOnly();
+    const remarks = typeof req.body.remarks === 'string' && req.body.remarks.trim().length > 0 ? req.body.remarks.trim() : `Annexure billing for ${rows[0].customer_name}`;
+    const distinctDutyTypes = Array.from(new Set(rows.map((row) => row.duty_type).filter((value): value is string => Boolean(value))));
+    const distinctVehicles = Array.from(new Set(rows.map((row) => row.vehicle_number)));
+    const distinctVehicleLabels = Array.from(new Set(rows.map((row) => row.vehicle_type_label)));
+    const distinctTrips = Array.from(new Set(rows.map((row) => row.trip_number)));
+    const bookingDate = rows.map((row) => row.trip_date).sort()[0] ?? null;
 
     const invoice = await createGtInvoice(
       client,
@@ -401,12 +417,12 @@ router.post('/annexures/bulk-bill', authRequired, roleCheck(['admin', 'manager',
         billing_address: rows[0].customer_address,
         customer_gstin: rows[0].customer_gstin,
         invoice_date: invoiceDate,
-        booking_date: rows[0].parent_trip_date,
-        duty_type_label: formatDutyTypeLabel(rows[0].duty_type),
-        nature_of_journey: formatDutyTypeLabel(rows[0].duty_type),
-        vehicle_number: rows[0].vehicle_number,
-        vehicle_type_label: rows[0].vehicle_type_label,
-        duty_slip_number: rows[0].parent_trip_number,
+        booking_date: bookingDate,
+        duty_type_label: distinctDutyTypes.length === 1 ? formatDutyTypeLabel(distinctDutyTypes[0]) : 'Mixed',
+        nature_of_journey: distinctDutyTypes.length === 1 ? formatDutyTypeLabel(distinctDutyTypes[0]) : 'Mixed',
+        vehicle_number: distinctVehicles.length === 1 ? distinctVehicles[0] : 'Multiple',
+        vehicle_type_label: distinctVehicleLabels.length === 1 ? distinctVehicleLabels[0] : 'Multiple',
+        duty_slip_number: distinctTrips.length === 1 ? distinctTrips[0] : 'Multiple',
         total_km: rows.reduce((sum, row) => sum + Number(row.total_km), 0),
         total_hours: rows.reduce((sum, row) => sum + Number(row.total_hours), 0),
         payment_terms_days: rows[0].customer_credit_days,
@@ -423,11 +439,7 @@ router.post('/annexures/bulk-bill', authRequired, roleCheck(['admin', 'manager',
     );
 
     await client.query(
-      `
-        UPDATE annexures
-        SET is_billed = true, invoice_id = $1, updated_at = now()
-        WHERE id = ANY($2::uuid[])
-      `,
+      `UPDATE annexures SET is_billed = true, invoice_id = $1, updated_at = now() WHERE id = ANY($2::uuid[])`,
       [invoice.id, rows.map((row) => row.id)]
     );
 
@@ -453,8 +465,7 @@ router.get('/annexures/:id/pdf', authRequired, async (req, res) => {
     const pdf = await buildAnnexurePdf(
       {
         annexure_number: annexure.annexure_number,
-        parent_trip_number: annexure.parent_trip.trip_number,
-        child_trip_number: annexure.child_trip.trip_number,
+        duty_slip_number: annexure.parent_trip.trip_number,
         customer_name: annexure.customer.name,
         vehicle_number: annexure.vehicle.vehicle_number,
         vehicle_type_label: annexure.vehicle_category?.name ?? annexure.vehicle.vehicle_type,
@@ -491,19 +502,7 @@ router.get('/annexures/:id', authRequired, async (req, res) => {
       return;
     }
 
-    res.json({
-      ...annexure,
-      start_km: Number(annexure.start_km),
-      end_km: Number(annexure.end_km),
-      total_km: Number(annexure.total_km),
-      total_hours: Number(annexure.total_hours),
-      calculated_amount: Number(annexure.calculated_amount),
-      child_trip: {
-        ...annexure.child_trip,
-        trip_amount: Number(annexure.child_trip.trip_amount),
-        calculated_amount: toNumber(annexure.child_trip.calculated_amount),
-      },
-    });
+    res.json(mapAnnexureRow(annexure));
   } catch (error) {
     console.error('Fetching annexure detail failed:', error);
     res.status(500).json({ message: 'Unable to fetch annexure detail.' });
@@ -518,20 +517,16 @@ router.put('/annexures/:id/bill', authRequired, roleCheck(['admin', 'manager', '
     const rows = await loadAnnexureBillingRows([String(req.params.id)]);
     const row = rows[0];
     if (!row) {
-      res.status(404).json({ message: 'Annexure not found.' });
       await client.query('ROLLBACK');
+      res.status(404).json({ message: 'Annexure not found.' });
       return;
     }
     if (row.is_billed) {
       throw new Error('Annexure is already billed.');
     }
 
-    const invoiceDate = typeof req.body.invoice_date === 'string' && req.body.invoice_date.trim().length > 0
-      ? req.body.invoice_date.trim()
-      : todayDateOnly();
-    const remarks = typeof req.body.remarks === 'string' && req.body.remarks.trim().length > 0
-      ? req.body.remarks.trim()
-      : `Annexure billing for ${row.annexure_number}`;
+    const invoiceDate = typeof req.body.invoice_date === 'string' && req.body.invoice_date.trim().length > 0 ? req.body.invoice_date.trim() : todayDateOnly();
+    const remarks = typeof req.body.remarks === 'string' && req.body.remarks.trim().length > 0 ? req.body.remarks.trim() : `Annexure billing for ${row.annexure_number}`;
 
     const invoice = await createGtInvoice(
       client,
@@ -540,12 +535,12 @@ router.put('/annexures/:id/bill', authRequired, roleCheck(['admin', 'manager', '
         billing_address: row.customer_address,
         customer_gstin: row.customer_gstin,
         invoice_date: invoiceDate,
-        booking_date: row.parent_trip_date,
+        booking_date: row.trip_date,
         duty_type_label: formatDutyTypeLabel(row.duty_type),
         nature_of_journey: formatDutyTypeLabel(row.duty_type),
         vehicle_number: row.vehicle_number,
         vehicle_type_label: row.vehicle_type_label,
-        duty_slip_number: row.parent_trip_number,
+        duty_slip_number: row.trip_number,
         total_km: Number(row.total_km),
         total_hours: Number(row.total_hours),
         payment_terms_days: row.customer_credit_days,
@@ -561,11 +556,7 @@ router.put('/annexures/:id/bill', authRequired, roleCheck(['admin', 'manager', '
       }]
     );
 
-    await client.query(
-      'UPDATE annexures SET is_billed = true, invoice_id = $1, updated_at = now() WHERE id = $2',
-      [invoice.id, row.id]
-    );
-
+    await client.query('UPDATE annexures SET is_billed = true, invoice_id = $1, updated_at = now() WHERE id = $2', [invoice.id, row.id]);
     await client.query('COMMIT');
     res.status(201).json(invoice);
   } catch (error) {
@@ -579,52 +570,12 @@ router.put('/annexures/:id/bill', authRequired, roleCheck(['admin', 'manager', '
 
 router.put('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), async (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, annexureUpdateFields);
-  const syncFromTrip = req.body.sync_from_trip === true;
+  const syncFromMetrics = req.body.sync_from_metrics === true || req.body.sync_from_trip === true;
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
-    const currentResult = await client.query<{
-      id: string;
-      annexure_number: string;
-      trip_id: string;
-      is_billed: boolean;
-      child_trip_number: string;
-      child_annexure_number: string | null;
-      start_date: string;
-      end_date: string;
-      start_km: string;
-      end_km: string;
-      total_km: string;
-      total_hours: string;
-      night_halts: number;
-      calculated_amount: string;
-    }>(
-      `
-        SELECT
-          a.id,
-          a.annexure_number,
-          a.trip_id,
-          a.is_billed,
-          child_t.trip_number AS child_trip_number,
-          child_t.annexure_number AS child_annexure_number,
-          COALESCE(MIN(ttm.start_date)::text, a.start_date::text) AS start_date,
-          COALESCE(MAX(COALESCE(ttm.end_date, ttm.start_date))::text, a.end_date::text) AS end_date,
-          COALESCE(MIN(ttm.start_km)::text, a.start_km::text) AS start_km,
-          COALESCE(MAX(COALESCE(ttm.end_km, ttm.start_km))::text, a.end_km::text) AS end_km,
-          COALESCE(child_t.actual_km::text, a.total_km::text) AS total_km,
-          COALESCE(child_t.total_hours::text, a.total_hours::text) AS total_hours,
-          COALESCE(child_t.night_halts, a.night_halts) AS night_halts,
-          COALESCE(child_t.calculated_amount::text, child_t.trip_amount::text, a.calculated_amount::text) AS calculated_amount
-        FROM annexures a
-        JOIN trips child_t ON child_t.id = a.trip_id
-        LEFT JOIN trip_travel_metrics ttm ON ttm.trip_id = child_t.id
-        WHERE a.id = $1
-        GROUP BY a.id, child_t.id
-        LIMIT 1
-      `,
-      [req.params.id]
-    );
+    const currentResult = await client.query<{ id: string; is_billed: boolean }>('SELECT id, is_billed FROM annexures WHERE id = $1 FOR UPDATE', [req.params.id]);
     const current = currentResult.rows[0];
     if (!current) {
       await client.query('ROLLBACK');
@@ -635,69 +586,35 @@ router.put('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'opera
       throw new Error('Billed annexures cannot be edited.');
     }
 
-    if (payload.annexure_number) {
-      await client.query(
-        'UPDATE annexures SET annexure_number = $1, updated_at = now() WHERE id = $2',
-        [payload.annexure_number, req.params.id]
-      );
-      await client.query(
-        `
-          UPDATE trips
-          SET annexure_number = $1,
-              trip_number = CASE WHEN trip_number = $2 THEN $1 ELSE trip_number END,
-              updated_at = now()
-          WHERE id = $3
-        `,
-        [payload.annexure_number, current.annexure_number, current.trip_id]
-      );
+    if (typeof payload.annexure_number === 'string' && payload.annexure_number.trim().length > 0) {
+      await client.query('UPDATE annexures SET annexure_number = $1, updated_at = now() WHERE id = $2', [payload.annexure_number.trim(), req.params.id]);
     }
 
-    if (syncFromTrip) {
-      await client.query(
-        `
-          UPDATE annexures
-          SET
-            start_date = $1,
-            end_date = $2,
-            start_km = $3,
-            end_km = $4,
-            total_km = $5,
-            total_hours = $6,
-            night_halts = $7,
-            calculated_amount = $8,
-            updated_at = now()
-          WHERE id = $9
-        `,
-        [
-          current.start_date,
-          current.end_date,
-          current.start_km,
-          current.end_km,
-          current.total_km,
-          current.total_hours,
-          current.night_halts,
-          current.calculated_amount,
-          req.params.id,
-        ]
-      );
+    if (syncFromMetrics) {
+      const snapshot = await loadAnnexureMetricSnapshot(client, String(req.params.id));
+      if (snapshot) {
+        await client.query(
+          `
+            UPDATE annexures
+            SET
+              start_date = $1,
+              end_date = $2,
+              start_km = $3,
+              end_km = $4,
+              total_km = $5,
+              total_hours = $6,
+              night_halts = $7,
+              updated_at = now()
+            WHERE id = $8
+          `,
+          [snapshot.start_date, snapshot.end_date, snapshot.start_km, snapshot.end_km, snapshot.total_km, snapshot.total_hours, snapshot.night_halts, req.params.id]
+        );
+      }
     }
 
     const annexureResult = await client.query<AnnexureDetailRow>(`${getAnnexureSelect('WHERE a.id = $1')} LIMIT 1`, [req.params.id]);
     await client.query('COMMIT');
-    const annexure = annexureResult.rows[0];
-    res.json({
-      ...annexure,
-      start_km: Number(annexure.start_km),
-      end_km: Number(annexure.end_km),
-      total_km: Number(annexure.total_km),
-      total_hours: Number(annexure.total_hours),
-      calculated_amount: Number(annexure.calculated_amount),
-      child_trip: {
-        ...annexure.child_trip,
-        trip_amount: Number(annexure.child_trip.trip_amount),
-        calculated_amount: toNumber(annexure.child_trip.calculated_amount),
-      },
-    });
+    res.json(mapAnnexureRow(annexureResult.rows[0]));
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Updating annexure failed:', error);
@@ -712,7 +629,7 @@ router.delete('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'op
 
   try {
     await client.query('BEGIN');
-    const result = await client.query<{ trip_id: string; is_billed: boolean }>('SELECT trip_id, is_billed FROM annexures WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const result = await client.query<{ id: string; is_billed: boolean }>('SELECT id, is_billed FROM annexures WHERE id = $1 FOR UPDATE', [req.params.id]);
     const annexure = result.rows[0];
     if (!annexure) {
       await client.query('ROLLBACK');
@@ -723,7 +640,7 @@ router.delete('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'op
       throw new Error('Billed annexures cannot be deleted.');
     }
 
-    await client.query('DELETE FROM trips WHERE id = $1', [annexure.trip_id]);
+    await client.query('DELETE FROM annexures WHERE id = $1', [req.params.id]);
     await client.query('COMMIT');
     res.status(204).send();
   } catch (error) {
@@ -736,6 +653,3 @@ router.delete('/annexures/:id', authRequired, roleCheck(['admin', 'manager', 'op
 });
 
 export default router;
-
-
-

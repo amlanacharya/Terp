@@ -21,6 +21,7 @@ docker compose up -d postgres
 ```
 
 This starts the PostgreSQL service defined in [docker-compose.yml](/C:/travelerp/docker-compose.yml).
+On first startup with a brand-new Docker volume, Postgres also auto-runs [server/db/schema.sql](/C:/travelerp/server/db/schema.sql) and [server/db/seed.sql](/C:/travelerp/server/db/seed.sql) through `/docker-entrypoint-initdb.d`.
 
 Default database values:
 
@@ -46,16 +47,16 @@ JWT_SECRET=replace_this_with_a_long_random_secret
 
 Change `JWT_SECRET` before any real deployment.
 
-## 3. Load Schema and Seed Data
+## 3. Fresh DB vs Existing DB
 
-Run the Docker-specific init script:
+For a new environment, no extra database init step is needed after `docker compose up -d postgres`.
 
-```powershell
-cd C:\travelerp\server\db
-.\init-docker.bat
-```
+For an existing Docker volume, Postgres will not re-run init scripts. Use one of these paths instead:
 
-This applies [server/db/schema.sql](/C:/travelerp/server/db/schema.sql) and [server/db/seed.sql](/C:/travelerp/server/db/seed.sql) inside the running Postgres container.
+- Apply the latest migration scripts manually.
+- If you want a completely fresh local database, delete the Docker volume and bring Postgres up again.
+
+The older helper [server/db/init-docker.bat](/C:/travelerp/server/db/init-docker.bat) is only appropriate for a blank database inside a running container. Do not use it against an already initialized database as a substitute for migrations.
 
 ## 4. Run the Backend
 

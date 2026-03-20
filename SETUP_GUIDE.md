@@ -15,14 +15,11 @@ cd C:\travelerp
 docker compose up -d postgres
 ```
 
-2. Initialize the database:
+On a brand-new Docker volume, this also initializes the database automatically from [server/db/schema.sql](/C:/travelerp/server/db/schema.sql) and [server/db/seed.sql](/C:/travelerp/server/db/seed.sql).
 
-```powershell
-cd C:\travelerp\server\db
-.\init-docker.bat
-```
+If you already have an older database volume, `docker compose up` does not re-run init scripts. In that case, apply the needed migrations manually.
 
-3. Start the backend:
+2. Start the backend:
 
 ```powershell
 cd C:\travelerp\server
@@ -30,7 +27,7 @@ npm install
 npm run dev
 ```
 
-4. Start the frontend:
+3. Start the frontend:
 
 ```powershell
 cd C:\travelerp

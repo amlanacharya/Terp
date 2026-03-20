@@ -9,15 +9,17 @@ Use Docker for PostgreSQL. You do not need a separate native PostgreSQL install.
 ```powershell
 cd C:\travelerp
 docker compose up -d postgres
-cd .\server\db
-.\init-docker.bat
-cd ..\
+cd .\server
 npm install
 npm run dev
-cd ..\
+cd ..
 npm install
 npm run dev
 ```
+
+On a brand-new Docker volume, Postgres now auto-loads [server/db/schema.sql](/C:/travelerp/server/db/schema.sql) and [server/db/seed.sql](/C:/travelerp/server/db/seed.sql) during `docker compose up`.
+
+If you already have an older `travelerp_pgdata` volume, `docker compose up` will keep that existing database. Apply migrations manually, or reset the volume if you want a full fresh database.
 
 ## URLs
 

@@ -17,6 +17,24 @@ interface ProfileRow {
 
 const router = Router();
 
+async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
+  if (await bcrypt.compare(password, passwordHash)) {
+    return true;
+  }
+
+  const legacyResult = await query<{ matches: boolean }>('SELECT crypt($1, $2) = $2 AS matches', [password, passwordHash]);
+  return legacyResult.rows[0]?.matches === true;
+}
+
+async function ensureBcryptPassword(profileId: string, password: string, passwordHash: string): Promise<void> {
+  if (passwordHash.startsWith('$2a$') || passwordHash.startsWith('$2b$') || passwordHash.startsWith('$2y$')) {
+    return;
+  }
+
+  const nextHash = await bcrypt.hash(password, 10);
+  await query('UPDATE profiles SET password_hash = $1, updated_at = now() WHERE id = $2', [nextHash, profileId]);
+}
+
 router.post('/login', async (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
 
@@ -43,11 +61,13 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const passwordMatches = await bcrypt.compare(password, profile.password_hash);
+    const passwordMatches = await verifyPassword(password, profile.password_hash);
     if (!passwordMatches) {
       res.status(401).json({ message: 'Invalid email or password.' });
       return;
     }
+
+    await ensureBcryptPassword(profile.id, password, profile.password_hash);
 
     const token = signToken({
       id: profile.id,

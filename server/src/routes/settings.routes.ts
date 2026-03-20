@@ -8,6 +8,8 @@ const defaultSettings: Array<{ key: string; value: string; description: string }
   { key: 'company_address', value: 'Mumbai, Maharashtra', description: 'Company Address' },
   { key: 'company_gstin', value: '27ABCDE1234F1Z5', description: 'Company GSTIN' },
   { key: 'company_pan', value: 'ABCDE1234F', description: 'Company PAN' },
+  { key: 'lead_prefix', value: 'LEAD', description: 'Lead Number Prefix' },
+  { key: 'booking_prefix', value: 'BK', description: 'Booking Number Prefix' },
   { key: 'invoice_prefix', value: 'INV', description: 'Invoice Number Prefix' },
   { key: 'trip_prefix', value: 'TRP', description: 'Trip Number Prefix' },
   { key: 'financial_year_start', value: '04', description: 'Financial Year Start Month' },

@@ -92,6 +92,7 @@ export function LeadList() {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
   const [deleteLeadTarget, setDeleteLeadTarget] = useState<Lead | null>(null);
   const [deleteFollowUpTarget, setDeleteFollowUpTarget] = useState<LeadFollowUp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,6 +185,12 @@ export function LeadList() {
       assigned_to: profile?.id || '',
     });
     setIsLeadModalOpen(false);
+  }
+
+  function closeFollowUpModal() {
+    setIsFollowUpModalOpen(false);
+    setSelectedLeadId(null);
+    setFollowUps([]);
   }
 
   function startEdit(lead: Lead) {
@@ -485,8 +492,7 @@ export function LeadList() {
         </form>
       </Modal>
 
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-4">
+      <div className="space-y-4">
           <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
             <input
               type="text"
@@ -563,7 +569,10 @@ export function LeadList() {
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => setSelectedLeadId(lead.id === selectedLeadId ? null : lead.id)}
+                          onClick={() => {
+                            setSelectedLeadId(lead.id);
+                            setIsFollowUpModalOpen(true);
+                          }}
                           className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
                         >
                           Follow-ups
@@ -595,17 +604,15 @@ export function LeadList() {
           </div>
         </div>
 
+      <Modal
+        isOpen={isFollowUpModalOpen}
+        onClose={savingFollowUp ? () => undefined : closeFollowUpModal}
+        title={selectedLead ? `Follow-ups — ${getLeadLabel(selectedLead)} (${selectedLead.lead_number})` : 'Follow-ups'}
+        size="xl"
+        closeOnBackdrop={!savingFollowUp}
+        closeOnEsc={!savingFollowUp}
+      >
         <div className="space-y-4">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm uppercase tracking-[0.2em] text-slate-500">Follow-ups</p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-900">
-              {selectedLead ? `Lead ${selectedLead.lead_number}` : 'Select a lead'}
-            </h3>
-            <p className="mt-2 text-sm text-slate-600">
-              {selectedLead ? `Track every call, quote, and next action for ${getLeadLabel(selectedLead)}.` : 'Choose a lead from the list to see and record follow-up history.'}
-            </p>
-          </div>
-
           {selectedLead && canManage ? (
             <form onSubmit={handleFollowUpSubmit} className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
               <label className="text-sm font-semibold text-slate-800">
@@ -667,7 +674,7 @@ export function LeadList() {
             </div>
           ) : null}
         </div>
-      </div>
+      </Modal>
 
       <ConfirmModal
         isOpen={deleteLeadTarget !== null}

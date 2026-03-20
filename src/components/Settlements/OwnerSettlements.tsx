@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useMemo, useEffect, useState } from 'react';
 import { Pencil, Trash2, FileDown } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
@@ -56,7 +56,20 @@ export function OwnerSettlements() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
+  const [filterOwnerId, setFilterOwnerId] = useState('');
+  const [filterVehicleId, setFilterVehicleId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
+
+  const filteredSettlements = useMemo(() => {
+    return settlements.filter((settlement) => {
+      if (filterOwnerId && settlement.owner.id !== filterOwnerId) return false;
+      if (filterVehicleId && settlement.vehicle?.id !== filterVehicleId) return false;
+      if (filterStatus !== 'all' && settlement.status !== filterStatus) return false;
+      return true;
+    });
+  }, [settlements, filterOwnerId, filterVehicleId, filterStatus]);
 
   async function loadPage() {
     const [settlementRows, ownerRows, vehicleRows] = await Promise.all([
@@ -237,6 +250,54 @@ export function OwnerSettlements() {
           ) : null}
         </div>
       ) : null}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+        <select
+          value={filterOwnerId}
+          onChange={(e) => setFilterOwnerId(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">All Owners</option>
+          {owners.map((owner) => (
+            <option key={owner.id} value={owner.id}>{owner.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterVehicleId}
+          onChange={(e) => setFilterVehicleId(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">All Vehicles</option>
+          {vehicles.map((vehicle) => (
+            <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>
+          ))}
+        </select>
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+          <option value="settled">Settled</option>
+        </select>
+        {(filterOwnerId || filterVehicleId || filterStatus !== 'all') ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterOwnerId('');
+              setFilterVehicleId('');
+              setFilterStatus('all');
+            }}
+            className="text-xs text-slate-500 hover:text-slate-700"
+          >
+            Reset Filters
+          </button>
+        ) : null}
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
         <table className="min-w-full text-sm">
           <thead>
@@ -252,14 +313,14 @@ export function OwnerSettlements() {
             </tr>
           </thead>
           <tbody>
-            {settlements.length === 0 ? (
+            {filteredSettlements.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
-                  No owner settlements yet.
+                  {settlements.length === 0 ? 'No owner settlements yet.' : 'No settlements match the filters.'}
                 </td>
               </tr>
             ) : null}
-            {settlements.map((s, i) => (
+            {filteredSettlements.map((s, i) => (
               <tr
                 key={s.id}
                 className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}

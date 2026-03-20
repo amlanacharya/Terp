@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Collection, Invoice } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface CollectionFormState {
   collection_number: string;
@@ -32,6 +34,7 @@ export function CollectionList() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [formState, setFormState] = useState<CollectionFormState>(initialForm);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingItem, setViewingItem] = useState<Collection | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Collection | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -150,19 +153,76 @@ export function CollectionList() {
 
               return (
                 <tr key={collection.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900"><div>{collection.collection_number}</div><div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${isRefund ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{isRefund ? 'Refund' : 'Receipt'}</div></td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setViewingItem(collection)}
+                      className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                    >
+                      {collection.collection_number}
+                    </button>
+                    <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${isRefund ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{isRefund ? 'Refund' : 'Receipt'}</div>
+                  </td>
                   <td className="px-4 py-3">{collection.invoice.invoice_number}</td>
                   <td className="px-4 py-3">{collection.invoice.customer.name}</td>
                   <td className="px-4 py-3">{formatDate(collection.collection_date)}</td>
                   <td className="px-4 py-3">{collection.payment_mode}</td>
                   <td className="px-4 py-3">{formatCurrency(collection.amount)}</td>
-                  {canManage ? <td className="px-4 py-3"><button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(collection)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button></td> : null}
+                  {canManage ? <td className="px-4 py-3"><IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(collection)} disabled={rowBusy} /></td> : null}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+
+      <Modal isOpen={!!viewingItem} onClose={() => setViewingItem(null)} title="View Collection" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Collection #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.collection_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Type</p>
+              <p className="mt-1 text-slate-600">{viewingItem.invoice.invoice_type === 'credit_note' ? 'Refund' : 'Receipt'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Invoice #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.invoice.invoice_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Customer</p>
+              <p className="mt-1 text-slate-600">{viewingItem.invoice.customer.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Collection Date</p>
+              <p className="mt-1 text-slate-600">{formatDate(viewingItem.collection_date)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Payment Mode</p>
+              <p className="mt-1 text-slate-600">{viewingItem.payment_mode}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Amount</p>
+              <p className="mt-1 text-slate-600 font-semibold">{formatCurrency(viewingItem.amount)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Reference #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.reference_number ?? '-'}</p>
+            </div>
+            {viewingItem.bank_name && (
+              <div className="text-sm">
+                <p className="font-semibold text-slate-800">Bank Name</p>
+                <p className="mt-1 text-slate-600">{viewingItem.bank_name}</p>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={selectedDocumentIsCreditNote ? 'Record Refund' : 'Record Payment Receipt'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">

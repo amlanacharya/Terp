@@ -1,10 +1,13 @@
 import { FormEvent, Fragment, useEffect, useState } from 'react';
+import { FileDown, Pencil, Trash2, Clock, Ban, XCircle } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Customer, FinancialLedgerEntry, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
+import { OverflowMenu } from '../Layout/OverflowMenu';
 
 type InvoicePdfDownloadMode = 'default' | InvoicePdfMode;
 
@@ -152,6 +155,7 @@ export function InvoiceList() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [formState, setFormState] = useState<InvoiceFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<Invoice | null>(null);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -281,6 +285,7 @@ export function InvoiceList() {
       due_date: invoice.due_date?.slice(0, 10) ?? '',
       payment_status: invoice.payment_status,
     });
+    setViewingItem(null);
     setIsFormModalOpen(true);
   }
 
@@ -607,6 +612,72 @@ export function InvoiceList() {
         </div>
       ) : null}
 
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Invoice" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Invoice #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.invoice_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Date</p>
+              <p className="mt-1 text-slate-600">{formatDate(viewingItem.invoice_date)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Customer</p>
+              <p className="mt-1 text-slate-600">{viewingItem.customer.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Source</p>
+              <p className="mt-1 text-slate-600">{viewingItem.source_type ?? 'manual'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Subtotal</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.subtotal)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">CGST</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.cgst_amount ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">SGST</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.sgst_amount ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">IGST</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.igst_amount ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total Amount</p>
+              <p className="mt-1 text-slate-600 font-semibold">{formatCurrency(viewingItem.total_amount)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Due Date</p>
+              <p className="mt-1 text-slate-600">{formatDate(viewingItem.due_date)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Payment Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.payment_status}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Invoice Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.invoice_status}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {viewingItem.invoice_status === 'active' && (!viewingItem.source_type || viewingItem.source_type === 'manual') && viewingItem.invoice_type !== 'credit_note' && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal
         isOpen={isFormModalOpen}
         onClose={saving ? () => undefined : resetForm}
@@ -746,8 +817,14 @@ export function InvoiceList() {
                         className="rounded"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      <div>{invoice.invoice_number}</div>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setViewingItem(invoice)}
+                        className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                      >
+                        {invoice.invoice_number}
+                      </button>
                       <InvoiceLifecycleBadge invoice={invoice} />
                       <button
                         type="button"
@@ -811,9 +888,10 @@ export function InvoiceList() {
                                 type="button"
                                 disabled={pdfBusy}
                                 onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
-                                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                                title="Download PDF"
+                                className="p-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                                <FileDown size={15} />
                               </button>
                               {openPdfMenuId === invoice.id ? (
                                 <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
@@ -830,37 +908,46 @@ export function InvoiceList() {
                               ) : null}
                             </div>
                           ) : (
-                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
-                              {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                            <button
+                              type="button"
+                              disabled={pdfBusy}
+                              onClick={() => void handleDownloadPdf(invoice)}
+                              title="Download PDF"
+                              className="p-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <FileDown size={15} />
                             </button>
                           )}
-                          <button
-                            type="button"
-                            disabled={actionLoading || invoice.payment_status === 'overdue'}
-                            onClick={() => void handleMarkOverdueSingle(invoice.id)}
-                            className="rounded-xl border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 disabled:opacity-60"
-                          >
-                            Mark Overdue
-                          </button>
                           {canEditInvoice ? (
-                            <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                              Edit
-                            </button>
+                            <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(invoice)} />
                           ) : null}
                           {canEditInvoice ? (
-                            <button type="button" onClick={() => void handleDelete(invoice)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
-                              Delete
-                            </button>
+                            <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => void handleDelete(invoice)} />
                           ) : null}
-                          {canVoidInvoice ? (
-                            <button type="button" onClick={() => { setVoidModal(invoice); setVoidReason(''); }} className="rounded-xl border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800">
-                              Void
-                            </button>
-                          ) : null}
-                          {canWriteOffInvoice ? (
-                            <button type="button" onClick={() => { setWriteOffModal(invoice); setWriteOffReason(''); }} className="rounded-xl border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700">
-                              Write Off
-                            </button>
+                          {(canVoidInvoice || canWriteOffInvoice || (actionLoading === false && invoice.payment_status !== 'overdue')) ? (
+                            <OverflowMenu
+                              items={[
+                                {
+                                  label: 'Mark Overdue',
+                                  icon: Clock,
+                                  onClick: () => void handleMarkOverdueSingle(invoice.id),
+                                  disabled: actionLoading || invoice.payment_status === 'overdue',
+                                  variant: 'warning',
+                                },
+                                ...(canVoidInvoice ? [{
+                                  label: 'Void',
+                                  icon: Ban,
+                                  onClick: () => { setVoidModal(invoice); setVoidReason(''); },
+                                  variant: 'warning' as const,
+                                }] : []),
+                                ...(canWriteOffInvoice ? [{
+                                  label: 'Write Off',
+                                  icon: XCircle,
+                                  onClick: () => { setWriteOffModal(invoice); setWriteOffReason(''); },
+                                  variant: 'danger' as const,
+                                }] : []),
+                              ]}
+                            />
                           ) : null}
                         </div>
                       </td>

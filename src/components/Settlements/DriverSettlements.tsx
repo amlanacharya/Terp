@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { Pencil, Trash2, FileDown } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, DriverSettlement } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface DriverSettlementFormState {
   settlement_number: string;
@@ -42,6 +44,7 @@ export function DriverSettlements() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [formState, setFormState] = useState<DriverSettlementFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<DriverSettlement | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DriverSettlement | null>(null);
   const [showFieldHelp, setShowFieldHelp] = useState(false);
@@ -97,6 +100,7 @@ export function DriverSettlements() {
       payment_mode: settlement.payment_mode ?? 'bank_transfer',
       status: settlement.status,
     });
+    setViewingItem(null);
     setIsModalOpen(true);
   }
 
@@ -233,18 +237,22 @@ export function DriverSettlements() {
           return (
             <article key={settlement.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <button
+                  type="button"
+                  onClick={() => setViewingItem(settlement)}
+                  className="text-left hover:text-blue-600 hover:underline cursor-pointer"
+                >
                   <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{settlement.settlement_number}</p>
                   <h3 className="mt-1 text-xl font-semibold text-slate-900">{settlement.driver.name}</h3>
-                </div>
+                </button>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                   {settlement.status}
                 </span>
               </div>
               <div className="mt-3 flex gap-2">
-                {canManage ? <button type="button" disabled={rowBusy} onClick={() => startEdit(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit settlement</button> : null}
-                <button type="button" onClick={() => void handleDownloadPdf(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">PDF</button>
-                {canManage ? <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(settlement)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button> : null}
+                {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(settlement)} disabled={rowBusy} /> : null}
+                <IconBtn icon={FileDown} label="PDF" onClick={() => void handleDownloadPdf(settlement)} />
+                {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(settlement)} disabled={rowBusy} /> : null}
               </div>
               <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
                 <div>
@@ -278,6 +286,64 @@ export function DriverSettlements() {
           );
         })}
       </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Salary Slip" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Settlement #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.settlement_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Driver</p>
+              <p className="mt-1 text-slate-600">{viewingItem.driver.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Period</p>
+              <p className="mt-1 text-slate-600">{formatDate(viewingItem.period_from)} to {formatDate(viewingItem.period_to)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.status}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total Trips</p>
+              <p className="mt-1 text-slate-600">{viewingItem.total_trips}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total KM</p>
+              <p className="mt-1 text-slate-600">{viewingItem.total_km}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Allowance</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.total_allowance)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Advances</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.advances ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Deductions</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.deductions ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Net Amount</p>
+              <p className="mt-1 text-slate-600 font-semibold">{formatCurrency(viewingItem.net_amount)}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}

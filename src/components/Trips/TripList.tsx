@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,6 +17,7 @@ import {
 } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 import { DutySlipForm } from './DutySlipForm';
 
 interface TripListProps {
@@ -490,9 +492,9 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
                     <td className="px-4 py-3 text-slate-600">{billingLabel}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => void openTripById(tripRow.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open</button>
-                        {canManage ? <button type="button" onClick={() => void startEdit(tripRow)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
-                        {canManage ? <button type="button" onClick={() => setDeleteTripTarget(tripRow)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
+                        <IconBtn icon={Eye} label="Open" onClick={() => void openTripById(tripRow.id)} />
+                        {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => void startEdit(tripRow)} /> : null}
+                        {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTripTarget(tripRow)} /> : null}
                       </div>
                     </td>
                   </tr>

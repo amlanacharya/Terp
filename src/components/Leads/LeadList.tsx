@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Customer, Lead, LeadAssigneeSummary, LeadFollowUp } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface LeadFormState {
   source: string;
@@ -91,6 +93,7 @@ export function LeadList() {
   const [followUpForm, setFollowUpForm] = useState<FollowUpFormState>(initialFollowUpForm);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<Lead | null>(null);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
   const [deleteLeadTarget, setDeleteLeadTarget] = useState<Lead | null>(null);
@@ -219,6 +222,7 @@ export function LeadList() {
       lost_reason: lead.lost_reason ?? '',
       remarks: lead.remarks ?? '',
     });
+    setViewingItem(null);
     setIsLeadModalOpen(true);
   }
 
@@ -557,7 +561,15 @@ export function LeadList() {
                     className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'} ${lead.id === selectedLeadId ? 'ring-1 ring-inset ring-sky-300' : ''}`}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{lead.lead_number}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{getLeadLabel(lead)}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setViewingItem(lead)}
+                        className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                      >
+                        {getLeadLabel(lead)}
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
                         {lead.status.replace(/_/g, ' ')}
@@ -567,33 +579,28 @@ export function LeadList() {
                     <td className="px-4 py-3 text-slate-600">{lead.travel_date ? formatDate(lead.travel_date) : '-'}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button
-                          type="button"
+                        <IconBtn
+                          icon={MessageSquare}
+                          label="Follow-ups"
                           onClick={() => {
                             setSelectedLeadId(lead.id);
                             setIsFollowUpModalOpen(true);
                           }}
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                        >
-                          Follow-ups
-                        </button>
+                        />
                         {canManage ? (
-                          <button
-                            type="button"
+                          <IconBtn
+                            icon={Pencil}
+                            label="Edit"
                             onClick={() => startEdit(lead)}
-                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                          >
-                            Edit
-                          </button>
+                          />
                         ) : null}
                         {canManage ? (
-                          <button
-                            type="button"
+                          <IconBtn
+                            icon={Trash2}
+                            label="Delete"
+                            variant="danger"
                             onClick={() => void handleDeleteLead(lead)}
-                            className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
-                          >
-                            Delete
-                          </button>
+                          />
                         ) : null}
                       </div>
                     </td>
@@ -603,6 +610,72 @@ export function LeadList() {
             </table>
           </div>
         </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Lead" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Lead #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.lead_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Customer</p>
+              <p className="mt-1 text-slate-600">{viewingItem.customer?.name ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Prospect Name</p>
+              <p className="mt-1 text-slate-600">{viewingItem.prospect_name ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Phone</p>
+              <p className="mt-1 text-slate-600">{viewingItem.prospect_phone}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Email</p>
+              <p className="mt-1 text-slate-600">{viewingItem.prospect_email ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Source</p>
+              <p className="mt-1 text-slate-600">{viewingItem.source.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Trip Type</p>
+              <p className="mt-1 text-slate-600">{viewingItem.trip_type.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Vehicle Preference</p>
+              <p className="mt-1 text-slate-600">{viewingItem.vehicle_preference ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.status.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Priority</p>
+              <p className="mt-1 text-slate-600 capitalize">{viewingItem.priority}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Travel Date</p>
+              <p className="mt-1 text-slate-600">{viewingItem.travel_date ? formatDate(viewingItem.travel_date) : '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Estimated Amount</p>
+              <p className="mt-1 text-slate-600">{viewingItem.estimated_amount ? formatCurrency(viewingItem.estimated_amount) : '-'}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isFollowUpModalOpen}

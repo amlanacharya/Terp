@@ -233,57 +233,89 @@ export function OwnerSettlements() {
           ) : null}
         </div>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {settlements.map((settlement) => {
-          const rowBusy = deletingId === settlement.id;
-
-          return (
-            <article key={settlement.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{settlement.settlement_number}</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{settlement.owner.name}</h3>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {settlement.status}
-                </span>
-              </div>
-              <div className="mt-3 flex gap-2">
-                {canManage ? <button type="button" disabled={rowBusy} onClick={() => startEdit(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit settlement</button> : null}
-                <button type="button" onClick={() => void handleDownloadPdf(settlement)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">PDF</button>
-                {canManage ? <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(settlement)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button> : null}
-              </div>
-              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Period</dt>
-                  <dd>
-                    {formatDate(settlement.period_from)} to {formatDate(settlement.period_to)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Vehicle</dt>
-                  <dd>{settlement.vehicle?.vehicle_number ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Gross amount</dt>
-                  <dd>{formatCurrency(settlement.total_amount)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">TDS</dt>
-                  <dd>{formatCurrency(settlement.tds_amount)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Other deductions</dt>
-                  <dd>{formatCurrency(settlement.other_deductions)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Net amount</dt>
-                  <dd>{formatCurrency(settlement.net_amount)}</dd>
-                </div>
-              </dl>
-            </article>
-          );
-        })}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+              <th className="px-4 py-3">Settlement #</th>
+              <th className="px-4 py-3">Owner</th>
+              <th className="px-4 py-3">Vehicle</th>
+              <th className="px-4 py-3">Period</th>
+              <th className="px-4 py-3">Total</th>
+              <th className="px-4 py-3">Net</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {settlements.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
+                  No owner settlements yet.
+                </td>
+              </tr>
+            ) : null}
+            {settlements.map((s, i) => (
+              <tr
+                key={s.id}
+                className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
+              >
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  {s.settlement_number}
+                </td>
+                <td className="px-4 py-3 font-medium text-slate-900">
+                  {s.owner?.name ?? '-'}
+                </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {s.vehicle?.vehicle_number ?? '-'}
+                </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {formatDate(s.period_from)} – {formatDate(s.period_to)}
+                </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {formatCurrency(s.total_amount)}
+                </td>
+                <td className="px-4 py-3 font-medium text-slate-900">
+                  {formatCurrency(s.net_amount)}
+                </td>
+                <td className="px-4 py-3 capitalize text-slate-600">
+                  {s.status.replace(/_/g, ' ')}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? (
+                      <button
+                        type="button"
+                        disabled={deletingId === s.id}
+                        onClick={() => startEdit(s)}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 disabled:opacity-60"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadPdf(s)}
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                    >
+                      PDF
+                    </button>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        disabled={deletingId === s.id}
+                        onClick={() => setDeleteTarget(s)}
+                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700 disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Modal

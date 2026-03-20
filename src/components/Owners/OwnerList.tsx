@@ -86,6 +86,7 @@ export function OwnerList() {
   }
 
   async function handleToggleActive(owner: Owner) {
+    setError('');
     try {
       await api.put(`/owners/${owner.id}`, { ...owner, is_active: !owner.is_active });
       await loadOwners();
@@ -312,6 +313,11 @@ export function OwnerList() {
                 </td>
               </tr>
             ))}
+            {filteredOwners.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-slate-500">No vehicle owners match the current filter.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

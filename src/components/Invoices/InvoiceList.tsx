@@ -1,8 +1,9 @@
-import { FormEvent, Fragment, useEffect, useState } from 'react';
+import { FormEvent, Fragment, useMemo, useEffect, useState } from 'react';
 import { FileDown, Pencil, Trash2, Clock, Ban, XCircle } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { Customer, FinancialLedgerEntry, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
@@ -182,9 +183,34 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloadLoading, setBulkDownloadLoading] = useState(false);
 
+  const [filterCustomerId, setFilterCustomerId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const canVoid = profile ? ['admin', 'manager'].includes(profile.role) : false;
   const canWriteOff = profile?.role === 'admin';
+  const { currentPage: invoicePage, setCurrentPage: setInvoicePage, pageSize: invoicePageSize, handlePageSizeChange: handleInvoicePageSizeChange } = usePaginationState('invoices');
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((invoice) => {
+      if (filterCustomerId && invoice.customer.id !== filterCustomerId) return false;
+      if (filterStatus !== 'all' && invoice.payment_status !== filterStatus) return false;
+      if (filterDateFrom && new Date(invoice.invoice_date ?? '') < new Date(filterDateFrom)) return false;
+      if (filterDateTo && new Date(invoice.invoice_date ?? '') > new Date(filterDateTo)) return false;
+      return true;
+    });
+  }, [invoices, filterCustomerId, filterStatus, filterDateFrom, filterDateTo]);
+
+  const paginatedInvoices = useMemo(() => {
+    const start = (invoicePage - 1) * invoicePageSize;
+    return filteredInvoices.slice(start, start + invoicePageSize);
+  }, [filteredInvoices, invoicePage, invoicePageSize]);
+
+  useEffect(() => {
+    setInvoicePage(1);
+  }, [filterCustomerId, filterStatus, filterDateFrom, filterDateTo, setInvoicePage]);
 
   async function loadInvoices(includeVoid = false) {
     const params = includeVoid ? '?include_void=true' : '';
@@ -463,10 +489,10 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === invoices.length) {
+    if (selectedIds.size === filteredInvoices.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(invoices.map((inv) => inv.id)));
+      setSelectedIds(new Set(filteredInvoices.map((inv) => inv.id)));
     }
   }
 
@@ -771,6 +797,59 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
         </form>
       </Modal>
 
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+        <select
+          value={filterCustomerId}
+          onChange={(e) => setFilterCustomerId(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">All Customers</option>
+          {customers.map((customer) => (
+            <option key={customer.id} value={customer.id}>{customer.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="partial">Partial</option>
+          <option value="completed">Paid</option>
+          <option value="overdue">Overdue</option>
+        </select>
+        <input
+          type="date"
+          value={filterDateFrom}
+          onChange={(e) => setFilterDateFrom(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          placeholder="From"
+        />
+        <input
+          type="date"
+          value={filterDateTo}
+          onChange={(e) => setFilterDateTo(e.target.value)}
+          className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          placeholder="To"
+        />
+        {(filterCustomerId || filterStatus !== 'all' || filterDateFrom || filterDateTo) ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterCustomerId('');
+              setFilterStatus('all');
+              setFilterDateFrom('');
+              setFilterDateTo('');
+            }}
+            className="text-xs text-slate-500 hover:text-slate-700"
+          >
+            Reset Filters
+          </button>
+        ) : null}
+      </div>
+
       <div className="overflow-hidden rounded-3xl border border-slate-200">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
@@ -778,16 +857,12 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
               <th className="px-4 py-3">
                 <input
                   type="checkbox"
-                  checked={selectedIds.size === invoices.length && invoices.length > 0}
+                  checked={selectedIds.size === filteredInvoices.length && filteredInvoices.length > 0}
                   onChange={toggleSelectAll}
                   className="rounded"
                 />
               </th>
               <th className="px-4 py-3">Invoice</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Duty Slip</th>
-              <th className="px-4 py-3">Journey</th>
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Status</th>
@@ -796,7 +871,7 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {invoices.map((invoice) => {
+            {paginatedInvoices.map((invoice) => {
               const isActive = invoice.invoice_status === 'active';
               const isManualInvoice = !invoice.source_type || invoice.source_type === 'manual';
               const canEditInvoice = isManualInvoice && isActive && invoice.invoice_type !== 'credit_note';
@@ -830,6 +905,13 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
                         {invoice.invoice_number}
                       </button>
                       <InvoiceLifecycleBadge invoice={invoice} />
+                      {invoice.duty_slip_number ? (
+                        <div className="mt-1">
+                          <span className="text-xs text-sky-600">
+                            DS: {invoice.duty_slip_number}
+                          </span>
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void handleToggleLedger(invoice.id)}
@@ -1026,6 +1108,14 @@ export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredInvoices.length}
+        currentPage={invoicePage}
+        pageSize={invoicePageSize}
+        onPageChange={setInvoicePage}
+        onPageSizeChange={handleInvoicePageSizeChange}
+      />
 
       <ConfirmModal
         isOpen={deleteTarget !== null}

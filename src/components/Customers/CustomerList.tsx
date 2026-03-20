@@ -6,6 +6,7 @@ import { Customer, InvoicePdfMode } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface CustomerFormState {
   customer_code: string;
@@ -74,6 +75,8 @@ export function CustomerList() {
   const [filterCity, setFilterCity] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('customers');
+
   const filteredCustomers = useMemo(
     () => {
       let result = showInactive ? customers : customers.filter((customer) => customer.is_active !== false);
@@ -87,6 +90,11 @@ export function CustomerList() {
     },
     [customers, showInactive, filterName, filterCity]
   );
+
+  const paginatedCustomers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredCustomers.slice(start, start + pageSize);
+  }, [filteredCustomers, currentPage, pageSize]);
 
   async function loadCustomers() {
     setCustomers(await api.get<Customer[]>('/customers'));
@@ -105,6 +113,10 @@ export function CustomerList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, filterCity, showInactive, setCurrentPage]);
 
   function openCreate() {
     setEditingId(null);
@@ -289,7 +301,7 @@ export function CustomerList() {
             </tr>
           </thead>
           <tbody>
-            {filteredCustomers.map((c, i) => (
+            {paginatedCustomers.map((c, i) => (
               <tr key={c.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.customer_code}</td>
                 <td className="px-4 py-3">
@@ -339,6 +351,14 @@ export function CustomerList() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredCustomers.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Customer" size="lg">
         {viewingItem && (

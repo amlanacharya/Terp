@@ -1,7 +1,30 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatDate } from '../../lib/format';
 import { SystemSetting } from '../../lib/types';
+
+interface SettingsSection {
+  title: string;
+  keys: string[];
+}
+
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  {
+    title: 'Company Information',
+    keys: ['company_name', 'company_address', 'company_gstin', 'company_pan'],
+  },
+  {
+    title: 'Bank Details',
+    keys: ['bank_name', 'bank_account_number', 'bank_ifsc_code'],
+  },
+  {
+    title: 'Numbering Prefixes',
+    keys: ['lead_prefix', 'booking_prefix', 'invoice_prefix', 'trip_prefix'],
+  },
+  {
+    title: 'Financial',
+    keys: ['fy_start_month'],
+  },
+];
 
 export function Settings() {
   const [settings, setSettings] = useState<SystemSetting[]>([]);
@@ -58,44 +81,52 @@ export function Settings() {
         <h2 className="mt-2 text-3xl font-semibold text-slate-900">System configuration</h2>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="space-y-4">
-        {settings.map((setting) => (
-          <article key={setting.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="max-w-xl">
-                <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{setting.setting_key}</p>
-                <p className="mt-1 text-sm text-slate-600">{setting.description ?? 'No description'}</p>
-                <p className="mt-2 text-xs text-slate-400">Updated {formatDate(setting.updated_at)}</p>
-              </div>
-              <div className="flex w-full max-w-xl gap-3">
-                <label className="flex-1 text-sm font-semibold text-slate-800">
-                  {setting.description ?? setting.setting_key}
-                  <input
-                    value={formValues[setting.setting_key] ?? setting.setting_value}
-                    onChange={(event) =>
-                      setFormValues((current) => ({
-                        ...current,
-                        [setting.setting_key]: event.target.value,
-                      }))
-                    }
-                    placeholder={setting.description ?? `Enter ${setting.setting_key}`}
-                    className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void saveSetting(setting);
-                  }}
-                  disabled={savingKey === setting.setting_key}
-                  className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60"
-                >
-                  {savingKey === setting.setting_key ? 'Saving...' : 'Save'}
-                </button>
+      <div className="space-y-6">
+        {SETTINGS_SECTIONS.map((section) => {
+          const sectionSettings = settings.filter((s) => section.keys.includes(s.setting_key));
+          if (sectionSettings.length === 0) return null;
+
+          return (
+            <div key={section.title} className="rounded-3xl border border-slate-200 p-6">
+              <h3 className="mb-4 text-lg font-semibold text-slate-900">{section.title}</h3>
+              <div className="space-y-4">
+                {sectionSettings.map((setting) => (
+                  <div key={setting.id} className="flex flex-col gap-3 border-t border-slate-100 pt-4 first:border-t-0 first:pt-0 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-slate-800">{setting.description ?? setting.setting_key}</p>
+                      {setting.description && setting.description !== setting.setting_key ? (
+                        <p className="mt-0.5 text-xs text-slate-500">{setting.setting_key}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={formValues[setting.setting_key] ?? setting.setting_value}
+                        onChange={(event) =>
+                          setFormValues((current) => ({
+                            ...current,
+                            [setting.setting_key]: event.target.value,
+                          }))
+                        }
+                        placeholder={setting.description ?? `Enter ${setting.setting_key}`}
+                        className="flex-1 rounded-2xl border border-slate-300 px-3 py-2 text-sm font-normal lg:max-w-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void saveSetting(setting);
+                        }}
+                        disabled={savingKey === setting.setting_key}
+                        className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                      >
+                        {savingKey === setting.setting_key ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

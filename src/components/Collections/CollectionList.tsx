@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useState, useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
@@ -7,7 +7,7 @@ import { Collection, Invoice } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
-import { Pagination } from '../Layout/Pagination';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface CollectionFormState {
   collection_number: string;
@@ -41,18 +41,16 @@ export function CollectionList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('collections');
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const selectedInvoice = invoices.find((invoice) => invoice.id === formState.invoice_id) ?? null;
   const selectedDocumentIsCreditNote = selectedInvoice?.invoice_type === 'credit_note';
 
-  const totalPages = Math.ceil(collections.length / itemsPerPage);
   const paginatedCollections = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return collections.slice(startIndex, startIndex + itemsPerPage);
-  }, [collections, currentPage]);
+    const start = (currentPage - 1) * pageSize;
+    return collections.slice(start, start + pageSize);
+  }, [collections, currentPage, pageSize]);
 
   async function loadCollections() {
     setCollections(await api.get<Collection[]>('/collections'));
@@ -186,12 +184,11 @@ export function CollectionList() {
       </div>
 
       <Pagination
-        currentPage={currentPage}
-        totalPages={totalPages}
         totalItems={collections.length}
-        itemsPerPage={itemsPerPage}
+        currentPage={currentPage}
+        pageSize={pageSize}
         onPageChange={setCurrentPage}
-        label="collections"
+        onPageSizeChange={handlePageSizeChange}
       />
 
       <Modal isOpen={!!viewingItem} onClose={() => setViewingItem(null)} title="View Collection" size="lg">

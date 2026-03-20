@@ -18,7 +18,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
-import { Pagination } from '../Layout/Pagination';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { DutySlipForm } from './DutySlipForm';
 
 interface TripListProps {
@@ -56,6 +56,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   const [tripDeleting, setTripDeleting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('trips');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -329,9 +330,9 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   );
 
   const paginatedTrips = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return visibleTrips.slice(startIndex, startIndex + itemsPerPage);
-  }, [visibleTrips, currentPage]);
+    const start = (currentPage - 1) * pageSize;
+    return visibleTrips.slice(start, start + pageSize);
+  }, [visibleTrips, currentPage, pageSize]);
 
   const visibleCustomers = useMemo(
     () => customers.filter((customer) => trips.some((trip) => trip.customer_id === customer.id) || customer.id === filterCustomerId),
@@ -352,6 +353,10 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     setDateFrom('');
     setDateTo('');
   }
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCustomerId, filterDriverId, dateFrom, dateTo, setCurrentPage]);
 
   if (loading) {
     return <p className="text-sm text-slate-500">Loading trips...</p>;
@@ -502,17 +507,13 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
             </tbody>
           </table>
         </div>
-
-        {visibleTrips.length > itemsPerPage && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={Math.ceil(visibleTrips.length / itemsPerPage)}
-            totalItems={visibleTrips.length}
-            itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage}
-            label="duty slips"
-          />
-        )}
+        <Pagination
+          totalItems={visibleTrips.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </section>
 
       {canManage ? (

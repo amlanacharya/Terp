@@ -7,7 +7,7 @@ import { Customer, Lead, LeadAssigneeSummary, LeadFollowUp } from '../../lib/typ
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
-import { Pagination } from '../Layout/Pagination';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface LeadFormState {
   source: string;
@@ -113,6 +113,8 @@ export function LeadList() {
   const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('leads');
+
   const selectedLead = useMemo(
     () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
     [leads, selectedLeadId]
@@ -129,11 +131,10 @@ export function LeadList() {
     });
   }, [leads, filterName, filterStatus, filterFrom, filterTo]);
 
-  const totalPages = Math.ceil(filteredLeads.length / itemsPerPage);
   const paginatedLeads = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredLeads.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredLeads, currentPage]);
+    const start = (currentPage - 1) * pageSize;
+    return filteredLeads.slice(start, start + pageSize);
+  }, [filteredLeads, currentPage, pageSize]);
 
   async function loadLeads() {
     const leadRows = await api.get<Lead[]>('/leads');
@@ -183,7 +184,7 @@ export function LeadList() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterName, filterStatus, filterFrom, filterTo]);
+  }, [filterName, filterStatus, filterFrom, filterTo, setCurrentPage]);
 
   function openCreate() {
     setEditingId(null);
@@ -623,16 +624,13 @@ export function LeadList() {
             </table>
           </div>
 
-          {filteredLeads.length > itemsPerPage && (
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={filteredLeads.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-              label="leads"
-            />
-          )}
+          <Pagination
+            totalItems={filteredLeads.length}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Lead" size="lg">

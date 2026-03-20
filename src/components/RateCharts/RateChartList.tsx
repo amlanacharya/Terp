@@ -12,7 +12,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
-import { Pagination } from '../Layout/Pagination';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { RateChartDetail } from './RateChartDetail';
 import { ChartFormState, RateChartEditor } from './RateChartEditor';
 
@@ -75,8 +75,7 @@ export function RateChartList() {
   const [routeSaving, setRouteSaving] = useState(false);
   const [chartDeleting, setChartDeleting] = useState(false);
   const [error, setError] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('rate-charts');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -342,16 +341,15 @@ export function RateChartList() {
     }
   }
 
-  const visibleCharts = useMemo(
+  const filteredCharts = useMemo(
     () => (filterCustomerId ? rateCharts.filter((chart) => chart.customer.id === filterCustomerId) : rateCharts),
     [filterCustomerId, rateCharts]
   );
 
-  const totalPages = Math.ceil(visibleCharts.length / itemsPerPage);
-  const paginatedCharts = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return visibleCharts.slice(startIndex, startIndex + itemsPerPage);
-  }, [visibleCharts, currentPage]);
+  const visibleCharts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredCharts.slice(start, start + pageSize);
+  }, [filteredCharts, currentPage, pageSize]);
 
   const workspaceChart = editingChartId && selectedChart?.id === editingChartId ? selectedChart : null;
 
@@ -467,16 +465,13 @@ export function RateChartList() {
           </table>
         </div>
 
-        {visibleCharts.length > itemsPerPage && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={visibleCharts.length}
-            itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage}
-            label="charts"
-          />
-        )}
+        <Pagination
+          totalItems={filteredCharts.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
 
         {selectedChart ? (
           <RateChartDetail

@@ -1,59 +1,129 @@
-interface PaginationProps {
-  currentPage: number;
-  totalPages: number;
+import { useState, useCallback } from 'react';
+
+export interface PaginationProps {
   totalItems: number;
-  itemsPerPage: number;
+  currentPage: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
-  label: string;
+  onPageSizeChange: (size: number) => void;
+  pageSizeOptions?: number[];
 }
 
 export function Pagination({
-  currentPage,
-  totalPages,
   totalItems,
-  itemsPerPage,
+  currentPage,
+  pageSize,
   onPageChange,
-  label,
+  onPageSizeChange,
+  pageSizeOptions = [25, 50, 100, 200, 500, 1000],
 }: PaginationProps) {
-  const startItem = Math.min((currentPage - 1) * itemsPerPage + 1, totalItems);
-  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  // Generate page numbers to show
+  const pageNumbers: (number | string)[] = [];
+  const delta = 1;
+
+  for (let i = 1; i <= totalPages; i++) {
+    if (
+      i === 1 ||
+      i === totalPages ||
+      (i >= currentPage - delta && i <= currentPage + delta)
+    ) {
+      pageNumbers.push(i);
+    } else if (
+      pageNumbers[pageNumbers.length - 1] !== '...'
+    ) {
+      pageNumbers.push('...');
+    }
+  }
 
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="text-sm text-slate-600">
-        Showing {startItem} to {endItem} of {totalItems} {label}
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-xs text-slate-600">
+        Showing {startItem}-{endItem} of {totalItems}
       </div>
-      <div className="flex gap-2">
+
+      <div className="flex items-center gap-1">
         <button
-          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          type="button"
+          onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50"
         >
-          Previous
+          &lt; Prev
         </button>
-        <div className="flex items-center gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+
+        {pageNumbers.map((pageNum, idx) =>
+          pageNum === '...' ? (
+            <span key={idx} className="px-2 py-1 text-xs text-slate-400">
+              ...
+            </span>
+          ) : (
             <button
-              key={page}
-              onClick={() => onPageChange(page)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                page === currentPage
-                  ? 'bg-sky-600 text-white'
-                  : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+              key={idx}
+              onClick={() => onPageChange(pageNum as number)}
+              className={`rounded px-2 py-1 text-xs font-medium ${
+                currentPage === pageNum
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {page}
+              {pageNum}
             </button>
-          ))}
-        </div>
+          )
+        )}
+
         <button
-          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          type="button"
+          onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-200 disabled:opacity-50"
         >
-          Next
+          Next &gt;
         </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-slate-600">Show</span>
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+        >
+          {pageSizeOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-600">per page</span>
       </div>
     </div>
   );
+}
+
+/**
+ * Hook for managing pagination state with localStorage persistence
+ */
+export function usePaginationState(moduleKey: string) {
+  const storageKey = `travelerp_pageSize_${moduleKey}`;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => {
+    const saved = localStorage.getItem(storageKey);
+    return saved ? Number(saved) : 25;
+  });
+
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+    localStorage.setItem(storageKey, String(size));
+  }, []);
+
+  return { currentPage, setCurrentPage, pageSize, handlePageSizeChange };
 }

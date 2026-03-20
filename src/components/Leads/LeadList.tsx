@@ -109,8 +109,6 @@ export function LeadList() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
   const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('leads');

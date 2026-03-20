@@ -46,8 +46,6 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   const [filterDriverId, setFilterDriverId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [metricSaving, setMetricSaving] = useState(false);
@@ -343,10 +341,6 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     [drivers, filterDriverId, trips]
   );
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterCustomerId, filterDriverId, dateFrom, dateTo]);
-
   function clearFilters() {
     setFilterCustomerId('');
     setFilterDriverId('');
@@ -503,7 +497,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
                   </tr>
                 );
               })}
-              {paginatedTrips.length === 0 && visibleTrips.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filters.</td></tr> : null}
+              {visibleTrips.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filters.</td></tr> : null}
             </tbody>
           </table>
         </div>

@@ -239,17 +239,6 @@ export function VehicleCategoryList() {
         onPageSizeChange={handlePageSizeChange}
       />
 
-      {filteredCategories.length > itemsPerPage && (
-        <Pagination
-          currentPage={currentPage}
-          totalPages={Math.ceil(filteredCategories.length / itemsPerPage)}
-          totalItems={filteredCategories.length}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          label="vehicle categories"
-        />
-      )}
-
       <Modal
         isOpen={isModalOpen}
         onClose={saving ? () => undefined : closeModal}

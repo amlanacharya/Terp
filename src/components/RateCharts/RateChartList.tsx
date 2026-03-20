@@ -133,10 +133,6 @@ export function RateChartList() {
     void hydrate();
   }, []);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterCustomerId]);
-
   function openCreateChart() {
     setError('');
     setEditingChartId(null);
@@ -412,7 +408,7 @@ export function RateChartList() {
               {visibleCharts.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No rate charts yet.</td></tr>
               ) : null}
-              {paginatedCharts.map((chart, i) => (
+              {visibleCharts.map((chart, i) => (
                 <tr key={chart.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                   <td className="px-4 py-3">
                     <button

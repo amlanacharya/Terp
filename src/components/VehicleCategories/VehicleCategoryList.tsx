@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { VehicleCategory } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface VehicleCategoryFormState {
   name: string;
@@ -22,6 +24,7 @@ export function VehicleCategoryList() {
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   const [formState, setFormState] = useState<VehicleCategoryFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<VehicleCategory | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<VehicleCategory | null>(null);
   const [loading, setLoading] = useState(true);
@@ -181,43 +184,35 @@ export function VehicleCategoryList() {
           <tbody>
             {filteredCategories.map((cat, i) => (
               <tr key={cat.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                <td className="px-4 py-3 font-medium text-slate-900">{cat.name}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(cat)}
+                    className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {cat.name}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{cat.description ?? '-'}</td>
                 <td className="px-4 py-3">
                   <button
                     type="button"
                     onClick={() => void handleToggleActive(cat)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                       cat.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                     }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        cat.is_active ? 'translate-x-6' : 'translate-x-1'
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        cat.is_active ? 'translate-x-5' : 'translate-x-1'
                       }`}
                     />
                   </button>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => startEdit(cat)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                      >
-                        Edit
-                      </button>
-                    ) : null}
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(cat)}
-                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
+                    {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(cat)} /> : null}
+                    {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(cat)} /> : null}
                   </div>
                 </td>
               </tr>
@@ -267,6 +262,39 @@ export function VehicleCategoryList() {
             <button type="submit" disabled={saving} className="rounded-2xl bg-slate-900 px-5 py-3 text-white disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Category' : 'Create Category'}</button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vehicle Category" size="md">
+        {viewingItem && (
+          <div className="space-y-4">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Category Name</p>
+              <p className="mt-1 text-slate-600">{viewingItem.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Description</p>
+              <p className="mt-1 text-slate-600">{viewingItem.description ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.is_active ? 'Active' : 'Inactive'}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage ? (
+                <button
+                  onClick={() => {
+                    setViewingItem(null);
+                    startEdit(viewingItem);
+                  }}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmModal

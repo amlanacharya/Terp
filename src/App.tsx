@@ -50,6 +50,12 @@ function AppContent() {
     setPageInstanceKey((current) => current + 1);
   }
 
+  function handleOpenTripFromInvoice(tripId: string) {
+    setPendingTripOpenId(tripId);
+    setCurrentPage('trips');
+    setPageInstanceKey((current) => current + 1);
+  }
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -75,7 +81,7 @@ function AppContent() {
       case 'owners':
         return <ProtectedRoute><OwnerList /></ProtectedRoute>;
       case 'invoices':
-        return <ProtectedRoute allowedRoles={['admin', 'manager', 'accountant']}><InvoiceList /></ProtectedRoute>;
+        return <ProtectedRoute allowedRoles={['admin', 'manager', 'accountant']}><InvoiceList onNavigateToTrip={handleOpenTripFromInvoice} /></ProtectedRoute>;
       case 'collections':
         return <ProtectedRoute allowedRoles={['admin', 'manager', 'accountant']}><CollectionList /></ProtectedRoute>;
       case 'driver-settlements':

@@ -12,6 +12,10 @@ import { OverflowMenu } from '../Layout/OverflowMenu';
 
 type InvoicePdfDownloadMode = 'default' | InvoicePdfMode;
 
+interface InvoiceListProps {
+  onNavigateToTrip?: (tripId: string) => void;
+}
+
 interface InvoiceFormState {
   invoice_number: string;
   invoice_date: string;
@@ -148,7 +152,7 @@ function InvoiceLifecycleBadge({ invoice }: { invoice: Invoice }) {
   return null;
 }
 
-export function InvoiceList() {
+export function InvoiceList({ onNavigateToTrip }: InvoiceListProps) {
   const { profile } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -916,6 +920,27 @@ export function InvoiceList() {
                         {historyOpen ? 'Hide Financial History' : historyBusy ? 'Loading History...' : 'Financial History'}
                       </button>
                     </td>
+                    <td className="px-4 py-3">{invoice.customer.name}</td>
+                    <td className="px-4 py-3">{invoice.source_type ?? 'manual'}</td>
+                    <td className="px-4 py-3">
+                      {invoice.duty_slip_number && invoice.trip_id && onNavigateToTrip ? (
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToTrip(invoice.trip_id!)}
+                            className="text-xs text-sky-600 hover:text-sky-700 hover:underline"
+                          >
+                            DS: {invoice.duty_slip_number} ↗
+                          </button>
+                        </div>
+                      ) : invoice.duty_slip_number ? (
+                        <div className="mt-1">
+                          <span className="text-xs text-sky-600">DS: {invoice.duty_slip_number}</span>
+                        </div>
+                      ) : null}
+                      {!invoice.duty_slip_number ? <span className="text-slate-400">-</span> : null}
+                    </td>
+                    <td className="px-4 py-3">{invoice.nature_of_journey ?? invoice.duty_type_label ?? '-'}</td>
                     <td className="px-4 py-3">{formatDate(invoice.invoice_date)}</td>
                     <td className="px-4 py-3">{formatDate(invoice.due_date)}</td>
                     <td className="px-4 py-3">

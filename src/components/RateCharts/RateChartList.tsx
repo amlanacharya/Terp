@@ -12,6 +12,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination } from '../Layout/Pagination';
 import { RateChartDetail } from './RateChartDetail';
 import { ChartFormState, RateChartEditor } from './RateChartEditor';
 
@@ -467,42 +468,14 @@ export function RateChartList() {
         </div>
 
         {visibleCharts.length > itemsPerPage && (
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="text-sm text-slate-600">
-              Showing {Math.min((currentPage - 1) * itemsPerPage + 1, visibleCharts.length)} to {Math.min(currentPage * itemsPerPage, visibleCharts.length)} of {visibleCharts.length} charts
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                      page === currentPage
-                        ? 'bg-sky-600 text-white'
-                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={visibleCharts.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            label="charts"
+          />
         )}
 
         {selectedChart ? (

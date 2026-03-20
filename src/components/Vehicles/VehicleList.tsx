@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner, Vehicle, VehicleCategory } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface VehicleFormState {
   vehicle_number: string;
@@ -38,6 +40,7 @@ export function VehicleList() {
   const [categories, setCategories] = useState<VehicleCategory[]>([]);
   const [formState, setFormState] = useState<VehicleFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<Vehicle | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,6 +100,7 @@ export function VehicleList() {
       is_owned: vehicle.is_owned,
       is_active: vehicle.is_active,
     });
+    setViewingItem(null);
     setIsModalOpen(true);
   }
 
@@ -260,7 +264,15 @@ export function VehicleList() {
           <tbody>
             {filteredVehicles.map((v, i) => (
               <tr key={v.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                <td className="px-4 py-3 font-medium text-slate-900">{v.make} {v.model}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(v)}
+                    className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {v.make} {v.model}
+                  </button>
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{v.vehicle_number}</td>
                 <td className="px-4 py-3 capitalize text-slate-600">{v.vehicle_type.replace(/_/g, ' ')}</td>
                 <td className="px-4 py-3 text-slate-600">{v.vehicle_category?.name ?? '-'}</td>
@@ -270,12 +282,12 @@ export function VehicleList() {
                     <button
                       type="button"
                       onClick={() => void handleToggleActive(v)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         v.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                       }`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        v.is_active ? 'translate-x-6' : 'translate-x-1'
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        v.is_active ? 'translate-x-5' : 'translate-x-1'
                       }`} />
                     </button>
                   ) : (
@@ -286,8 +298,8 @@ export function VehicleList() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    {canManage ? <button type="button" onClick={() => startEdit(v)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button> : null}
-                    {canManage ? <button type="button" onClick={() => setDeleteTarget(v)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button> : null}
+                    {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(v)} /> : null}
+                    {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(v)} /> : null}
                   </div>
                 </td>
               </tr>
@@ -295,6 +307,60 @@ export function VehicleList() {
           </tbody>
         </table>
       </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vehicle" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Make</p>
+              <p className="mt-1 text-slate-600">{viewingItem.make}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Model</p>
+              <p className="mt-1 text-slate-600">{viewingItem.model}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Vehicle Number</p>
+              <p className="mt-1 text-slate-600">{viewingItem.vehicle_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Vehicle Type</p>
+              <p className="mt-1 text-slate-600">{viewingItem.vehicle_type.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Category</p>
+              <p className="mt-1 text-slate-600">{viewingItem.vehicle_category?.name ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Year</p>
+              <p className="mt-1 text-slate-600">{viewingItem.year ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Seating Capacity</p>
+              <p className="mt-1 text-slate-600">{viewingItem.seating_capacity ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Ownership</p>
+              <p className="mt-1 text-slate-600">{viewingItem.is_owned ? 'Company-owned' : (viewingItem.owner?.name ?? '-')}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.is_active ? 'Active' : 'Inactive'}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}

@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface DriverFormState {
   driver_code: string;
@@ -47,6 +49,7 @@ export function DriverList() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [formState, setFormState] = useState<DriverFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<Driver | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null);
   const [showInactive, setShowInactive] = useState(false);
@@ -119,6 +122,7 @@ export function DriverList() {
       ot_per_hour: driver.ot_per_hour == null ? '' : String(driver.ot_per_hour),
       is_active: driver.is_active,
     });
+    setViewingItem(null);
     setIsModalOpen(true);
   }
 
@@ -258,7 +262,15 @@ export function DriverList() {
             {filteredDrivers.map((d, i) => (
               <tr key={d.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.driver_code}</td>
-                <td className="px-4 py-3 font-medium text-slate-900">{d.name}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(d)}
+                    className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {d.name}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{d.phone ?? '-'}</td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.license_number ?? '-'}</td>
                 <td className="px-4 py-3">
@@ -266,12 +278,12 @@ export function DriverList() {
                     <button
                       type="button"
                       onClick={() => void handleToggleActive(d)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         d.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                       }`}
                     >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        d.is_active ? 'translate-x-6' : 'translate-x-1'
+                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        d.is_active ? 'translate-x-5' : 'translate-x-1'
                       }`} />
                     </button>
                   ) : (
@@ -282,8 +294,8 @@ export function DriverList() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    {canManage ? <button type="button" onClick={() => startEdit(d)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button> : null}
-                    {canManage ? <button type="button" onClick={() => setDeleteTarget(d)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button> : null}
+                    {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(d)} /> : null}
+                    {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(d)} /> : null}
                   </div>
                 </td>
               </tr>
@@ -298,6 +310,80 @@ export function DriverList() {
           </tbody>
         </table>
       </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Driver" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Driver Code</p>
+              <p className="mt-1 text-slate-600">{viewingItem.driver_code}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Driver Name</p>
+              <p className="mt-1 text-slate-600">{viewingItem.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Phone Number</p>
+              <p className="mt-1 text-slate-600">{viewingItem.phone ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Email</p>
+              <p className="mt-1 text-slate-600">{viewingItem.email ?? '-'}</p>
+            </div>
+            <div className="text-sm lg:col-span-2">
+              <p className="font-semibold text-slate-800">Address</p>
+              <p className="mt-1 text-slate-600">{viewingItem.address ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">City</p>
+              <p className="mt-1 text-slate-600">{viewingItem.city ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">State</p>
+              <p className="mt-1 text-slate-600">{viewingItem.state ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">License Number</p>
+              <p className="mt-1 text-slate-600">{viewingItem.license_number ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">License Expiry</p>
+              <p className="mt-1 text-slate-600">{viewingItem.license_expiry?.slice(0, 10) ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">PAN</p>
+              <p className="mt-1 text-slate-600">{viewingItem.pan ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Aadhaar Number</p>
+              <p className="mt-1 text-slate-600">{viewingItem.aadhar_number ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Night Halt Rate</p>
+              <p className="mt-1 text-slate-600">{viewingItem.night_halt_rate ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">OT Per Hour</p>
+              <p className="mt-1 text-slate-600">{viewingItem.ot_per_hour ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.is_active ? 'Active' : 'Inactive'}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={editingId ? 'Edit Driver' : 'Add Driver'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">

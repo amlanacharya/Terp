@@ -230,61 +230,84 @@ export function DriverSettlements() {
           ) : null}
         </div>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {settlements.map((settlement) => {
-          const rowBusy = deletingId === settlement.id;
-
-          return (
-            <article key={settlement.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={() => setViewingItem(settlement)}
-                  className="text-left hover:text-blue-600 hover:underline cursor-pointer"
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+              <th className="px-4 py-3">Settlement #</th>
+              <th className="px-4 py-3">Driver</th>
+              <th className="px-4 py-3">Period</th>
+              <th className="px-4 py-3">Trips</th>
+              <th className="px-4 py-3">Allowance</th>
+              <th className="px-4 py-3">Advances</th>
+              <th className="px-4 py-3">Deductions</th>
+              <th className="px-4 py-3">Net Amount</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {settlements.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-6 text-center text-slate-500">
+                  No driver settlements yet.
+                </td>
+              </tr>
+            ) : null}
+            {settlements.map((settlement, i) => {
+              const rowBusy = deletingId === settlement.id;
+              return (
+                <tr
+                  key={settlement.id}
+                  className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
                 >
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{settlement.settlement_number}</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{settlement.driver.name}</h3>
-                </button>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {settlement.status}
-                </span>
-              </div>
-              <div className="mt-3 flex gap-2">
-                {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(settlement)} disabled={rowBusy} /> : null}
-                <IconBtn icon={FileDown} label="PDF" onClick={() => void handleDownloadPdf(settlement)} />
-                {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(settlement)} disabled={rowBusy} /> : null}
-              </div>
-              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Period</dt>
-                  <dd>
-                    {formatDate(settlement.period_from)} to {formatDate(settlement.period_to)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Trips</dt>
-                  <dd>{settlement.total_trips}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Allowance</dt>
-                  <dd>{formatCurrency(settlement.total_allowance)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Advances</dt>
-                  <dd>{formatCurrency(settlement.advances)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Deductions</dt>
-                  <dd>{formatCurrency(settlement.deductions)}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Net amount</dt>
-                  <dd>{formatCurrency(settlement.net_amount)}</dd>
-                </div>
-              </dl>
-            </article>
-          );
-        })}
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setViewingItem(settlement)}
+                      className="font-mono text-xs text-slate-500 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                    >
+                      {settlement.settlement_number}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {settlement.driver?.name ?? '-'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDate(settlement.period_from)} – {formatDate(settlement.period_to)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {settlement.total_trips}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatCurrency(settlement.total_allowance)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatCurrency(settlement.advances ?? 0)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatCurrency(settlement.deductions ?? 0)}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {formatCurrency(settlement.net_amount)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                      {settlement.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(settlement)} disabled={rowBusy} /> : null}
+                      <IconBtn icon={FileDown} label="PDF" onClick={() => void handleDownloadPdf(settlement)} />
+                      {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(settlement)} disabled={rowBusy} /> : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Salary Slip" size="lg">

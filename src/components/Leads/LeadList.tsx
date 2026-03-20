@@ -108,6 +108,8 @@ export function LeadList() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
   const selectedLead = useMemo(
@@ -125,6 +127,12 @@ export function LeadList() {
       return true;
     });
   }, [leads, filterName, filterStatus, filterFrom, filterTo]);
+
+  const totalPages = Math.ceil(filteredLeads.length / itemsPerPage);
+  const paginatedLeads = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredLeads.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredLeads, currentPage]);
 
   async function loadLeads() {
     const leadRows = await api.get<Lead[]>('/leads');
@@ -171,6 +179,10 @@ export function LeadList() {
       setError(err instanceof Error ? err.message : 'Unable to load follow-ups.');
     });
   }, [selectedLeadId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, filterStatus, filterFrom, filterTo]);
 
   function openCreate() {
     setEditingId(null);
@@ -555,7 +567,7 @@ export function LeadList() {
                     <td colSpan={6} className="px-4 py-6 text-center text-slate-500">No leads found.</td>
                   </tr>
                 ) : null}
-                {filteredLeads.map((lead, i) => (
+                {paginatedLeads.map((lead, i) => (
                   <tr
                     key={lead.id}
                     className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'} ${lead.id === selectedLeadId ? 'ring-1 ring-inset ring-sky-300' : ''}`}
@@ -609,6 +621,45 @@ export function LeadList() {
               </tbody>
             </table>
           </div>
+
+          {filteredLeads.length > itemsPerPage && (
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm text-slate-600">
+                Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredLeads.length)} to {Math.min(currentPage * itemsPerPage, filteredLeads.length)} of {filteredLeads.length} leads
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                        page === currentPage
+                          ? 'bg-sky-600 text-white'
+                          : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Lead" size="lg">

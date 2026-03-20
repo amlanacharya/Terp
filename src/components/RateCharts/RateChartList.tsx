@@ -74,6 +74,8 @@ export function RateChartList() {
   const [routeSaving, setRouteSaving] = useState(false);
   const [chartDeleting, setChartDeleting] = useState(false);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -130,6 +132,10 @@ export function RateChartList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCustomerId]);
 
   function openCreateChart() {
     setError('');
@@ -339,6 +345,13 @@ export function RateChartList() {
     () => (filterCustomerId ? rateCharts.filter((chart) => chart.customer.id === filterCustomerId) : rateCharts),
     [filterCustomerId, rateCharts]
   );
+
+  const totalPages = Math.ceil(visibleCharts.length / itemsPerPage);
+  const paginatedCharts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return visibleCharts.slice(startIndex, startIndex + itemsPerPage);
+  }, [visibleCharts, currentPage]);
+
   const workspaceChart = editingChartId && selectedChart?.id === editingChartId ? selectedChart : null;
 
   if (loading) {
@@ -400,7 +413,7 @@ export function RateChartList() {
               {visibleCharts.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No rate charts yet.</td></tr>
               ) : null}
-              {visibleCharts.map((chart, i) => (
+              {paginatedCharts.map((chart, i) => (
                 <tr key={chart.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                   <td className="px-4 py-3">
                     <button
@@ -452,6 +465,45 @@ export function RateChartList() {
             </tbody>
           </table>
         </div>
+
+        {visibleCharts.length > itemsPerPage && (
+          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-sm text-slate-600">
+              Showing {Math.min((currentPage - 1) * itemsPerPage + 1, visibleCharts.length)} to {Math.min(currentPage * itemsPerPage, visibleCharts.length)} of {visibleCharts.length} charts
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                      page === currentPage
+                        ? 'bg-sky-600 text-white'
+                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {selectedChart ? (
           <RateChartDetail

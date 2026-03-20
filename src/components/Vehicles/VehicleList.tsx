@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner, Vehicle, VehicleCategory } from '../../lib/types';
@@ -44,6 +44,10 @@ export function VehicleList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
+  const [filterNumber, setFilterNumber] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [filterOwnerId, setFilterOwnerId] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -154,6 +158,26 @@ export function VehicleList() {
     }
   }
 
+  async function handleToggleActive(vehicle: Vehicle) {
+    try {
+      await api.put(`/vehicles/${vehicle.id}`, { ...vehicle, is_active: !vehicle.is_active });
+      await loadVehicles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
+  const filteredVehicles = useMemo(() => {
+    return vehicles.filter((v) => {
+      const displayName = `${v.make ?? ''} ${v.model ?? ''}`.toLowerCase();
+      if (filterName && !displayName.includes(filterName.toLowerCase())) return false;
+      if (filterNumber && !v.vehicle_number.toLowerCase().includes(filterNumber.toLowerCase())) return false;
+      if (filterType && v.vehicle_type !== filterType) return false;
+      if (filterOwnerId && v.owner?.id !== filterOwnerId) return false;
+      return true;
+    });
+  }, [vehicles, filterName, filterNumber, filterType, filterOwnerId]);
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading vehicles...</p>;
   }
@@ -180,64 +204,96 @@ export function VehicleList() {
         ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {vehicles.map((vehicle) => {
-          const rowBusy = deletingId === vehicle.id;
 
-          return (
-            <article key={vehicle.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900">{vehicle.vehicle_number}</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {vehicle.make ?? 'Unknown make'} {vehicle.model ?? ''}
-                  </p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {vehicle.vehicle_type}
-                </span>
-              </div>
-              {canManage ? (
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={rowBusy}
-                    onClick={() => startEdit(vehicle)}
-                    className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
-                  >
-                    Edit vehicle
-                  </button>
-                  <button
-                    type="button"
-                    disabled={rowBusy}
-                    onClick={() => setDeleteTarget(vehicle)}
-                    className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ) : null}
-              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">GT Category</dt>
-                  <dd>{vehicle.vehicle_category?.name ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Vehicle Owner</dt>
-                  <dd>{vehicle.is_owned ? 'Company-owned' : vehicle.owner?.name ?? 'Not assigned'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Seating</dt>
-                  <dd>{vehicle.seating_capacity ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Status</dt>
-                  <dd>{vehicle.is_active ? 'Active' : 'Inactive'}</dd>
-                </div>
-              </dl>
-            </article>
-          );
-        })}
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <input
+          type="text"
+          placeholder="Search make/model..."
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="Number..."
+          value={filterNumber}
+          onChange={(e) => setFilterNumber(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">All Types</option>
+          {['bus', 'mini_bus', 'van', 'car', 'truck'].map((t) => (
+            <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+          ))}
+        </select>
+        <select
+          value={filterOwnerId}
+          onChange={(e) => setFilterOwnerId(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">All Owners</option>
+          {owners.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Number</th>
+              <th className="px-4 py-3">Type</th>
+              <th className="px-4 py-3">Category</th>
+              <th className="px-4 py-3">Owner</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredVehicles.map((v, i) => (
+              <tr key={v.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-medium text-slate-900">{v.make} {v.model}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{v.vehicle_number}</td>
+                <td className="px-4 py-3 capitalize text-slate-600">{v.vehicle_type.replace(/_/g, ' ')}</td>
+                <td className="px-4 py-3 text-slate-600">{v.vehicle_category?.name ?? '-'}</td>
+                <td className="px-4 py-3 text-slate-600">{v.is_owned ? 'Company-owned' : v.owner?.name ?? '-'}</td>
+                <td className="px-4 py-3">
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(v)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        v.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        v.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  ) : (
+                    <span className={v.is_active ? 'text-emerald-600' : 'text-slate-400'}>
+                      {v.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? <button type="button" onClick={() => startEdit(v)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button> : null}
+                    {canManage ? <button type="button" onClick={() => setDeleteTarget(v)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button> : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Modal

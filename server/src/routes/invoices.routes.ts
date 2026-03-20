@@ -458,6 +458,7 @@ router.get('/', authRequired, async (req, res) => {
       `
         SELECT
           i.*,
+          (SELECT ii.trip_id FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.trip_id IS NOT NULL LIMIT 1) AS trip_id,
           json_build_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer,
           CASE
             WHEN EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id AND ii.annexure_id IS NOT NULL) THEN 'annexures'

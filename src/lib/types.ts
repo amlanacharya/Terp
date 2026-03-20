@@ -620,6 +620,7 @@ export interface Invoice {
   vehicle_number?: string | null;
   vehicle_type_label?: string | null;
   duty_slip_number?: string | null;
+  trip_id?: string | null;
   total_km?: number | null;
   total_hours?: number | null;
   payment_terms_days?: number | null;

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Pencil, Trash2, FileDown } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
@@ -7,6 +7,7 @@ import { Driver, DriverSettlement } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination } from '../Layout/Pagination';
 
 interface DriverSettlementFormState {
   settlement_number: string;
@@ -52,8 +53,16 @@ export function DriverSettlements() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
+
+  const totalPages = Math.ceil(settlements.length / itemsPerPage);
+  const paginatedSettlements = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return settlements.slice(startIndex, startIndex + itemsPerPage);
+  }, [settlements, currentPage]);
 
   async function loadPage() {
     const [settlementRows, driverRows] = await Promise.all([
@@ -231,7 +240,7 @@ export function DriverSettlements() {
         </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
-        {settlements.map((settlement) => {
+        {paginatedSettlements.map((settlement) => {
           const rowBusy = deletingId === settlement.id;
 
           return (
@@ -286,6 +295,15 @@ export function DriverSettlements() {
           );
         })}
       </div>
+
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={settlements.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={setCurrentPage}
+        label="salary slips"
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Salary Slip" size="lg">
         {viewingItem && (

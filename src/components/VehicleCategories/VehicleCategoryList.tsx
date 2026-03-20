@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { VehicleCategory } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { Pagination } from '../Layout/Pagination';
 
 interface VehicleCategoryFormState {
   name: string;
@@ -29,6 +30,8 @@ export function VehicleCategoryList() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [filterName, setFilterName] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -37,6 +40,11 @@ export function VehicleCategoryList() {
       !filterName || c.name.toLowerCase().includes(filterName.toLowerCase())
     );
   }, [categories, filterName]);
+
+  const paginatedCategories = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCategories.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCategories, currentPage]);
 
   async function loadCategories() {
     setCategories(await api.get<VehicleCategory[]>('/vehicle-categories'));
@@ -55,6 +63,10 @@ export function VehicleCategoryList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName]);
 
   function openCreate() {
     setEditingId(null);
@@ -179,7 +191,7 @@ export function VehicleCategoryList() {
             </tr>
           </thead>
           <tbody>
-            {filteredCategories.map((cat, i) => (
+            {paginatedCategories.map((cat, i) => (
               <tr key={cat.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-medium text-slate-900">{cat.name}</td>
                 <td className="px-4 py-3 text-slate-600">{cat.description ?? '-'}</td>
@@ -225,6 +237,17 @@ export function VehicleCategoryList() {
           </tbody>
         </table>
       </div>
+
+      {filteredCategories.length > itemsPerPage && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={Math.ceil(filteredCategories.length / itemsPerPage)}
+          totalItems={filteredCategories.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          label="vehicle categories"
+        />
+      )}
 
       <Modal
         isOpen={isModalOpen}

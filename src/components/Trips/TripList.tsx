@@ -18,6 +18,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination } from '../Layout/Pagination';
 import { DutySlipForm } from './DutySlipForm';
 
 interface TripListProps {
@@ -45,6 +46,8 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   const [filterDriverId, setFilterDriverId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [metricSaving, setMetricSaving] = useState(false);
@@ -325,6 +328,11 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     [dateFrom, dateTo, filterCustomerId, filterDriverId, trips]
   );
 
+  const paginatedTrips = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return visibleTrips.slice(startIndex, startIndex + itemsPerPage);
+  }, [visibleTrips, currentPage]);
+
   const visibleCustomers = useMemo(
     () => customers.filter((customer) => trips.some((trip) => trip.customer_id === customer.id) || customer.id === filterCustomerId),
     [customers, filterCustomerId, trips]
@@ -333,6 +341,10 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     () => drivers.filter((driver) => trips.some((trip) => trip.driver_id === driver.id) || driver.id === filterDriverId),
     [drivers, filterDriverId, trips]
   );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCustomerId, filterDriverId, dateFrom, dateTo]);
 
   function clearFilters() {
     setFilterCustomerId('');
@@ -467,7 +479,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {visibleTrips.map((tripRow) => {
+              {paginatedTrips.map((tripRow) => {
                 return (
                   <tr key={tripRow.id} className={selectedTrip?.id === tripRow.id ? 'bg-sky-50/70' : ''}>
                     <td className="px-4 py-3"><button type="button" onClick={() => void openTripById(tripRow.id)} className="text-left font-medium text-slate-900 underline-offset-4 hover:underline">{tripRow.trip_number}</button></td>
@@ -486,10 +498,21 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
                   </tr>
                 );
               })}
-              {visibleTrips.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filters.</td></tr> : null}
+              {paginatedTrips.length === 0 && visibleTrips.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No parent duty slips matched the current filters.</td></tr> : null}
             </tbody>
           </table>
         </div>
+
+        {visibleTrips.length > itemsPerPage && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(visibleTrips.length / itemsPerPage)}
+            totalItems={visibleTrips.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            label="duty slips"
+          />
+        )}
       </section>
 
       {canManage ? (

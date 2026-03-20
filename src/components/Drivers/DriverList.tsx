@@ -6,6 +6,7 @@ import { Driver, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface DriverFormState {
   driver_code: string;
@@ -61,6 +62,7 @@ export function DriverList() {
   const [filterPhone, setFilterPhone] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('drivers');
 
   const filteredDrivers = useMemo(() => {
     let result = showInactive ? drivers : drivers.filter((driver) => driver.is_active !== false);
@@ -72,6 +74,15 @@ export function DriverList() {
     }
     return result;
   }, [drivers, showInactive, filterName, filterPhone]);
+
+  const paginatedDrivers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredDrivers.slice(start, start + pageSize);
+  }, [filteredDrivers, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [showInactive, filterName, filterPhone, setCurrentPage]);
 
   async function loadDrivers() {
     const [driverRows, vehicleRows] = await Promise.all([
@@ -259,7 +270,7 @@ export function DriverList() {
             </tr>
           </thead>
           <tbody>
-            {filteredDrivers.map((d, i) => (
+            {paginatedDrivers.map((d, i) => (
               <tr key={d.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.driver_code}</td>
                 <td className="px-4 py-3">
@@ -310,6 +321,14 @@ export function DriverList() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredDrivers.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Driver" size="lg">
         {viewingItem && (

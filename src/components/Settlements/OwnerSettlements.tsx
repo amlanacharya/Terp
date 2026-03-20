@@ -7,6 +7,7 @@ import { Owner, OwnerSettlement, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface OwnerSettlementFormState {
   settlement_number: string;
@@ -61,6 +62,7 @@ export function OwnerSettlements() {
   const [filterStatus, setFilterStatus] = useState('all');
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('owner-settlements');
 
   const filteredSettlements = useMemo(() => {
     return settlements.filter((settlement) => {
@@ -70,6 +72,15 @@ export function OwnerSettlements() {
       return true;
     });
   }, [settlements, filterOwnerId, filterVehicleId, filterStatus]);
+
+  const paginatedSettlements = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSettlements.slice(start, start + pageSize);
+  }, [filteredSettlements, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterOwnerId, filterVehicleId, filterStatus, setCurrentPage]);
 
   async function loadPage() {
     const [settlementRows, ownerRows, vehicleRows] = await Promise.all([
@@ -320,7 +331,7 @@ export function OwnerSettlements() {
                 </td>
               </tr>
             ) : null}
-            {filteredSettlements.map((s, i) => (
+            {paginatedSettlements.map((s, i) => (
               <tr
                 key={s.id}
                 className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
@@ -368,6 +379,14 @@ export function OwnerSettlements() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredSettlements.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vendor Invoice" size="lg">
         {viewingItem && (

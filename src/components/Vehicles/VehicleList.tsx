@@ -6,6 +6,7 @@ import { Owner, Vehicle, VehicleCategory } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface VehicleFormState {
   vehicle_number: string;
@@ -53,6 +54,7 @@ export function VehicleList() {
   const [filterOwnerId, setFilterOwnerId] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('vehicles');
 
   async function loadVehicles() {
     const [vehicleRows, ownerRows, categoryRows] = await Promise.all([
@@ -182,6 +184,15 @@ export function VehicleList() {
     });
   }, [vehicles, filterName, filterNumber, filterType, filterOwnerId]);
 
+  const paginatedVehicles = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredVehicles.slice(start, start + pageSize);
+  }, [filteredVehicles, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, filterNumber, filterType, filterOwnerId, setCurrentPage]);
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading vehicles...</p>;
   }
@@ -262,7 +273,7 @@ export function VehicleList() {
             </tr>
           </thead>
           <tbody>
-            {filteredVehicles.map((v, i) => (
+            {paginatedVehicles.map((v, i) => (
               <tr key={v.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3">
                   <button
@@ -307,6 +318,14 @@ export function VehicleList() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredVehicles.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vehicle" size="lg">
         {viewingItem && (

@@ -3,6 +3,7 @@ import { FileDown, Pencil, Trash2, Clock, Ban, XCircle } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { Customer, FinancialLedgerEntry, Invoice, InvoicePdfMode, TaxPreviewResponse } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
@@ -186,6 +187,7 @@ export function InvoiceList() {
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const canVoid = profile ? ['admin', 'manager'].includes(profile.role) : false;
   const canWriteOff = profile?.role === 'admin';
+  const { currentPage: invoicePage, setCurrentPage: setInvoicePage, pageSize: invoicePageSize, handlePageSizeChange: handleInvoicePageSizeChange } = usePaginationState('invoices');
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((invoice) => {
@@ -196,6 +198,15 @@ export function InvoiceList() {
       return true;
     });
   }, [invoices, filterCustomerId, filterStatus, filterDateFrom, filterDateTo]);
+
+  const paginatedInvoices = useMemo(() => {
+    const start = (invoicePage - 1) * invoicePageSize;
+    return filteredInvoices.slice(start, start + invoicePageSize);
+  }, [filteredInvoices, invoicePage, invoicePageSize]);
+
+  useEffect(() => {
+    setInvoicePage(1);
+  }, [filterCustomerId, filterStatus, filterDateFrom, filterDateTo, setInvoicePage]);
 
   async function loadInvoices(includeVoid = false) {
     const params = includeVoid ? '?include_void=true' : '';
@@ -856,7 +867,7 @@ export function InvoiceList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredInvoices.map((invoice) => {
+            {paginatedInvoices.map((invoice) => {
               const isActive = invoice.invoice_status === 'active';
               const isManualInvoice = !invoice.source_type || invoice.source_type === 'manual';
               const canEditInvoice = isManualInvoice && isActive && invoice.invoice_type !== 'credit_note';
@@ -1072,6 +1083,14 @@ export function InvoiceList() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredInvoices.length}
+        currentPage={invoicePage}
+        pageSize={invoicePageSize}
+        onPageChange={setInvoicePage}
+        onPageSizeChange={handleInvoicePageSizeChange}
+      />
 
       <ConfirmModal
         isOpen={deleteTarget !== null}

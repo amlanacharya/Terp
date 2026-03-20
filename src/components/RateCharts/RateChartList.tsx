@@ -12,6 +12,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { RateChartDetail } from './RateChartDetail';
 import { ChartFormState, RateChartEditor } from './RateChartEditor';
 
@@ -74,6 +75,7 @@ export function RateChartList() {
   const [routeSaving, setRouteSaving] = useState(false);
   const [chartDeleting, setChartDeleting] = useState(false);
   const [error, setError] = useState('');
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('rate-charts');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -335,10 +337,16 @@ export function RateChartList() {
     }
   }
 
-  const visibleCharts = useMemo(
+  const filteredCharts = useMemo(
     () => (filterCustomerId ? rateCharts.filter((chart) => chart.customer.id === filterCustomerId) : rateCharts),
     [filterCustomerId, rateCharts]
   );
+
+  const visibleCharts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredCharts.slice(start, start + pageSize);
+  }, [filteredCharts, currentPage, pageSize]);
+
   const workspaceChart = editingChartId && selectedChart?.id === editingChartId ? selectedChart : null;
 
   if (loading) {
@@ -452,6 +460,14 @@ export function RateChartList() {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          totalItems={filteredCharts.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
 
         {selectedChart ? (
           <RateChartDetail

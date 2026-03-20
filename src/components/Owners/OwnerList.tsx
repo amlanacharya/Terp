@@ -6,6 +6,7 @@ import { Owner } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface OwnerFormState {
   code: string;
@@ -62,6 +63,7 @@ export function OwnerList() {
   const [filterCity, setFilterCity] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('owners');
 
   const filteredOwners = useMemo(() => {
     let result = showInactive ? owners : owners.filter((owner) => owner.is_active !== false);
@@ -73,6 +75,11 @@ export function OwnerList() {
     }
     return result;
   }, [owners, showInactive, filterName, filterCity]);
+
+  const paginatedOwners = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOwners.slice(start, start + pageSize);
+  }, [filteredOwners, currentPage, pageSize]);
 
   async function loadOwners() {
     setOwners(await api.get<Owner[]>('/owners'));
@@ -100,6 +107,10 @@ export function OwnerList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, filterCity, showInactive, setCurrentPage]);
 
   function openCreate() {
     setEditingId(null);
@@ -257,7 +268,7 @@ export function OwnerList() {
             </tr>
           </thead>
           <tbody>
-            {filteredOwners.map((owner, i) => (
+            {paginatedOwners.map((owner, i) => (
               <tr key={owner.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{owner.code}</td>
                 <td className="px-4 py-3">
@@ -304,6 +315,14 @@ export function OwnerList() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={filteredOwners.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vehicle Owner" size="lg">
         {viewingItem && (

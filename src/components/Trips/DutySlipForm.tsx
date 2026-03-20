@@ -542,7 +542,7 @@ export function DutySlipForm({
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{rateChartError}</div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+      <div className="grid grid-cols-5 gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
         {tabs.map((tab) => {
           const disabled = !tripExists && (tab.key === 'rate' || tab.key === 'expenses' || tab.key === 'annexures');
           return (
@@ -551,7 +551,11 @@ export function DutySlipForm({
               type="button"
               disabled={disabled}
               onClick={() => setActiveTab(tab.key)}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-white'} disabled:cursor-not-allowed disabled:opacity-50`}
+              className={`rounded-xl px-2 py-2 text-center text-sm font-medium transition ${
+                activeTab === tab.key
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              } disabled:cursor-not-allowed disabled:opacity-50`}
             >
               {tab.label}
             </button>

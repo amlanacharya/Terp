@@ -171,6 +171,8 @@ export function InvoiceList() {
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
   const [ledgerByInvoiceId, setLedgerByInvoiceId] = useState<Record<string, FinancialLedgerEntry[]>>({});
   const [loadingLedgerId, setLoadingLedgerId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloadLoading, setBulkDownloadLoading] = useState(false);
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
   const canVoid = profile ? ['admin', 'manager'].includes(profile.role) : false;
@@ -439,6 +441,69 @@ export function InvoiceList() {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === invoices.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(invoices.map((inv) => inv.id)));
+    }
+  }
+
+  async function handleBulkDownload() {
+    setBulkDownloadLoading(true);
+    setError('');
+    try {
+      for (const id of selectedIds) {
+        try {
+          const blob = await downloadBlob(`/invoices/${id}/pdf`);
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          const invoice = invoices.find((inv) => inv.id === id);
+          link.download = invoice ? `${invoice.invoice_number}.pdf` : `invoice-${id}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('Failed to download invoice', id, err);
+        }
+      }
+      setSelectedIds(new Set());
+      setSuccessMessage(`Downloaded ${selectedIds.size} invoice${selectedIds.size !== 1 ? 's' : ''}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to download invoices.');
+    } finally {
+      setBulkDownloadLoading(false);
+    }
+  }
+
+  async function handleMarkOverdueSingle(invoiceId: string) {
+    setActionLoading(true);
+    setError('');
+    try {
+      await api.put(`/invoices/${invoiceId}`, { payment_status: 'overdue' });
+      setSuccessMessage('Invoice marked as overdue.');
+      await loadInvoices(showVoided);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to mark invoice overdue.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
 
   function invalidateLedger(invoiceId: string) {
     setExpandedInvoiceId((current) => (current === invoiceId ? null : current));
@@ -520,6 +585,27 @@ export function InvoiceList() {
       ) : null}
 
       {canManage ? <p className="text-sm text-slate-500">Use this form only for legacy manual invoices. GT trip and annexure invoices should be created from the Trips or Annexures screens.</p> : null}
+
+      {selectedIds.size > 0 ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2">
+          <span className="text-sm text-sky-700">{selectedIds.size} selected</span>
+          <button
+            type="button"
+            disabled={bulkDownloadLoading}
+            onClick={() => void handleBulkDownload()}
+            className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+          >
+            {bulkDownloadLoading ? 'Downloading...' : 'Download Selected PDFs'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-slate-500"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       <Modal
         isOpen={isFormModalOpen}
@@ -614,6 +700,14 @@ export function InvoiceList() {
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50 text-left text-slate-600">
             <tr>
+              <th className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === invoices.length && invoices.length > 0}
+                  onChange={toggleSelectAll}
+                  className="rounded"
+                />
+              </th>
               <th className="px-4 py-3">Invoice</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Source</th>
@@ -623,7 +717,6 @@ export function InvoiceList() {
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Amount</th>
-              <th className="px-4 py-3">PDF</th>
               {canManage ? <th className="px-4 py-3">Action</th> : null}
             </tr>
           </thead>
@@ -645,6 +738,14 @@ export function InvoiceList() {
               return (
                 <Fragment key={invoice.id}>
                   <tr className={rowClass}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(invoice.id)}
+                        onChange={() => toggleSelect(invoice.id)}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">
                       <div>{invoice.invoice_number}</div>
                       <InvoiceLifecycleBadge invoice={invoice} />
@@ -701,40 +802,46 @@ export function InvoiceList() {
                         </>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      {hasAnnexurePdfOptions ? (
-                        <div className="relative inline-block text-left">
-                          <button
-                            type="button"
-                            disabled={pdfBusy}
-                            onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
-                            className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
-                          >
-                            {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
-                          </button>
-                          {openPdfMenuId === invoice.id ? (
-                            <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
-                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="block w-full px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                                Customer Default
-                              </button>
-                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_only')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                                Invoice Only
-                              </button>
-                              <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_with_annexures')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                                Invoice + Annexures
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
-                          {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
-                        </button>
-                      )}
-                    </td>
                     {canManage ? (
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
+                          {hasAnnexurePdfOptions ? (
+                            <div className="relative inline-block text-left">
+                              <button
+                                type="button"
+                                disabled={pdfBusy}
+                                onClick={() => setOpenPdfMenuId((current) => (current === invoice.id ? null : invoice.id))}
+                                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                              >
+                                {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                              </button>
+                              {openPdfMenuId === invoice.id ? (
+                                <div className="absolute right-0 z-10 mt-2 min-w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                                  <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="block w-full px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                    Customer Default
+                                  </button>
+                                  <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_only')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                    Invoice Only
+                                  </button>
+                                  <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice, 'invoice_with_annexures')} className="block w-full border-t border-slate-100 px-4 py-2.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+                                    Invoice + Annexures
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <button type="button" disabled={pdfBusy} onClick={() => void handleDownloadPdf(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
+                              {pdfLoadingId === invoice.id ? 'Downloading...' : 'PDF'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={actionLoading || invoice.payment_status === 'overdue'}
+                            onClick={() => void handleMarkOverdueSingle(invoice.id)}
+                            className="rounded-xl border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 disabled:opacity-60"
+                          >
+                            Mark Overdue
+                          </button>
                           {canEditInvoice ? (
                             <button type="button" onClick={() => startEdit(invoice)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
                               Edit
@@ -761,7 +868,7 @@ export function InvoiceList() {
                   </tr>
                   {historyOpen ? (
                     <tr className="bg-slate-50/70">
-                      <td colSpan={canManage ? 11 : 10} className="px-4 py-4">
+                      <td colSpan={canManage ? 12 : 11} className="px-4 py-4">
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <h3 className="text-sm font-semibold text-slate-900">Financial History</h3>
@@ -803,7 +910,7 @@ export function InvoiceList() {
             })}
             {invoices.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={canManage ? 12 : 11} className="px-4 py-6 text-center text-slate-500">
                   No invoices available.
                 </td>
               </tr>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,6 +17,7 @@ import {
 } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 import { DutySlipForm } from './DutySlipForm';
 
 interface TripListProps {
@@ -446,8 +448,8 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm uppercase tracking-[0.22em] text-slate-500">Parent Duty Slips</p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-900">Live duty slip register</h3>
+            <p className="text-sm uppercase tracking-[0.22em] text-slate-500">Duty Slips</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">Duty Slip Register</h3>
           </div>
           <div className="text-sm text-slate-500">Showing {visibleTrips.length} of {trips.length} duty slips</div>
         </div>
@@ -459,40 +461,26 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Driver</th>
                 <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Route</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Billing</th>
                 <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {visibleTrips.map((tripRow) => {
-                const billingLabel = tripRow.parent_trip_id
-                  ? 'Child'
-                  : tripRow.direct_invoice_id
-                    ? 'Direct billed'
-                    : Number(tripRow.billed_annexure_count ?? 0) > 0
-                      ? `${tripRow.billed_annexure_count}/${tripRow.annexure_count ?? 0} annexures billed`
-                      : Number(tripRow.annexure_count ?? 0) > 0
-                        ? `${tripRow.annexure_count} annexures`
-                        : 'Pending';
-
                 return (
                   <tr key={tripRow.id} className={selectedTrip?.id === tripRow.id ? 'bg-sky-50/70' : ''}>
                     <td className="px-4 py-3"><button type="button" onClick={() => void openTripById(tripRow.id)} className="text-left font-medium text-slate-900 underline-offset-4 hover:underline">{tripRow.trip_number}</button></td>
                     <td className="px-4 py-3 text-slate-700">{tripRow.customer.name}</td>
                     <td className="px-4 py-3 text-slate-700">{tripRow.driver.name}</td>
                     <td className="px-4 py-3 text-slate-700">{formatDate(tripRow.trip_date)}</td>
-                    <td className="px-4 py-3 text-slate-700">{tripRow.from_location} to {tripRow.to_location}</td>
                     <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{tripRow.status}</span></td>
                     <td className="px-4 py-3 font-medium text-slate-900">{formatCurrency(tripRow.trip_amount)}</td>
-                    <td className="px-4 py-3 text-slate-600">{billingLabel}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => void openTripById(tripRow.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Open</button>
-                        {canManage ? <button type="button" onClick={() => void startEdit(tripRow)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Edit</button> : null}
-                        {canManage ? <button type="button" onClick={() => setDeleteTripTarget(tripRow)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">Delete</button> : null}
+                        <IconBtn icon={Eye} label="Open" onClick={() => void openTripById(tripRow.id)} />
+                        {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => void startEdit(tripRow)} /> : null}
+                        {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTripTarget(tripRow)} /> : null}
                       </div>
                     </td>
                   </tr>

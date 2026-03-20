@@ -2,6 +2,25 @@
 
 > This file is read by Claude Code (CLAUDE.md) and Codex (agents.md symlink). Keep it as the single source of truth.
 
+## Project Context
+
+Primary languages: TypeScript, Python, Markdown. Primary project: TravelERP (full-stack). Secondary: RAG/LLM evaluation pipelines, portfolio cookbooks. Always use these tech stacks unless told otherwise.
+
+## Workflow Rules
+
+- Always present a plan/outline BEFORE writing code or making changes. Wait for user approval before proceeding with implementation.
+- Before making any changes, outline your plan as a numbered list. Include which files you'll read, what you'll change, and in what order. Wait for approval before proceeding.
+- When user asks for a document (BRD, plan, cookbook, report), write it to disk immediately using Write tool. Confirm the file path before and after writing.
+- After completing each major step, create a git commit with a descriptive message. Use conventional commit format: feat/fix/docs(scope): description.
+
+## Code Review
+
+- When reviewing code or auditing against specs, always check the LATEST state of files before flagging issues. Do not flag issues that have already been fixed.
+
+## Technical Guidelines
+
+- Use only verified, currently-available libraries and APIs. Do not assume tools/models exist — check docs or ask the user. For LLM work, verify model names are current before using them.
+
 ## Project Overview
 
 TravelERP is a multi-module travel business management system. It manages the full lifecycle: leads, trips (duty slips), invoices, collections, driver/owner settlements, and reporting.

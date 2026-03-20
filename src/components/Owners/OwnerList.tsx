@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface OwnerFormState {
   code: string;
@@ -48,6 +50,7 @@ export function OwnerList() {
   const [owners, setOwners] = useState<Owner[]>([]);
   const [formState, setFormState] = useState<OwnerFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<Owner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Owner | null>(null);
   const [showInactive, setShowInactive] = useState(false);
@@ -105,6 +108,7 @@ export function OwnerList() {
   }
 
   function startEdit(owner: Owner) {
+    setViewingItem(null);
     setEditingId(owner.id);
     setFormState({
       code: owner.code,
@@ -256,7 +260,15 @@ export function OwnerList() {
             {filteredOwners.map((owner, i) => (
               <tr key={owner.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{owner.code}</td>
-                <td className="px-4 py-3 font-medium text-slate-900">{owner.name}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(owner)}
+                    className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {owner.name}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{owner.contact_person ?? '-'}</td>
                 <td className="px-4 py-3 text-slate-600">{owner.phone ?? '-'}</td>
                 <td className="px-4 py-3 text-slate-600">{owner.city ?? '-'}</td>
@@ -265,13 +277,13 @@ export function OwnerList() {
                     <button
                       type="button"
                       onClick={() => void handleToggleActive(owner)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         owner.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                       }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                          owner.is_active ? 'translate-x-6' : 'translate-x-1'
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                          owner.is_active ? 'translate-x-5' : 'translate-x-1'
                         }`}
                       />
                     </button>
@@ -283,24 +295,8 @@ export function OwnerList() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => startEdit(owner)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                      >
-                        Edit
-                      </button>
-                    ) : null}
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(owner)}
-                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
+                    {canManage ? <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(owner)} /> : null}
+                    {canManage ? <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(owner)} /> : null}
                   </div>
                 </td>
               </tr>
@@ -308,6 +304,60 @@ export function OwnerList() {
           </tbody>
         </table>
       </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vehicle Owner" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Owner Code</p>
+              <p className="mt-1 text-slate-600">{viewingItem.code}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Owner Name</p>
+              <p className="mt-1 text-slate-600">{viewingItem.name}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Phone</p>
+              <p className="mt-1 text-slate-600">{viewingItem.phone ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Email</p>
+              <p className="mt-1 text-slate-600">{viewingItem.email ?? '-'}</p>
+            </div>
+            <div className="text-sm lg:col-span-2">
+              <p className="font-semibold text-slate-800">Address</p>
+              <p className="mt-1 text-slate-600">{viewingItem.address ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">City</p>
+              <p className="mt-1 text-slate-600">{viewingItem.city ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">State</p>
+              <p className="mt-1 text-slate-600">{viewingItem.state ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Aadhaar Number</p>
+              <p className="mt-1 text-slate-600">{viewingItem.aadhar_number ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.is_active ? 'Active' : 'Inactive'}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={editingId ? 'Edit Vehicle Owner' : 'Add Vehicle Owner'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>
         <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">

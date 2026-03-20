@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Eye, Pencil, Copy, Trash2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../lib/api';
 import { formatDate } from '../../lib/format';
@@ -10,6 +11,8 @@ import {
 } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
+import { Pagination } from '../Layout/Pagination';
 import { RateChartDetail } from './RateChartDetail';
 import { ChartFormState, RateChartEditor } from './RateChartEditor';
 
@@ -72,6 +75,8 @@ export function RateChartList() {
   const [routeSaving, setRouteSaving] = useState(false);
   const [chartDeleting, setChartDeleting] = useState(false);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -128,6 +133,10 @@ export function RateChartList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCustomerId]);
 
   function openCreateChart() {
     setError('');
@@ -337,6 +346,13 @@ export function RateChartList() {
     () => (filterCustomerId ? rateCharts.filter((chart) => chart.customer.id === filterCustomerId) : rateCharts),
     [filterCustomerId, rateCharts]
   );
+
+  const totalPages = Math.ceil(visibleCharts.length / itemsPerPage);
+  const paginatedCharts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return visibleCharts.slice(startIndex, startIndex + itemsPerPage);
+  }, [visibleCharts, currentPage]);
+
   const workspaceChart = editingChartId && selectedChart?.id === editingChartId ? selectedChart : null;
 
   if (loading) {
@@ -398,9 +414,17 @@ export function RateChartList() {
               {visibleCharts.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No rate charts yet.</td></tr>
               ) : null}
-              {visibleCharts.map((chart, i) => (
+              {paginatedCharts.map((chart, i) => (
                 <tr key={chart.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{chart.name}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => void loadChartDetail(chart.id)}
+                      className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                    >
+                      {chart.name}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{chart.customer?.name ?? '-'}</td>
                   <td className="px-4 py-3 text-slate-600">{formatDate(chart.effective_from)}</td>
                   <td className="px-4 py-3 text-slate-600">{chart.effective_to ? formatDate(chart.effective_to) : '—'}</td>
@@ -409,12 +433,12 @@ export function RateChartList() {
                       <button
                         type="button"
                         onClick={() => void handleToggleActive(chart)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                           chart.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                         }`}
                       >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                          chart.is_active ? 'translate-x-6' : 'translate-x-1'
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                          chart.is_active ? 'translate-x-5' : 'translate-x-1'
                         }`} />
                       </button>
                     ) : (
@@ -426,14 +450,14 @@ export function RateChartList() {
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
                       {canManage ? (
-                        <button type="button" onClick={() => startEdit(chart)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button>
+                        <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(chart)} />
                       ) : null}
-                      <button type="button" onClick={() => void loadChartDetail(chart.id)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">View</button>
+                      <IconBtn icon={Eye} label="View" onClick={() => void loadChartDetail(chart.id)} />
                       {canManage ? (
-                        <button type="button" onClick={() => handleDuplicate(chart)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Duplicate</button>
+                        <IconBtn icon={Copy} label="Duplicate" onClick={() => handleDuplicate(chart)} />
                       ) : null}
                       {canManage ? (
-                        <button type="button" onClick={() => setDeleteTarget(chart)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button>
+                        <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(chart)} />
                       ) : null}
                     </div>
                   </td>
@@ -442,6 +466,17 @@ export function RateChartList() {
             </tbody>
           </table>
         </div>
+
+        {visibleCharts.length > itemsPerPage && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={visibleCharts.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={setCurrentPage}
+            label="charts"
+          />
+        )}
 
         {selectedChart ? (
           <RateChartDetail

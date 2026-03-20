@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useState, useMemo } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { TaxApplicationScope, TaxComponent } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface TaxComponentFormState {
   component_code: string;
@@ -211,7 +213,15 @@ export function TaxComponentList() {
           <tbody>
             {filteredComponents.map((c, i) => (
               <tr key={c.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => startEdit(c)}
+                    className="font-medium text-slate-900 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {c.name}
+                  </button>
+                </td>
                 <td className="px-4 py-3 capitalize text-slate-600">{c.is_percentage ? 'percentage' : 'flat'}</td>
                 <td className="px-4 py-3 text-slate-600">
                   {c.is_percentage ? `${c.rate}%` : `₹${c.flat_amount}`}
@@ -221,19 +231,19 @@ export function TaxComponentList() {
                   <button
                     type="button"
                     onClick={() => void handleToggleActive(c)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                       c.is_active ? 'bg-emerald-500' : 'bg-slate-300'
                     }`}
                   >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                      c.is_active ? 'translate-x-6' : 'translate-x-1'
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                      c.is_active ? 'translate-x-5' : 'translate-x-1'
                     }`} />
                   </button>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => startEdit(c)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button>
-                    <button type="button" onClick={() => setDeleteTarget(c)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button>
+                    <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(c)} />
+                    <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(c)} />
                   </div>
                 </td>
               </tr>

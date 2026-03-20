@@ -39,5 +39,8 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Git worktrees
+.worktrees/
+
 # Misc
 *.local

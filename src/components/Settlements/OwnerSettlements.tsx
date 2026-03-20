@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { Pencil, Trash2, FileDown } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Owner, OwnerSettlement, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
+import { IconBtn } from '../Layout/IconBtn';
 
 interface OwnerSettlementFormState {
   settlement_number: string;
@@ -45,6 +47,7 @@ export function OwnerSettlements() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [formState, setFormState] = useState<OwnerSettlementFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<OwnerSettlement | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OwnerSettlement | null>(null);
   const [showFieldHelp, setShowFieldHelp] = useState(false);
@@ -103,6 +106,7 @@ export function OwnerSettlements() {
       payment_mode: settlement.payment_mode ?? 'bank_transfer',
       status: settlement.status,
     });
+    setViewingItem(null);
     setIsModalOpen(true);
   }
 
@@ -260,8 +264,14 @@ export function OwnerSettlements() {
                 key={s.id}
                 className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
               >
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                  {s.settlement_number}
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(s)}
+                    className="font-mono text-xs text-slate-500 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    {s.settlement_number}
+                  </button>
                 </td>
                 <td className="px-4 py-3 font-medium text-slate-900">
                   {s.owner?.name ?? '-'}
@@ -284,31 +294,11 @@ export function OwnerSettlements() {
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     {canManage ? (
-                      <button
-                        type="button"
-                        disabled={deletingId === s.id}
-                        onClick={() => startEdit(s)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 disabled:opacity-60"
-                      >
-                        Edit
-                      </button>
+                      <IconBtn icon={Pencil} label="Edit" onClick={() => startEdit(s)} disabled={deletingId === s.id} />
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void handleDownloadPdf(s)}
-                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                    >
-                      PDF
-                    </button>
+                    <IconBtn icon={FileDown} label="PDF" onClick={() => void handleDownloadPdf(s)} />
                     {canManage ? (
-                      <button
-                        type="button"
-                        disabled={deletingId === s.id}
-                        onClick={() => setDeleteTarget(s)}
-                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700 disabled:opacity-60"
-                      >
-                        Delete
-                      </button>
+                      <IconBtn icon={Trash2} label="Delete" variant="danger" onClick={() => setDeleteTarget(s)} disabled={deletingId === s.id} />
                     ) : null}
                   </div>
                 </td>
@@ -317,6 +307,68 @@ export function OwnerSettlements() {
           </tbody>
         </table>
       </div>
+
+      <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Vendor Invoice" size="lg">
+        {viewingItem && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Settlement #</p>
+              <p className="mt-1 text-slate-600">{viewingItem.settlement_number}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Owner/Vendor</p>
+              <p className="mt-1 text-slate-600">{viewingItem.owner?.name ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Vehicle</p>
+              <p className="mt-1 text-slate-600">{viewingItem.vehicle?.vehicle_number ?? '-'}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Period</p>
+              <p className="mt-1 text-slate-600">{formatDate(viewingItem.period_from)} – {formatDate(viewingItem.period_to)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total Trips</p>
+              <p className="mt-1 text-slate-600">{viewingItem.total_trips}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total KM</p>
+              <p className="mt-1 text-slate-600">{viewingItem.total_km}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Total Amount</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.total_amount)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">TDS</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.tds_amount ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Other Deductions</p>
+              <p className="mt-1 text-slate-600">{formatCurrency(viewingItem.other_deductions ?? 0)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Net Amount</p>
+              <p className="mt-1 text-slate-600 font-semibold">{formatCurrency(viewingItem.net_amount)}</p>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-slate-800">Status</p>
+              <p className="mt-1 text-slate-600">{viewingItem.status.replace(/_/g, ' ')}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 lg:col-span-2">
+              <button onClick={() => setViewingItem(null)} className="rounded-2xl border border-slate-300 px-5 py-3 text-slate-700">Close</button>
+              {canManage && (
+                <button
+                  onClick={() => startEdit(viewingItem)}
+                  className="rounded-2xl bg-blue-600 px-5 py-3 text-white"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}

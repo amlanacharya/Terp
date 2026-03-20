@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, useMemo } from 'react';
 import { Pencil, Trash2, FileDown } from 'lucide-react';
 import { api, downloadBlob } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
@@ -7,6 +7,7 @@ import { Driver, DriverSettlement } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface DriverSettlementFormState {
   settlement_number: string;
@@ -52,8 +53,14 @@ export function DriverSettlements() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('driver-settlements');
 
   const canManage = profile ? ['admin', 'manager', 'accountant'].includes(profile.role) : false;
+
+  const paginatedSettlements = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return settlements.slice(start, start + pageSize);
+  }, [settlements, currentPage, pageSize]);
 
   async function loadPage() {
     const [settlementRows, driverRows] = await Promise.all([
@@ -254,7 +261,7 @@ export function DriverSettlements() {
                 </td>
               </tr>
             ) : null}
-            {settlements.map((settlement, i) => {
+            {paginatedSettlements.map((settlement, i) => {
               const rowBusy = deletingId === settlement.id;
               return (
                 <tr
@@ -309,6 +316,14 @@ export function DriverSettlements() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        totalItems={settlements.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Salary Slip" size="lg">
         {viewingItem && (

@@ -18,6 +18,7 @@ import {
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 import { DutySlipForm } from './DutySlipForm';
 
 interface TripListProps {
@@ -53,6 +54,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
   const [tripDeleting, setTripDeleting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('trips');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -325,6 +327,11 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     [dateFrom, dateTo, filterCustomerId, filterDriverId, trips]
   );
 
+  const paginatedTrips = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return visibleTrips.slice(start, start + pageSize);
+  }, [visibleTrips, currentPage, pageSize]);
+
   const visibleCustomers = useMemo(
     () => customers.filter((customer) => trips.some((trip) => trip.customer_id === customer.id) || customer.id === filterCustomerId),
     [customers, filterCustomerId, trips]
@@ -340,6 +347,10 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
     setDateFrom('');
     setDateTo('');
   }
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCustomerId, filterDriverId, dateFrom, dateTo, setCurrentPage]);
 
   if (loading) {
     return <p className="text-sm text-slate-500">Loading trips...</p>;
@@ -467,7 +478,7 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {visibleTrips.map((tripRow) => {
+              {paginatedTrips.map((tripRow) => {
                 return (
                   <tr key={tripRow.id} className={selectedTrip?.id === tripRow.id ? 'bg-sky-50/70' : ''}>
                     <td className="px-4 py-3"><button type="button" onClick={() => void openTripById(tripRow.id)} className="text-left font-medium text-slate-900 underline-offset-4 hover:underline">{tripRow.trip_number}</button></td>
@@ -490,6 +501,13 @@ export function TripList({ openTripId = null, openTripInEditor = false, onOpenTr
             </tbody>
           </table>
         </div>
+        <Pagination
+          totalItems={visibleTrips.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </section>
 
       {canManage ? (

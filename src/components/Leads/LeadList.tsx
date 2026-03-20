@@ -7,6 +7,7 @@ import { Customer, Lead, LeadAssigneeSummary, LeadFollowUp } from '../../lib/typ
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface LeadFormState {
   source: string;
@@ -110,6 +111,8 @@ export function LeadList() {
   const [filterTo, setFilterTo] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('leads');
+
   const selectedLead = useMemo(
     () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
     [leads, selectedLeadId]
@@ -125,6 +128,11 @@ export function LeadList() {
       return true;
     });
   }, [leads, filterName, filterStatus, filterFrom, filterTo]);
+
+  const paginatedLeads = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredLeads.slice(start, start + pageSize);
+  }, [filteredLeads, currentPage, pageSize]);
 
   async function loadLeads() {
     const leadRows = await api.get<Lead[]>('/leads');
@@ -171,6 +179,10 @@ export function LeadList() {
       setError(err instanceof Error ? err.message : 'Unable to load follow-ups.');
     });
   }, [selectedLeadId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, filterStatus, filterFrom, filterTo, setCurrentPage]);
 
   function openCreate() {
     setEditingId(null);
@@ -555,7 +567,7 @@ export function LeadList() {
                     <td colSpan={6} className="px-4 py-6 text-center text-slate-500">No leads found.</td>
                   </tr>
                 ) : null}
-                {filteredLeads.map((lead, i) => (
+                {paginatedLeads.map((lead, i) => (
                   <tr
                     key={lead.id}
                     className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'} ${lead.id === selectedLeadId ? 'ring-1 ring-inset ring-sky-300' : ''}`}
@@ -609,6 +621,14 @@ export function LeadList() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            totalItems={filteredLeads.length}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
 
       <Modal isOpen={!!viewingItem && !editingId} onClose={() => setViewingItem(null)} title="View Lead" size="lg">

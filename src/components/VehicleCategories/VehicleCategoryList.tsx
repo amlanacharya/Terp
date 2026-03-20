@@ -6,6 +6,7 @@ import { VehicleCategory } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
 import { Modal } from '../Layout/Modal';
 import { IconBtn } from '../Layout/IconBtn';
+import { Pagination, usePaginationState } from '../Layout/Pagination';
 
 interface VehicleCategoryFormState {
   name: string;
@@ -32,6 +33,7 @@ export function VehicleCategoryList() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [filterName, setFilterName] = useState('');
+  const { currentPage, setCurrentPage, pageSize, handlePageSizeChange } = usePaginationState('vehicle-categories');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
 
@@ -40,6 +42,11 @@ export function VehicleCategoryList() {
       !filterName || c.name.toLowerCase().includes(filterName.toLowerCase())
     );
   }, [categories, filterName]);
+
+  const paginatedCategories = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredCategories.slice(start, start + pageSize);
+  }, [filteredCategories, currentPage, pageSize]);
 
   async function loadCategories() {
     setCategories(await api.get<VehicleCategory[]>('/vehicle-categories'));
@@ -58,6 +65,10 @@ export function VehicleCategoryList() {
 
     void hydrate();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterName, setCurrentPage]);
 
   function openCreate() {
     setEditingId(null);
@@ -182,7 +193,7 @@ export function VehicleCategoryList() {
             </tr>
           </thead>
           <tbody>
-            {filteredCategories.map((cat, i) => (
+            {paginatedCategories.map((cat, i) => (
               <tr key={cat.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                 <td className="px-4 py-3">
                   <button
@@ -220,6 +231,13 @@ export function VehicleCategoryList() {
           </tbody>
         </table>
       </div>
+      <Pagination
+        totalItems={filteredCategories.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       <Modal
         isOpen={isModalOpen}

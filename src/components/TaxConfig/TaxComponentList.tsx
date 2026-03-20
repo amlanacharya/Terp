@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { TaxApplicationScope, TaxComponent } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
@@ -39,11 +39,27 @@ export function TaxComponentList() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [filterName, setFilterName] = useState('');
 
   async function loadComponents() {
     const rows = await api.get<TaxComponent[]>('/tax-components?include_inactive=true');
     setComponents(rows);
   }
+
+  async function handleToggleActive(component: TaxComponent) {
+    try {
+      await api.put(`/tax-components/${component.id}`, { ...component, is_active: !component.is_active });
+      await loadComponents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
+  const filteredComponents = useMemo(() => {
+    return components.filter((c) =>
+      !filterName || c.name.toLowerCase().includes(filterName.toLowerCase())
+    );
+  }, [components, filterName]);
 
   useEffect(() => {
     async function hydrate() {
@@ -168,50 +184,64 @@ export function TaxComponentList() {
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
       {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">{notice}</div> : null}
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
-              <th className="px-4 py-3">Code</th>
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <input
+          type="text"
+          placeholder="Search name..."
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Mode</th>
-              <th className="px-4 py-3">Value</th>
-              <th className="px-4 py-3">Scope</th>
-              <th className="px-4 py-3">HSN</th>
-              <th className="px-4 py-3">Order</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Action</th>
+              <th className="px-4 py-3">Rate</th>
+              <th className="px-4 py-3">Applies To</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {components.map((component) => {
-              const rowBusy = deletingId === component.id;
-
-              return (
-                <tr key={component.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{component.component_code}</td>
-                  <td className="px-4 py-3">{component.name}</td>
-                  <td className="px-4 py-3">{component.is_percentage ? 'Percentage' : 'Flat'}</td>
-                  <td className="px-4 py-3">{component.is_percentage ? `${component.rate ?? 0}%` : `Rs. ${component.flat_amount ?? 0}`}</td>
-                  <td className="px-4 py-3">{component.applies_to}</td>
-                  <td className="px-4 py-3">{component.hsn_code ?? 'All'}</td>
-                  <td className="px-4 py-3">{component.sort_order}</td>
-                  <td className="px-4 py-3">{component.is_active ? 'Active' : 'Inactive'}</td>
-                  <td className="px-4 py-3">
-                    <button type="button" disabled={rowBusy} onClick={() => startEdit(component)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">
-                      Edit
-                    </button>
-                    <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(component)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {components.length === 0 ? (
+          <tbody>
+            {filteredComponents.map((c, i) => (
+              <tr key={c.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                <td className="px-4 py-3 capitalize text-slate-600">{c.is_percentage ? 'percentage' : 'flat'}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  {c.is_percentage ? `${c.rate}%` : `₹${c.flat_amount}`}
+                </td>
+                <td className="px-4 py-3 text-slate-600">{c.applies_to.replace(/_/g, ' ')}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleActive(c)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      c.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      c.is_active ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => startEdit(c)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button>
+                    <button type="button" onClick={() => setDeleteTarget(c)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredComponents.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-6 text-center text-slate-500">
-                  No tax components configured.
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                  {filterName ? 'No matching tax components.' : 'No tax components configured.'}
                 </td>
               </tr>
             ) : null}

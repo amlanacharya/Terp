@@ -55,12 +55,33 @@ export function OwnerList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
+  const [filterCity, setFilterCity] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
-  const filteredOwners = useMemo(() => (showInactive ? owners : owners.filter((owner) => owner.is_active !== false)), [owners, showInactive]);
+
+  const filteredOwners = useMemo(() => {
+    let result = showInactive ? owners : owners.filter((owner) => owner.is_active !== false);
+    if (filterName) {
+      result = result.filter((o) => o.name.toLowerCase().includes(filterName.toLowerCase()));
+    }
+    if (filterCity) {
+      result = result.filter((o) => (o.city ?? '').toLowerCase().includes(filterCity.toLowerCase()));
+    }
+    return result;
+  }, [owners, showInactive, filterName, filterCity]);
 
   async function loadOwners() {
     setOwners(await api.get<Owner[]>('/owners'));
+  }
+
+  async function handleToggleActive(owner: Owner) {
+    try {
+      await api.put(`/owners/${owner.id}`, { ...owner, is_active: !owner.is_active });
+      await loadOwners();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
   }
 
   useEffect(() => {
@@ -198,33 +219,94 @@ export function OwnerList() {
         </div>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {filteredOwners.map((owner) => {
-          const rowBusy = deletingId === owner.id;
-          return (
-            <article key={owner.id} className={`rounded-3xl border p-5 shadow-sm ${owner.is_active ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50/70 opacity-70'}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{owner.code}</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{owner.name}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!owner.is_active ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Inactive</span> : null}
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{owner.is_active ? 'Active' : 'Inactive'}</span>
-                </div>
-              </div>
-              {canManage ? <div className="mt-3 flex gap-2"><button type="button" disabled={rowBusy} onClick={() => startEdit(owner)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit owner</button><button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(owner)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button></div> : null}
-              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div><dt className="font-medium text-slate-500">Contact</dt><dd>{owner.contact_person ?? '-'}</dd></div>
-                <div><dt className="font-medium text-slate-500">Phone</dt><dd>{owner.phone ?? '-'}</dd></div>
-                <div><dt className="font-medium text-slate-500">Location</dt><dd>{owner.city ?? '-'}, {owner.state ?? '-'}</dd></div>
-                <div><dt className="font-medium text-slate-500">GST / PAN</dt><dd>{owner.gstin ?? '-'}</dd><dd className="text-xs text-slate-500">PAN: {owner.pan ?? '-'}</dd></div>
-                <div><dt className="font-medium text-slate-500">Aadhaar</dt><dd>{owner.aadhar_number ?? '-'}</dd></div>
-                <div><dt className="font-medium text-slate-500">Bank</dt><dd>{owner.bank_name ?? '-'}</dd><dd className="text-xs text-slate-500">{owner.bank_account ?? '-'}</dd></div>
-              </dl>
-            </article>
-          );
-        })}
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <input
+          type="text"
+          placeholder="Search name..."
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="Search city..."
+          value={filterCity}
+          onChange={(e) => setFilterCity(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+              <th className="px-4 py-3">Code</th>
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Contact</th>
+              <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">City</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredOwners.map((owner, i) => (
+              <tr key={owner.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{owner.code}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">{owner.name}</td>
+                <td className="px-4 py-3 text-slate-600">{owner.contact_person ?? '-'}</td>
+                <td className="px-4 py-3 text-slate-600">{owner.phone ?? '-'}</td>
+                <td className="px-4 py-3 text-slate-600">{owner.city ?? '-'}</td>
+                <td className="px-4 py-3">
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(owner)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        owner.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                          owner.is_active ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className={owner.is_active ? 'text-emerald-600' : 'text-slate-400'}>
+                      {owner.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(owner)}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(owner)}
+                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Modal isOpen={isModalOpen} onClose={saving ? () => undefined : closeModal} title={editingId ? 'Edit Vehicle Owner' : 'Add Vehicle Owner'} size="lg" closeOnBackdrop={!saving} closeOnEsc={!saving}>

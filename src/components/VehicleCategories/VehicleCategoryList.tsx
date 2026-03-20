@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { VehicleCategory } from '../../lib/types';
@@ -28,8 +28,15 @@ export function VehicleCategoryList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
+
+  const filteredCategories = useMemo(() => {
+    return categories.filter((c) =>
+      !filterName || c.name.toLowerCase().includes(filterName.toLowerCase())
+    );
+  }, [categories, filterName]);
 
   async function loadCategories() {
     setCategories(await api.get<VehicleCategory[]>('/vehicle-categories'));
@@ -118,6 +125,16 @@ export function VehicleCategoryList() {
     }
   }
 
+  async function handleToggleActive(cat: VehicleCategory) {
+    try {
+      setError('');
+      await api.put(`/vehicle-categories/${cat.id}`, { ...cat, is_active: !cat.is_active });
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading vehicle categories...</p>;
   }
@@ -140,55 +157,73 @@ export function VehicleCategoryList() {
         ) : null}
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {categories.map((category) => {
-          const rowBusy = deletingId === category.id;
 
-          return (
-            <article key={category.id} className="rounded-3xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-500">GT Category</p>
-                  <h3 className="mt-1 text-xl font-semibold text-slate-900">{category.name}</h3>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {category.is_active ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <p className="mt-4 text-sm text-slate-600">{category.description || 'No description added.'}</p>
-              <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Linked Vehicles</dt>
-                  <dd>{category.vehicle_count ?? 0}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Status</dt>
-                  <dd>{category.is_active ? 'Ready to use' : 'Hidden from new assignments'}</dd>
-                </div>
-              </dl>
-              {canManage ? (
-                <div className="mt-4 flex gap-2">
+      {/* Filter */}
+      <input
+        type="text"
+        placeholder="Search name..."
+        value={filterName}
+        onChange={(e) => setFilterName(e.target.value)}
+        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+      />
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Description</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCategories.map((cat, i) => (
+              <tr key={cat.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-medium text-slate-900">{cat.name}</td>
+                <td className="px-4 py-3 text-slate-600">{cat.description ?? '-'}</td>
+                <td className="px-4 py-3">
                   <button
                     type="button"
-                    disabled={rowBusy}
-                    onClick={() => startEdit(category)}
-                    className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
+                    onClick={() => void handleToggleActive(cat)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      cat.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
                   >
-                    Edit category
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        cat.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
                   </button>
-                  <button
-                    type="button"
-                    disabled={rowBusy}
-                    onClick={() => setDeleteTarget(category)}
-                    className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(cat)}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(cat)}
+                        className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <Modal

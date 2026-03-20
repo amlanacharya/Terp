@@ -100,12 +100,27 @@ export function LeadList() {
   const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
   const [deletingFollowUpId, setDeletingFollowUpId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
   const selectedLead = useMemo(
     () => leads.find((lead) => lead.id === selectedLeadId) ?? null,
     [leads, selectedLeadId]
   );
+
+  const filteredLeads = useMemo(() => {
+    return leads.filter((lead) => {
+      const name = (lead.customer?.name || lead.prospect_name || lead.prospect_phone).toLowerCase();
+      if (filterName && !name.includes(filterName.toLowerCase())) return false;
+      if (filterStatus && lead.status !== filterStatus) return false;
+      if (filterFrom && lead.travel_date && lead.travel_date < filterFrom) return false;
+      if (filterTo && lead.travel_date && lead.travel_date > filterTo) return false;
+      return true;
+    });
+  }, [leads, filterName, filterStatus, filterFrom, filterTo]);
 
   async function loadLeads() {
     const leadRows = await api.get<Lead[]>('/leads');
@@ -197,6 +212,7 @@ export function LeadList() {
       lost_reason: lead.lost_reason ?? '',
       remarks: lead.remarks ?? '',
     });
+    setIsLeadModalOpen(true);
   }
 
   async function handleLeadSubmit(event: FormEvent<HTMLFormElement>) {
@@ -471,70 +487,112 @@ export function LeadList() {
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
+          <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <input
+              type="text"
+              placeholder="Search name..."
+              value={filterName}
+              onChange={(e) => setFilterName(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">All Statuses</option>
+              {leadStatusOptions.map((s) => (
+                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              title="Travel date from"
+            />
+            <input
+              type="date"
+              value={filterTo}
+              onChange={(e) => setFilterTo(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              title="Travel date to"
+            />
+          </div>
+
           {leads.length === 0 ? (
             <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
               No leads yet. Start by capturing the first inquiry.
             </div>
           ) : null}
-          {leads.map((lead) => {
-            const isSelected = lead.id === selectedLeadId;
 
-            return (
-              <article key={lead.id} className={`rounded-3xl border p-5 shadow-sm transition ${isSelected ? 'border-sky-300 bg-sky-50/40' : 'border-slate-200 bg-white'}`}>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{lead.lead_number}</p>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+                  <th className="px-4 py-3">Lead #</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Priority</th>
+                  <th className="px-4 py-3">Travel Date</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">No leads found.</td>
+                  </tr>
+                ) : null}
+                {filteredLeads.map((lead, i) => (
+                  <tr
+                    key={lead.id}
+                    className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'} ${lead.id === selectedLeadId ? 'ring-1 ring-inset ring-sky-300' : ''}`}
+                  >
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{lead.lead_number}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{getLeadLabel(lead)}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
                         {lead.status.replace(/_/g, ' ')}
                       </span>
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                        {lead.priority}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-semibold text-slate-900">{getLeadLabel(lead)}</h3>
-                    <p className="text-sm text-slate-600">
-                      {lead.trip_type} | {lead.from_location}{lead.to_location ? ` -> ${lead.to_location}` : ''} | Travel {formatDate(lead.travel_date)}
-                    </p>
-                    <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                      <p><span className="font-semibold text-slate-800">Phone:</span> {lead.prospect_phone}</p>
-                      <p><span className="font-semibold text-slate-800">Source:</span> {lead.source.replace(/_/g, ' ')}</p>
-                      <p><span className="font-semibold text-slate-800">PAX:</span> {lead.pax_count}</p>
-                      <p><span className="font-semibold text-slate-800">Vehicles:</span> {lead.num_vehicles}</p>
-                      <p><span className="font-semibold text-slate-800">Assigned:</span> {lead.assigned_user?.full_name ?? 'Unassigned'}</p>
-                      <p><span className="font-semibold text-slate-800">Estimate:</span> {lead.estimated_amount != null ? formatCurrency(lead.estimated_amount) : '-'}</p>
-                    </div>
-                    {lead.next_follow_up ? (
-                      <p className="text-sm text-slate-600">
-                        <span className="font-semibold text-slate-800">Next follow-up:</span> {formatDate(lead.next_follow_up)}
-                      </p>
-                    ) : null}
-                    {lead.last_follow_up_summary ? (
-                      <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        <span className="font-semibold text-slate-800">Last note:</span> {lead.last_follow_up_summary}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setSelectedLeadId(lead.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                      {isSelected ? 'Selected' : 'Follow-ups'}
-                    </button>
-                    {canManage ? (
-                      <button type="button" onClick={() => startEdit(lead)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                        Edit
-                      </button>
-                    ) : null}
-                    {canManage ? (
-                      <button type="button" onClick={() => void handleDeleteLead(lead)} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700">
-                        Delete
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 capitalize">{lead.priority}</td>
+                    <td className="px-4 py-3 text-slate-600">{lead.travel_date ? formatDate(lead.travel_date) : '-'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLeadId(lead.id === selectedLeadId ? null : lead.id)}
+                          className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                        >
+                          Follow-ups
+                        </button>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(lead)}
+                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                        {canManage ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteLead(lead)}
+                            className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="space-y-4">

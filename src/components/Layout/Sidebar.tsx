@@ -89,7 +89,7 @@ export function Sidebar({ onNavigate, currentPage }: SidebarProps) {
   );
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(navGroups.map((group) => [group.key, true]))
+    Object.fromEntries(navGroups.map((group) => [group.key, false]))
   );
 
   useEffect(() => {
@@ -148,8 +148,8 @@ export function Sidebar({ onNavigate, currentPage }: SidebarProps) {
                 className="flex w-full items-center justify-between px-3 py-3 text-left"
               >
                 <span className="text-xs uppercase tracking-[0.22em] text-slate-300">{group.label}</span>
-                <span className={`text-xs font-medium ${hasActiveItem ? 'text-sky-300' : 'text-slate-400'}`}>
-                  {isOpen ? 'Hide' : 'Show'}
+                <span className={`text-base font-bold leading-none ${hasActiveItem ? 'text-sky-300' : 'text-slate-400'}`}>
+                  {isOpen ? '−' : '+'}
                 </span>
               </button>
               {isOpen ? (

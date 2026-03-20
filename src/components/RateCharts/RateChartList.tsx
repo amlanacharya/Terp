@@ -94,6 +94,27 @@ export function RateChartList() {
     return chart;
   }
 
+  async function handleToggleActive(chart: RateChartSummary) {
+    try {
+      await api.put(`/rate-charts/${chart.id}`, { is_active: !chart.is_active });
+      await loadLists();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
+  function startEdit(chart: RateChartSummary) {
+    void loadChartDetail(chart.id).then(() => {
+      startChartEdit();
+    });
+  }
+
+  function handleDuplicate(chart: RateChartSummary) {
+    void loadChartDetail(chart.id).then(() => {
+      openDuplicateModal();
+    });
+  }
+
   useEffect(() => {
     async function hydrate() {
       try {
@@ -348,66 +369,88 @@ export function RateChartList() {
       </div>
       {error && !isChartModalOpen ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[360px,minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <label className="text-sm font-semibold text-slate-800">
-              Filter By Customer
-              <select value={filterCustomerId} onChange={(event) => setFilterCustomerId(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
-                <option value="">All customers</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>{customer.name}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="space-y-3">
-            {visibleCharts.map((chart) => (
-              <article key={chart.id} className={`rounded-3xl border p-5 shadow-sm transition ${selectedChart?.id === chart.id ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">{chart.name}</h3>
-                    <p className="mt-1 text-sm text-slate-500">{chart.customer.name}</p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                    {chart.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
-                <dl className="mt-4 grid gap-2 text-sm text-slate-600">
-                  <div>
-                    <dt className="font-medium text-slate-500">Effective Range</dt>
-                    <dd>{formatDate(chart.effective_from)} to {chart.effective_to ? formatDate(chart.effective_to) : 'Open-ended'}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-medium text-slate-500">Coverage</dt>
-                    <dd>{chart.item_count} packages / {chart.fixed_route_count} routes</dd>
-                  </div>
-                </dl>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => void loadChartDetail(chart.id)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">
-                    {selectedChart?.id === chart.id ? 'Refresh' : 'Open'}
-                  </button>
-                  {canManage ? (
-                    <button type="button" onClick={() => setDeleteTarget(chart)} disabled={chartDeleting} className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-            {visibleCharts.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
-                No rate charts match the current filter.
-              </div>
-            ) : null}
-          </div>
-        </aside>
-        <RateChartDetail
-          rateChart={selectedChart}
-          vehicleCategories={vehicleCategories}
-          canManage={canManage}
-          onOpenEditor={startChartEdit}
-        />
+      <div className="space-y-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <label className="text-sm font-semibold text-slate-800">
+            Filter By Customer
+            <select value={filterCustomerId} onChange={(event) => setFilterCustomerId(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal">
+              <option value="">All customers</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>{customer.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Effective From</th>
+                <th className="px-4 py-3">Effective To</th>
+                <th className="px-4 py-3">Active</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleCharts.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No rate charts yet.</td></tr>
+              ) : null}
+              {visibleCharts.map((chart, i) => (
+                <tr key={chart.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                  <td className="px-4 py-3 font-medium text-slate-900">{chart.name}</td>
+                  <td className="px-4 py-3 text-slate-600">{chart.customer?.name ?? '-'}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatDate(chart.effective_from)}</td>
+                  <td className="px-4 py-3 text-slate-600">{chart.effective_to ? formatDate(chart.effective_to) : '—'}</td>
+                  <td className="px-4 py-3">
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleActive(chart)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          chart.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                          chart.is_active ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    ) : (
+                      <span className={chart.is_active ? 'text-emerald-600' : 'text-slate-400'}>
+                        {chart.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {canManage ? (
+                        <button type="button" onClick={() => startEdit(chart)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button>
+                      ) : null}
+                      <button type="button" onClick={() => void loadChartDetail(chart.id)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">View</button>
+                      {canManage ? (
+                        <button type="button" onClick={() => handleDuplicate(chart)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Duplicate</button>
+                      ) : null}
+                      {canManage ? (
+                        <button type="button" onClick={() => setDeleteTarget(chart)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {selectedChart ? (
+          <RateChartDetail
+            rateChart={selectedChart}
+            vehicleCategories={vehicleCategories}
+            canManage={canManage}
+            onOpenEditor={startChartEdit}
+          />
+        ) : null}
       </div>
 
       {canManage ? (

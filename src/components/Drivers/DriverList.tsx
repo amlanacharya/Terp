@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatCurrency, formatDate } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Driver, Vehicle } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
@@ -55,9 +54,21 @@ export function DriverList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
+  const [filterPhone, setFilterPhone] = useState('');
 
   const canManage = profile ? ['admin', 'manager', 'operator'].includes(profile.role) : false;
-  const filteredDrivers = useMemo(() => (showInactive ? drivers : drivers.filter((driver) => driver.is_active !== false)), [drivers, showInactive]);
+
+  const filteredDrivers = useMemo(() => {
+    let result = showInactive ? drivers : drivers.filter((driver) => driver.is_active !== false);
+    if (filterName) {
+      result = result.filter((d) => d.name.toLowerCase().includes(filterName.toLowerCase()));
+    }
+    if (filterPhone) {
+      result = result.filter((d) => (d.phone ?? '').includes(filterPhone));
+    }
+    return result;
+  }, [drivers, showInactive, filterName, filterPhone]);
 
   async function loadDrivers() {
     const [driverRows, vehicleRows] = await Promise.all([
@@ -82,15 +93,6 @@ export function DriverList() {
 
     void hydrate();
   }, []);
-
-  function getVehicleLabel(vehicleId: string | null | undefined) {
-    if (!vehicleId) {
-      return '-';
-    }
-
-    const vehicle = vehicles.find((item) => item.id === vehicleId);
-    return vehicle ? vehicle.vehicle_number : vehicleId;
-  }
 
   function openCreate() {
     setEditingId(null);
@@ -191,6 +193,16 @@ export function DriverList() {
     }
   }
 
+  async function handleToggleActive(driver: Driver) {
+    try {
+      setError('');
+      await api.put(`/drivers/${driver.id}`, { ...driver, is_active: !driver.is_active });
+      await loadDrivers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading drivers...</p>;
   }
@@ -210,41 +222,79 @@ export function DriverList() {
         </div>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="overflow-x-auto rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <input
+          type="text"
+          placeholder="Search name..."
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <input
+          type="tel"
+          placeholder="Phone..."
+          value={filterPhone}
+          onChange={(e) => setFilterPhone(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">Default Vehicle</th>
-              <th className="px-4 py-3">PAN / Aadhaar</th>
-              <th className="px-4 py-3">Night Halt</th>
-              <th className="px-4 py-3">OT/Hour</th>
-              <th className="px-4 py-3">Expiry</th>
-              {canManage ? <th className="px-4 py-3">Action</th> : null}
+              <th className="px-4 py-3">License #</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredDrivers.map((driver) => {
-              const rowBusy = deletingId === driver.id;
-              return (
-                <tr key={driver.id} className={!driver.is_active ? 'bg-rose-50/60 opacity-60' : ''}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{driver.driver_code}</td>
-                  <td className="px-4 py-3"><div className="flex items-center gap-2"><span>{driver.name}</span>{!driver.is_active ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Inactive</span> : null}</div></td>
-                  <td className="px-4 py-3">{driver.phone}</td>
-                  <td className="px-4 py-3">{driver.city ?? '-'}, {driver.state ?? '-'}</td>
-                  <td className="px-4 py-3">{getVehicleLabel(driver.default_vehicle_id)}</td>
-                  <td className="px-4 py-3"><div>{driver.pan ?? '-'}</div><div className="text-xs text-slate-500">{driver.aadhar_number ?? '-'}</div></td>
-                  <td className="px-4 py-3">{driver.night_halt_rate == null ? '-' : formatCurrency(driver.night_halt_rate)}</td>
-                  <td className="px-4 py-3">{driver.ot_per_hour == null ? '-' : formatCurrency(driver.ot_per_hour)}</td>
-                  <td className="px-4 py-3">{driver.license_expiry ? formatDate(driver.license_expiry) : '-'}</td>
-                  {canManage ? <td className="px-4 py-3"><button type="button" disabled={rowBusy} onClick={() => startEdit(driver)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit</button><button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(driver)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button></td> : null}
-                </tr>
-              );
-            })}
-            {filteredDrivers.length === 0 ? <tr><td colSpan={canManage ? 10 : 9} className="px-4 py-6 text-center text-slate-500">No drivers match the current filter.</td></tr> : null}
+          <tbody>
+            {filteredDrivers.map((d, i) => (
+              <tr key={d.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.driver_code}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">{d.name}</td>
+                <td className="px-4 py-3 text-slate-600">{d.phone ?? '-'}</td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{d.license_number ?? '-'}</td>
+                <td className="px-4 py-3">
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(d)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        d.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        d.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  ) : (
+                    <span className={d.is_active ? 'text-emerald-600' : 'text-slate-400'}>
+                      {d.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? <button type="button" onClick={() => startEdit(d)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button> : null}
+                    {canManage ? <button type="button" onClick={() => setDeleteTarget(d)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button> : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredDrivers.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                  No drivers match the current filter.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatCurrency } from '../../lib/format';
 import { useAuth } from '../../contexts/AuthContext';
 import { Customer, InvoicePdfMode } from '../../lib/types';
 import { ConfirmModal } from '../Layout/ConfirmModal';
@@ -56,14 +55,6 @@ function toTimeInputValue(value: string | null | undefined): string {
   return value ? value.slice(0, 5) : '';
 }
 
-function formatDutyTime(value: string | null | undefined): string {
-  return value ? value.slice(0, 5) : '-';
-}
-
-function formatInvoicePdfMode(value: InvoicePdfMode): string {
-  return value === 'invoice_with_annexures' ? 'Invoice + Annexures' : 'Invoice Only';
-}
-
 export function CustomerList() {
   const { profile } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -76,11 +67,22 @@ export function CustomerList() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [filterName, setFilterName] = useState('');
+  const [filterCity, setFilterCity] = useState('');
 
   const canManage = profile ? ['admin', 'manager'].includes(profile.role) : false;
   const filteredCustomers = useMemo(
-    () => (showInactive ? customers : customers.filter((customer) => customer.is_active !== false)),
-    [customers, showInactive]
+    () => {
+      let result = showInactive ? customers : customers.filter((customer) => customer.is_active !== false);
+      if (filterName) {
+        result = result.filter((c) => c.name.toLowerCase().includes(filterName.toLowerCase()));
+      }
+      if (filterCity) {
+        result = result.filter((c) => (c.city ?? '').toLowerCase().includes(filterCity.toLowerCase()));
+      }
+      return result;
+    },
+    [customers, showInactive, filterName, filterCity]
   );
 
   async function loadCustomers() {
@@ -211,6 +213,16 @@ export function CustomerList() {
     }
   }
 
+  async function handleToggleActive(customer: Customer) {
+    try {
+      setError('');
+      await api.put(`/customers/${customer.id}`, { ...customer, is_active: !customer.is_active });
+      await loadCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update status.');
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading customers...</p>;
   }
@@ -239,74 +251,77 @@ export function CustomerList() {
         </div>
       </div>
       {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}
-      <div className="overflow-x-auto rounded-3xl border border-slate-200">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-slate-600">
-            <tr>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <input
+          type="text"
+          placeholder="Search name..."
+          value={filterName}
+          onChange={(e) => setFilterName(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="Search city..."
+          value={filterCity}
+          onChange={(e) => setFilterCity(e.target.value)}
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-left text-xs font-bold uppercase tracking-wide text-slate-600">
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">GST / PAN</th>
-              <th className="px-4 py-3">Credit</th>
-              <th className="px-4 py-3">Duty Defaults</th>
-              <th className="px-4 py-3">Invoice PDF</th>
-              {canManage ? <th className="px-4 py-3">Action</th> : null}
+              <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">City</th>
+              <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredCustomers.map((customer) => {
-              const rowBusy = deletingId === customer.id;
-
-              return (
-                <tr key={customer.id} className={!customer.is_active ? 'bg-rose-50/60 opacity-60' : ''}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{customer.customer_code}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span>{customer.name}</span>
-                      {!customer.is_active ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">Inactive</span> : null}
-                    </div>
-                    <div className="text-xs text-slate-500">{customer.vendor_code ?? '-'}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{customer.contact_person ?? '-'}</div>
-                    <div className="text-xs text-slate-500">{customer.phone ?? '-'}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{customer.city ?? '-'}, {customer.state ?? '-'}</div>
-                    <div className="text-xs text-slate-500">{customer.pincode ?? '-'}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{customer.gstin ?? '-'}</div>
-                    <div className="text-xs text-slate-500">PAN: {customer.pan ?? '-'}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>{formatCurrency(customer.credit_limit)}</div>
-                    <div className="text-xs text-slate-500">{customer.credit_days} day(s)</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div>
-                      {customer.default_duty_start_time || customer.default_duty_end_time
-                        ? `${formatDutyTime(customer.default_duty_start_time)} to ${formatDutyTime(customer.default_duty_end_time)}`
-                        : '-'}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {customer.default_duty_hours == null ? 'Hours not set' : `${customer.default_duty_hours} hrs`}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{formatInvoicePdfMode(customer.invoice_pdf_mode)}</td>
+          <tbody>
+            {filteredCustomers.map((c, i) => (
+              <tr key={c.id} className={`border-t border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.customer_code}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                <td className="px-4 py-3 text-slate-600">{c.contact_person ?? '-'}</td>
+                <td className="px-4 py-3 text-slate-600">{c.phone ?? '-'}</td>
+                <td className="px-4 py-3 text-slate-600">{c.city ?? '-'}</td>
+                <td className="px-4 py-3">
                   {canManage ? (
-                    <td className="px-4 py-3">
-                      <button type="button" disabled={rowBusy} onClick={() => startEdit(customer)} className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60">Edit</button>
-                      <button type="button" disabled={rowBusy} onClick={() => setDeleteTarget(customer)} className="ml-2 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-60">Delete</button>
-                    </td>
-                  ) : null}
-                </tr>
-              );
-            })}
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(c)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        c.is_active ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        c.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  ) : (
+                    <span className={c.is_active ? 'text-emerald-600' : 'text-slate-400'}>
+                      {c.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    {canManage ? <button type="button" onClick={() => startEdit(c)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700">Edit</button> : null}
+                    {canManage ? <button type="button" onClick={() => setDeleteTarget(c)} className="rounded-lg border border-rose-200 px-2 py-1 text-xs text-rose-700">Delete</button> : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
             {filteredCustomers.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 9 : 8} className="px-4 py-6 text-center text-slate-500">No customers match the current filter.</td>
+                <td colSpan={7} className="px-4 py-6 text-center text-slate-500">No customers match the current filter.</td>
               </tr>
             ) : null}
           </tbody>

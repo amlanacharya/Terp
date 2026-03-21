@@ -12,7 +12,7 @@ export function Header({ onNavigate }: HeaderProps) {
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-4 lg:px-6">
         <button type="button" onClick={() => onNavigate('dashboard')} className="text-left">
-          <p className="text-xs uppercase tracking-[0.35em] text-sky-600">TravelERP</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-sky-600">FleetSync</p>
           <h1 className="text-2xl font-semibold text-slate-900">Operations Console</h1>
         </button>
 

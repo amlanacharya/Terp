@@ -205,31 +205,52 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               </div>
             </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => onNavigate('trips')}
-                className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left transition hover:bg-cyan-400/20"
-              >
-                <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/80">Quick Action</p>
-                <p className="mt-2 text-sm font-semibold text-white">Open Duty Slips</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('invoices')}
-                className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-400/10 px-4 py-3 text-left transition hover:bg-fuchsia-400/20"
-              >
-                <p className="text-xs uppercase tracking-[0.24em] text-fuchsia-100/80">Quick Action</p>
-                <p className="mt-2 text-sm font-semibold text-white">View Invoices</p>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('collections')}
-                className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-left transition hover:bg-emerald-400/20"
-              >
-                <p className="text-xs uppercase tracking-[0.24em] text-emerald-100/80">Quick Action</p>
-                <p className="mt-2 text-sm font-semibold text-white">Record Collection</p>
-              </button>
+            <div className="mt-6 space-y-3">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Quick Actions</p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('trips')}
+                  className="group relative overflow-hidden rounded-[20px] border border-cyan-300/30 bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-600 px-4 py-3.5 text-left shadow-[0_10px_24px_rgba(14,165,233,0.26)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(14,165,233,0.36)]"
+                >
+                  <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-white/15 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-cyan-50/85">Primary</p>
+                      <p className="mt-1.5 text-sm font-semibold text-white">Duty Slips</p>
+                      
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('invoices')}
+                  className="group relative overflow-hidden rounded-[20px] border border-fuchsia-300/30 bg-gradient-to-br from-fuchsia-500 via-rose-500 to-orange-500 px-4 py-3.5 text-left shadow-[0_10px_24px_rgba(236,72,153,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(236,72,153,0.34)]"
+                >
+                  <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-white/15 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-rose-50/85">Priority</p>
+                      <p className="mt-1.5 text-sm font-semibold text-white">Invoices</p>
+                      
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('collections')}
+                  className="group relative overflow-hidden rounded-[20px] border border-emerald-300/30 bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-600 px-4 py-3.5 text-left shadow-[0_10px_24px_rgba(16,185,129,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(16,185,129,0.34)]"
+                >
+                  <div className="absolute -right-6 -top-6 h-16 w-16 rounded-full bg-white/15 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-emerald-50/85">Cashflow</p>
+                      <p className="mt-1.5 text-sm font-semibold text-white">Invoices</p>
+                      
+                    </div>
+                  </div>
+                </button>
+              </div>
             </div>
           </article>
         </div>
@@ -359,3 +380,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     </section>
   );
 }
+
+
+

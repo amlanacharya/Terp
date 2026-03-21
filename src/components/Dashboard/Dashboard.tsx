@@ -1,51 +1,56 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { formatCurrency, formatDate } from '../../lib/format';
-import { DashboardStats } from '../../lib/types';
+import { DashboardStats, PageKey, SystemSetting } from '../../lib/types';
+
+const statusFormatter = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'long',
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
 
 const statCards: Array<{
   key: 'trips' | 'drivers' | 'vehicles' | 'customers' | 'invoices';
   label: string;
   accent: string;
   tone: string;
-  detail: string;
 }> = [
   {
     key: 'trips',
     label: 'Duty Slips',
     accent: 'text-cyan-200',
     tone: 'from-cyan-500/20 via-cyan-500/10 to-transparent',
-    detail: 'Active operations volume',
   },
   {
     key: 'drivers',
     label: 'Drivers',
     accent: 'text-emerald-200',
     tone: 'from-emerald-500/20 via-emerald-500/10 to-transparent',
-    detail: 'Field workforce available',
   },
   {
     key: 'vehicles',
     label: 'Vehicles',
     accent: 'text-amber-200',
     tone: 'from-amber-500/20 via-amber-500/10 to-transparent',
-    detail: 'Fleet currently onboarded',
   },
   {
     key: 'customers',
     label: 'Customers',
     accent: 'text-fuchsia-200',
     tone: 'from-fuchsia-500/20 via-fuchsia-500/10 to-transparent',
-    detail: 'Accounts being served',
   },
   {
     key: 'invoices',
     label: 'Invoices',
     accent: 'text-rose-200',
     tone: 'from-rose-500/20 via-rose-500/10 to-transparent',
-    detail: 'Bills in the system',
   },
 ];
+
+interface DashboardProps {
+  onNavigate: (page: PageKey) => void;
+}
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase();
@@ -65,16 +70,26 @@ function getStatusTone(status: string) {
   return 'bg-slate-500/15 text-slate-200 ring-1 ring-inset ring-white/10';
 }
 
-export function Dashboard() {
+function getCompanyName(settings: SystemSetting[]): string {
+  return settings.find((setting) => setting.setting_key === 'company_name')?.setting_value || 'Travel ERP';
+}
+
+export function Dashboard({ onNavigate }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [companyName, setCompanyName] = useState('Travel ERP');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    async function loadStats() {
+    async function loadDashboard() {
       try {
         setLoading(true);
-        setStats(await api.get<DashboardStats>('/dashboard/stats'));
+        const [statsResponse, settingsResponse] = await Promise.all([
+          api.get<DashboardStats>('/dashboard/stats'),
+          api.get<SystemSetting[]>('/settings'),
+        ]);
+        setStats(statsResponse);
+        setCompanyName(getCompanyName(settingsResponse));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to load dashboard stats.');
       } finally {
@@ -82,7 +97,7 @@ export function Dashboard() {
       }
     }
 
-    void loadStats();
+    void loadDashboard();
   }, []);
 
   if (loading) {
@@ -104,6 +119,8 @@ export function Dashboard() {
   const collectionRate = Math.round((collectedAmount / totalReceivableBase) * 100);
   const outstandingRate = Math.round((outstandingAmount / totalReceivableBase) * 100);
   const priorityInvoices = stats?.recentOutstandingInvoices.slice(0, 3) ?? [];
+  const overdueInvoices = stats?.recentOutstandingInvoices.filter((invoice) => invoice.payment_status.toLowerCase().includes('overdue')).length ?? 0;
+  const liveStatusLine = `${statusFormatter.format(new Date())} | ${stats?.trips ?? 0} duty slips | ${overdueInvoices} overdue invoices`;
 
   return (
     <section className="relative overflow-hidden rounded-[36px] bg-slate-950 text-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
@@ -116,19 +133,15 @@ export function Dashboard() {
           <article className="rounded-[30px] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-2xl">
-                <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/80">Executive Overview</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white lg:text-5xl">
-                  Gayatri Travels command dashboard
-                </h2>
-                <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 lg:text-base">
-                  A BI-style home page for revenue visibility, collection pressure, and live operating capacity across duty slips, fleet, drivers, and invoices.
-                </p>
+                <p className="text-xs uppercase tracking-[0.35em] text-cyan-200/80">Fleet Ops Command Centre</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white lg:text-5xl">SyncView</h2>
+                <p className="mt-4 text-sm font-medium text-slate-300 lg:text-base">Welcome {companyName} | {liveStatusLine}</p>
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-slate-900/60 px-4 py-3 text-right">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Collection Efficiency</p>
                 <p className="mt-2 text-4xl font-semibold text-white">{collectionRate}%</p>
-                <p className="mt-1 text-sm text-emerald-200">Realized against receivable pool</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.24em] text-emerald-200">Live</p>
               </div>
             </div>
 
@@ -136,17 +149,14 @@ export function Dashboard() {
               <div className="rounded-3xl border border-cyan-400/20 bg-cyan-400/10 p-5">
                 <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/80">Revenue Captured</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(invoicedAmount)}</p>
-                <p className="mt-2 text-sm text-cyan-100/80">Total billing already pushed through invoices.</p>
               </div>
               <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-5">
                 <p className="text-xs uppercase tracking-[0.24em] text-emerald-100/80">Cash Realized</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(collectedAmount)}</p>
-                <p className="mt-2 text-sm text-emerald-100/80">Collections posted and cleared in the system.</p>
               </div>
               <div className="rounded-3xl border border-amber-400/20 bg-amber-400/10 p-5">
                 <p className="text-xs uppercase tracking-[0.24em] text-amber-100/80">Receivable Risk</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(outstandingAmount)}</p>
-                <p className="mt-2 text-sm text-amber-100/80">Open amount still awaiting payment follow-up.</p>
               </div>
             </div>
           </article>
@@ -195,11 +205,31 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Operational pulse</p>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                {stats?.trips ?? 0} duty slips are currently represented across {stats?.customers ?? 0} customer accounts with {stats?.vehicles ?? 0} vehicles and {stats?.drivers ?? 0} drivers available in master data.
-              </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => onNavigate('trips')}
+                className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left transition hover:bg-cyan-400/20"
+              >
+                <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/80">Quick Action</p>
+                <p className="mt-2 text-sm font-semibold text-white">Open Duty Slips</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('invoices')}
+                className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-400/10 px-4 py-3 text-left transition hover:bg-fuchsia-400/20"
+              >
+                <p className="text-xs uppercase tracking-[0.24em] text-fuchsia-100/80">Quick Action</p>
+                <p className="mt-2 text-sm font-semibold text-white">View Invoices</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('collections')}
+                className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-left transition hover:bg-emerald-400/20"
+              >
+                <p className="text-xs uppercase tracking-[0.24em] text-emerald-100/80">Quick Action</p>
+                <p className="mt-2 text-sm font-semibold text-white">Record Collection</p>
+              </button>
             </div>
           </article>
         </div>
@@ -219,7 +249,6 @@ export function Dashboard() {
                   </div>
                   <span className={`text-xs font-medium uppercase tracking-[0.24em] ${card.accent}`}>Live</span>
                 </div>
-                <p className="mt-6 text-sm text-slate-300">{card.detail}</p>
               </div>
             </article>
           ))}

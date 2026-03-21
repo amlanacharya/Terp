@@ -97,12 +97,14 @@ function AppContent() {
     }
   };
 
+  const isDashboardPage = currentPage === 'dashboard';
+
   return (
     <div className="min-h-screen bg-slate-100">
       <Header onNavigate={handleNavigate} />
       <div className="mx-auto flex max-w-[1600px] gap-6 px-4 py-6 lg:px-6">
         <Sidebar onNavigate={handleNavigate} currentPage={currentPage} />
-        <main className="min-w-0 flex-1 rounded-3xl bg-white p-6 shadow-sm lg:p-8">
+        <main className={isDashboardPage ? 'min-w-0 flex-1' : 'min-w-0 flex-1 rounded-3xl bg-white p-6 shadow-sm lg:p-8'}>
           <div key={`${currentPage}:${pageInstanceKey}`}>
             {renderContent()}
           </div>

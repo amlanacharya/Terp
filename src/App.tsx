@@ -59,7 +59,7 @@ function AppContent() {
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigate={handleNavigate} />;
       case 'leads':
         return <ProtectedRoute><LeadList /></ProtectedRoute>;
       case 'trips':
@@ -93,7 +93,7 @@ function AppContent() {
       case 'settings':
         return <ProtectedRoute allowedRoles={['admin']}><Settings /></ProtectedRoute>;
       default:
-        return <Dashboard />;
+        return <Dashboard onNavigate={handleNavigate} />;
     }
   };
 

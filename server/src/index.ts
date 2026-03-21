@@ -21,6 +21,7 @@ import settlementsRoutes from './routes/settlements.routes';
 import tripsRoutes from './routes/trips.routes';
 import vehicleCategoriesRoutes from './routes/vehicle-categories.routes';
 import vehiclesRoutes from './routes/vehicles.routes';
+import { buildOpenApiSpec, buildRoutesIndex, createSwaggerUiHandler, swaggerUiHandlers } from './utils/api-docs';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -51,6 +52,16 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/tax-components', taxComponentsRoutes);
 
+app.get('/api/routes', (_req, res) => {
+  res.json(buildRoutesIndex(app));
+});
+
+app.get('/api/docs.json', (_req, res) => {
+  res.json(buildOpenApiSpec(app));
+});
+
+app.use('/api/docs', swaggerUiHandlers, createSwaggerUiHandler(app));
+
 app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
 });
@@ -72,6 +83,7 @@ void testConnection()
     console.error('Database connection failed:', error);
     process.exit(1);
   });
+
 
 
 

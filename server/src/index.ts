@@ -56,11 +56,11 @@ app.get('/api/routes', (_req, res) => {
   res.json(buildRoutesIndex(app));
 });
 
-app.get('/api/docs.json', (_req, res) => {
-  res.json(buildOpenApiSpec(app));
+app.get('/api/docs.json', (req, res) => {
+  res.json(buildOpenApiSpec(app, req));
 });
 
-app.use('/api/docs', swaggerUiHandlers, createSwaggerUiHandler(app));
+app.use('/api/docs', swaggerUiHandlers, createSwaggerUiHandler());
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ message: 'API route not found.' });
@@ -83,6 +83,8 @@ void testConnection()
     console.error('Database connection failed:', error);
     process.exit(1);
   });
+
+
 
 
 

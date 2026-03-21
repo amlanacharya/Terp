@@ -1,4 +1,4 @@
-import { Express } from 'express';
+import { Express, Request } from 'express';
 import listEndpoints from 'express-list-endpoints';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
@@ -255,7 +255,27 @@ function buildTags(paths: Record<string, OpenApiPathItem>): Array<{ name: string
     }));
 }
 
-export function buildOpenApiSpec(app: Express): OpenApiDocument {
+function getServerBaseUrl(req: Request): string {
+  const explicitBaseUrl = process.env.PUBLIC_API_BASE_URL?.trim();
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.replace(/\/$/, '');
+  }
+
+  const forwardedProtoHeader = req.headers['x-forwarded-proto'];
+  const forwardedProto = Array.isArray(forwardedProtoHeader)
+    ? forwardedProtoHeader[0]
+    : forwardedProtoHeader?.split(',')[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  const host = req.get('host');
+
+  if (!host) {
+    return 'http://localhost:3001';
+  }
+
+  return `${protocol}://${host}`;
+}
+
+export function buildOpenApiSpec(app: Express, req: Request): OpenApiDocument {
   const baseSpec = swaggerJsdoc({
     definition: {
       openapi: '3.0.3',
@@ -267,8 +287,8 @@ export function buildOpenApiSpec(app: Express): OpenApiDocument {
       },
       servers: [
         {
-          url: 'http://localhost:3001',
-          description: 'Local development server',
+          url: getServerBaseUrl(req),
+          description: 'Current server origin',
         },
       ],
       components: {
@@ -329,11 +349,12 @@ export function buildRoutesIndex(app: Express) {
 }
 
 export const swaggerUiHandlers = swaggerUi.serve;
-export const createSwaggerUiHandler = (app: Express) =>
-  swaggerUi.setup(buildOpenApiSpec(app), {
+export const createSwaggerUiHandler = () =>
+  swaggerUi.setup(undefined, {
     customSiteTitle: 'TravelERP API Docs',
     explorer: true,
     swaggerOptions: {
+      url: '/api/docs.json',
       persistAuthorization: true,
       displayRequestDuration: true,
       docExpansion: 'list',

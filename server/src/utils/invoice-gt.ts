@@ -4,6 +4,7 @@ import {
   resolveInvoiceTaxScope,
 } from './tax-engine';
 import { Queryable } from './rate-engine';
+import { generateNextCode } from './auto-code';
 import { formatLedgerAmount, writeLedgerEntry } from './ledger';
 
 export interface GtInvoiceSettings {
@@ -144,40 +145,25 @@ async function generateInvoiceNumber(db: Queryable, prefix: string): Promise<str
 
 /**
  * Generate a unique credit note number in the format `{prefix}-CN-{YYYY}-{NNNNN}`.
+ * Delegates to generateNextCode (LOCK TABLE + MAX from invoices) for consistency
+ * with all other code generators and to avoid rollback gaps.
  *
- * IMPORTANT: Must be called inside an open PostgreSQL transaction (after BEGIN,
- * before COMMIT/ROLLBACK). The FOR UPDATE lock only prevents duplicates within
- * a transaction — calling this outside one silently loses the concurrency guarantee.
+ * Must be called inside an open PostgreSQL transaction.
  */
-export async function generateCreditNoteNumber(db: Queryable, prefix: string): Promise<string> {
-  // Use DB date so the year is consistent with CURRENT_DATE used in the invoice INSERT
-  // and is unaffected by the server's local timezone on year boundaries.
-  const yearResult = await db.query<{ year: number }>(
-    'SELECT EXTRACT(YEAR FROM CURRENT_DATE)::int AS year'
+export async function generateCreditNoteNumber(db: Queryable): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const prefixResult = await db.query<{ setting_value: string }>(
+    "SELECT setting_value FROM system_settings WHERE setting_key = 'invoice_prefix'"
   );
-  const year = yearResult.rows[0].year;
-  const key = `cn_sequence_${year}`;
+  const invoicePrefix = prefixResult.rows[0]?.setting_value ?? 'INV';
 
-  // Auto-create the row for new years (e.g. 2027+) so no annual migration is needed.
-  await db.query(
-    'INSERT INTO system_settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO NOTHING',
-    [key, '0']
-  );
-
-  // Lock the row so concurrent voids cannot produce duplicate CN numbers.
-  const lockResult = await db.query<{ setting_value: string }>(
-    'SELECT setting_value FROM system_settings WHERE setting_key = $1 FOR UPDATE',
-    [key]
-  );
-
-  const next = Number(lockResult.rows[0].setting_value) + 1;
-
-  await db.query(
-    'UPDATE system_settings SET setting_value = $2, updated_at = now() WHERE setting_key = $1',
-    [key, String(next)]
-  );
-
-  return `${prefix}-CN-${year}-${String(next).padStart(5, '0')}`;
+  return generateNextCode(db, {
+    table: 'invoices',
+    column: 'invoice_number',
+    prefix: `${invoicePrefix}-CN-${year}`,
+    padLength: 5,
+  });
 }
 
 export async function createGtInvoice(

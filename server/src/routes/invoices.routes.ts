@@ -949,8 +949,7 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
     let creditNoteNumber: string | null = null;
 
     if (collectedAmount > 0) {
-      const settings = await getGtInvoiceSettings(client);
-      creditNoteNumber = await generateCreditNoteNumber(client, settings.invoice_prefix);
+      creditNoteNumber = await generateCreditNoteNumber(client);
       const cnRemarks = `Credit note for refund received on voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
 
       const cnResult = await client.query<{ id: string }>(

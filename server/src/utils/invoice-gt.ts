@@ -4,6 +4,7 @@ import {
   resolveInvoiceTaxScope,
 } from './tax-engine';
 import { Queryable } from './rate-engine';
+import { generateNextCode } from './auto-code';
 import { formatLedgerAmount, writeLedgerEntry } from './ledger';
 
 export interface GtInvoiceSettings {
@@ -135,11 +136,34 @@ export async function getGtInvoiceSettings(db: Queryable): Promise<GtInvoiceSett
 
 async function generateInvoiceNumber(db: Queryable, prefix: string): Promise<string> {
   const result = await db.query<{ count: string }>(
-    'SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1',
+    "SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1 AND invoice_type = 'invoice'",
     [`${prefix}-%`]
   );
 
   return `${prefix}-${String(Number(result.rows[0]?.count || 0) + 1).padStart(5, '0')}`;
+}
+
+/**
+ * Generate a unique credit note number in the format `{prefix}-CN-{YYYY}-{NNNNN}`.
+ * Delegates to generateNextCode (LOCK TABLE + MAX from invoices) for consistency
+ * with all other code generators and to avoid rollback gaps.
+ *
+ * Must be called inside an open PostgreSQL transaction.
+ */
+export async function generateCreditNoteNumber(db: Queryable): Promise<string> {
+  const year = new Date().getFullYear();
+
+  const prefixResult = await db.query<{ setting_value: string }>(
+    "SELECT setting_value FROM system_settings WHERE setting_key = 'invoice_prefix'"
+  );
+  const invoicePrefix = prefixResult.rows[0]?.setting_value ?? 'INV';
+
+  return generateNextCode(db, {
+    table: 'invoices',
+    column: 'invoice_number',
+    prefix: `${invoicePrefix}-CN-${year}`,
+    padLength: 5,
+  });
 }
 
 export async function createGtInvoice(

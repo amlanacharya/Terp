@@ -135,11 +135,49 @@ export async function getGtInvoiceSettings(db: Queryable): Promise<GtInvoiceSett
 
 async function generateInvoiceNumber(db: Queryable, prefix: string): Promise<string> {
   const result = await db.query<{ count: string }>(
-    'SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1',
+    "SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1 AND invoice_type = 'invoice'",
     [`${prefix}-%`]
   );
 
   return `${prefix}-${String(Number(result.rows[0]?.count || 0) + 1).padStart(5, '0')}`;
+}
+
+/**
+ * Generate a unique credit note number in the format `{prefix}-CN-{YYYY}-{NNNNN}`.
+ *
+ * IMPORTANT: Must be called inside an open PostgreSQL transaction (after BEGIN,
+ * before COMMIT/ROLLBACK). The FOR UPDATE lock only prevents duplicates within
+ * a transaction — calling this outside one silently loses the concurrency guarantee.
+ */
+export async function generateCreditNoteNumber(db: Queryable, prefix: string): Promise<string> {
+  // Use DB date so the year is consistent with CURRENT_DATE used in the invoice INSERT
+  // and is unaffected by the server's local timezone on year boundaries.
+  const yearResult = await db.query<{ year: number }>(
+    'SELECT EXTRACT(YEAR FROM CURRENT_DATE)::int AS year'
+  );
+  const year = yearResult.rows[0].year;
+  const key = `cn_sequence_${year}`;
+
+  // Auto-create the row for new years (e.g. 2027+) so no annual migration is needed.
+  await db.query(
+    'INSERT INTO system_settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO NOTHING',
+    [key, '0']
+  );
+
+  // Lock the row so concurrent voids cannot produce duplicate CN numbers.
+  const lockResult = await db.query<{ setting_value: string }>(
+    'SELECT setting_value FROM system_settings WHERE setting_key = $1 FOR UPDATE',
+    [key]
+  );
+
+  const next = Number(lockResult.rows[0].setting_value) + 1;
+
+  await db.query(
+    'UPDATE system_settings SET setting_value = $2, updated_at = now() WHERE setting_key = $1',
+    [key, String(next)]
+  );
+
+  return `${prefix}-CN-${year}-${String(next).padStart(5, '0')}`;
 }
 
 export async function createGtInvoice(

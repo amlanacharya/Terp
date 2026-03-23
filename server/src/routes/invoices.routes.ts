@@ -3,7 +3,7 @@ import { Router } from 'express';
 import pool, { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
-import { buildInterestNote, getGtInvoiceSettings } from '../utils/invoice-gt';
+import { buildInterestNote, generateCreditNoteNumber, getGtInvoiceSettings } from '../utils/invoice-gt';
 import { AnnexurePdfData } from '../utils/pdf-annexure';
 import { buildGtInvoicePdf, buildGtInvoiceWithAnnexuresPdf } from '../utils/pdf-invoice-gt';
 import { buildInvoicePdf } from '../utils/pdf-invoice';
@@ -949,7 +949,8 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
     let creditNoteNumber: string | null = null;
 
     if (collectedAmount > 0) {
-      creditNoteNumber = `${inv.invoice_number}-CN`;
+      const settings = await getGtInvoiceSettings(client);
+      creditNoteNumber = await generateCreditNoteNumber(client, settings.invoice_prefix);
       const cnRemarks = `Credit note for refund received on voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
 
       const cnResult = await client.query<{ id: string }>(

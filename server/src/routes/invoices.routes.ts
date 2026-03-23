@@ -996,6 +996,13 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
       );
     }
 
+    // Remove invoice_items for the voided invoice so the trip becomes rebillable.
+    // NOTE: invoiceId is the voided invoice — this does NOT affect the credit note's items.
+    await client.query(
+      'DELETE FROM invoice_items WHERE invoice_id = $1',
+      [invoiceId]
+    );
+
     await client.query(
       `UPDATE invoices
        SET invoice_status = 'void', void_reason = $2, voided_at = now(), voided_by = $3, updated_at = now()

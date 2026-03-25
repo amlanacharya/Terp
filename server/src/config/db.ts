@@ -26,5 +26,9 @@ export async function testConnection(): Promise<void> {
   await pool.query('SELECT 1');
 }
 
+export function getPool(): Pool {
+  return pool;
+}
+
 export default pool;
 

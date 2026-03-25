@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DataImportWizard } from './DataImportWizard';
 
 interface WizardStep {
   id: string;
@@ -36,6 +37,7 @@ interface FirstRunWizardProps {
 export function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [showImportWizard, setShowImportWizard] = useState(false);
 
   const currentStep = STEPS[currentStepIndex];
   const progress = ((currentStepIndex + 1) / STEPS.length) * 100;
@@ -63,8 +65,22 @@ export function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
     onComplete();
   };
 
+  const handleImportComplete = () => {
+    setShowImportWizard(false);
+    handleComplete();
+  };
+
+  const handleImportCancel = () => {
+    setShowImportWizard(false);
+  };
+
   if (isCompleted) {
     return null; // Wizard will be unmounted
+  }
+
+  // Show import wizard overlay if triggered
+  if (showImportWizard) {
+    return <DataImportWizard onComplete={handleImportComplete} onCancel={handleImportCancel} />;
   }
 
   return (
@@ -108,6 +124,7 @@ export function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
               onNext={handleNext}
               onBack={handleBack}
               onSkip={handleSkip}
+              onImportNow={() => setShowImportWizard(true)}
             />
           )}
         </div>
@@ -528,10 +545,12 @@ function DataImportChoiceStep({
   onNext,
   onBack,
   onSkip,
+  onImportNow,
 }: {
   onNext: () => void;
   onBack: () => void;
   onSkip: () => void;
+  onImportNow: () => void;
 }) {
   return (
     <div className="py-4">
@@ -544,7 +563,7 @@ function DataImportChoiceStep({
 
       <div className="space-y-4">
         <button
-          onClick={onNext}
+          onClick={onImportNow}
           className="w-full p-6 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-left"
         >
           <div className="flex items-start">

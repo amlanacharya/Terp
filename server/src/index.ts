@@ -10,6 +10,7 @@ import customersRoutes from './routes/customers.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import driversRoutes from './routes/drivers.routes';
 import gstRoutes from './routes/gst.routes';
+import importRoutes from './routes/import.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import leadsRoutes from './routes/leads.routes';
 import licenseRoutes from './routes/license.routes';
@@ -35,6 +36,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/license', licenseRoutes);
+app.use('/api/import', importRoutes);
 app.use('/api', annexuresRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/leads', leadsRoutes);

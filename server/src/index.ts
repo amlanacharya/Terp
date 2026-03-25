@@ -14,6 +14,7 @@ import importRoutes from './routes/import.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import leadsRoutes from './routes/leads.routes';
 import licenseRoutes from './routes/license.routes';
+import networkRoutes from './routes/network.routes';
 import ownersRoutes from './routes/owners.routes';
 import rateChartsRoutes from './routes/rate-charts.routes';
 import reportsRoutes from './routes/reports.routes';
@@ -37,6 +38,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/import', importRoutes);
+app.use('/api/network', networkRoutes);
 app.use('/api', annexuresRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/leads', leadsRoutes);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { Login } from './components/Auth/Login';
@@ -21,17 +21,65 @@ import { Reports } from './components/Reports/Reports';
 import { Settings } from './components/Settings/Settings';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
+import { FirstRunWizard } from './components/Wizard/FirstRunWizard';
 import { useAuth } from './contexts/AuthContext';
-import { PageKey } from './lib/types';
+import { PageKey, CompanySettings } from './lib/types';
 
 function AppContent() {
   const { user } = useAuth();
   const [currentPage, setCurrentPage] = useState<PageKey>('dashboard');
   const [pageInstanceKey, setPageInstanceKey] = useState(0);
   const [pendingTripOpenId, setPendingTripOpenId] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [isLoadingWizard, setIsLoadingWizard] = useState(true);
+
+  // Check if wizard should be shown on app load
+  useEffect(() => {
+    const checkWizardStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/license/company');
+        if (response.status === 404) {
+          // No company settings found - show wizard
+          setShowWizard(true);
+        } else if (response.ok) {
+          // Company settings exist - don't show wizard
+          setShowWizard(false);
+        }
+      } catch (error) {
+        console.error('Failed to check wizard status:', error);
+        // If server is not available, don't show wizard
+        setShowWizard(false);
+      } finally {
+        setIsLoadingWizard(false);
+      }
+    };
+
+    checkWizardStatus();
+  }, []);
+
+  const handleWizardComplete = () => {
+    setShowWizard(false);
+  };
 
   if (!user) {
     return <Login />;
+  }
+
+  // Show wizard if needed
+  if (!isLoadingWizard && showWizard) {
+    return <FirstRunWizard onComplete={handleWizardComplete} />;
+  }
+
+  // Show loading state while checking wizard status
+  if (isLoadingWizard) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
   function handleNavigate(page: PageKey) {

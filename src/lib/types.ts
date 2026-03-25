@@ -920,3 +920,49 @@ export interface SystemSetting {
   updated_at: string;
 }
 
+// ============================================================================
+// LICENSE & DESKTOP TYPES
+// ============================================================================
+
+export type LicenseStatusType = 'active' | 'grace' | 'readonly' | 'expired';
+
+export type SubscriptionType = 'monthly' | 'quarterly' | 'annual';
+
+export interface LicenseStatus {
+  status: LicenseStatusType;
+  expiryDate: string;
+  daysRemaining: number;
+  subscriptionType: string;
+  canUse: boolean;
+  warningMessage?: string;
+}
+
+export interface CompanySettings {
+  id: string;
+  company_name: string;
+  business_address: string;
+  city: string;
+  state: string;
+  pin_code: string;
+  gstin?: string;
+  phone: string;
+  email: string;
+  sac_code?: string;
+  default_duty_start_time?: string;
+  default_duty_hours?: number;
+  invoice_pdf_mode?: InvoicePdfMode;
+  tax_config?: TaxConfig;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TaxConfig {
+  intra_state: {
+    cgst_rate: number;
+    sgst_rate: number;
+  };
+  inter_state: {
+    igst_rate: number;
+  };
+}
+

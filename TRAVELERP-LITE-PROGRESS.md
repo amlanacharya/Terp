@@ -190,6 +190,98 @@
 
 **Frontend UI:**
 - BackupRestore component in Settings
+- Statistics dashboard (count, size, breakdown)
+- Create backup with description
+- Backup list with actions (download, restore, delete)
+- File size and date formatting
+- Visual indicators for compression and type
+
+### ✅ Phase 7: Testing & QA (Week 10) - COMPLETED
+
+**Testing Framework:**
+- Vitest as primary test runner
+- React Testing Library for components
+- jsdom environment for DOM simulation
+- Supertest for API integration tests
+- v8 coverage provider with HTML/JSON reports
+
+**Frontend Tests:**
+- FirstRunWizard component tests
+  * Welcome screen and step navigation
+  * Form validation (company info, license)
+  * Progress bar indicators
+  * Skip and complete workflows
+- NetworkSettings component tests
+  * Mode selection and switching
+  * Server configuration
+  * Client connection flow
+- Mock utilities for fetch API
+- Common API response mocks
+
+**Backend Tests:**
+- NetworkConfigService tests
+  * Configuration management
+  * Mode switching validation
+  * IP and port validation
+- BackupService tests
+  * Configuration handling
+  * Retention policy logic
+  * Statistics calculation
+- Key generator tests (comprehensive)
+  * Product key generation
+  * Format validation
+  * Checksum verification
+  * Subscription type extraction
+
+**Integration Tests:**
+- License API endpoints (status, verify, company)
+- Network API endpoints (config, local-ips, test-connection)
+- Backup API endpoints (config, list, statistics, cleanup)
+
+**Test Infrastructure:**
+- vitest.config.ts with custom setup
+- Test setup file with global mocks
+- Mock utilities and helpers
+- Test runner script for CI/CD
+
+**Coverage Targets:**
+- Overall: 80%
+- Components: 85%
+- Services: 90%
+- API Routes: 85%
+
+**Test Scripts:**
+- npm test - Watch mode
+- npm run test:ui - UI interface
+- npm run test:coverage - Coverage reports
+- npm run test:run - CI mode
+
+**Backup Service:**
+- BackupService for database backup management
+- pg_dump integration for PostgreSQL
+- Automatic gzip compression
+- Metadata tracking (JSON files per backup)
+- Retention policy-based cleanup
+- Manual and automatic backup types
+
+**Restore Functionality:**
+- psql integration for database restoration
+- Automatic decompression of .gz files
+- Pre-restore validation
+- Safe restore with confirmation dialogs
+
+**API Endpoints:**
+- POST /api/backup/create - Create backup
+- GET /api/backup/list - List all backups
+- POST /api/backup/restore - Restore from backup
+- DELETE /api/backup/:filename - Delete backup
+- POST /api/backup/cleanup - Clean old backups
+- GET /api/backup/statistics - Get stats
+- GET/PUT /api/backup/config - Configuration
+- GET /api/backup/file/:filename - Download backup
+
+**Frontend UI:**
+- BackupRestore component in Settings
 - Statistics dashboard (count, size, types)
 - Create backup with description
 - Backup list with actions (download, restore, delete)
@@ -235,18 +327,29 @@ travelerp-lite/
 │   ├── components/
 │   │   ├── Wizard/
 │   │   │   ├── FirstRunWizard.tsx
+│   │   │   ├── FirstRunWizard.test.tsx
 │   │   │   └── DataImportWizard.tsx
 │   │   └── Settings/
-│   │       ├── Settings.tsx     # Main settings with tabs
+│   │       ├── Settings.tsx
 │   │       ├── NetworkSettings.tsx
+│   │       ├── NetworkSettings.test.tsx
 │   │       └── BackupRestore.tsx
+│   ├── test/
+│   │   ├── setup.ts              # Test setup and mocks
+│   │   ├── mocks/                # Mock utilities
+│   │   │   └── fetch.ts
+│   │   └── integration/          # Integration tests
+│   │       └── api.test.ts
 │   ├── lib/
 │   │   └── types.ts            # All TypeScript interfaces
-│   └── App.tsx                 # Router and wizard integration
+│   └── App.tsx
+├── scripts/
+│   ├── download-postgres.js
+│   └── test-runner.js
+├── vitest.config.ts              # Vitest configuration
+└── TESTING.md                    # Testing guide
 ├── build/
 │   └── postgres/               # PostgreSQL 15.3 portable
-└── scripts/
-    └── download-postgres.js
 ```
 
 ## Remaining Phases
@@ -332,6 +435,7 @@ travelerp-lite/
 9. ✅ Phase 4: Auto-updater integration
 10. ✅ Phase 5: Multi-user network mode
 11. ✅ Phase 6: Backup and restore system
+12. ✅ Phase 7: Testing infrastructure
 
 ## Next Steps
 

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerManager } from './server-manager.js';
 import { WindowManager } from './window-manager.js';
+import { getAutoUpdaterService } from './auto-updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,10 +43,22 @@ app.whenReady().then(async () => {
     }
 
     // Create main window after server is ready
-    windowManager.createMainWindow();
+    const mainWindow = windowManager.createMainWindow();
+
+    // Initialize auto-updater
+    const autoUpdaterService = getAutoUpdaterService();
+    autoUpdaterService.setMainWindow(mainWindow);
 
     // Setup IPC handlers
     setupIpcHandlers();
+
+    // Check for updates on startup (only in production)
+    if (isProduction) {
+      // Delay check to avoid slowing down app startup
+      setTimeout(() => {
+        autoUpdaterService.checkForUpdates().catch(console.error);
+      }, 30000); // Check after 30 seconds
+    }
 
     app.on('activate', () => {
       // On macOS, re-create window when dock icon is clicked
@@ -121,18 +134,30 @@ function setupIpcHandlers(): void {
     };
   });
 
-  // Update control (placeholder for Phase 4)
+  // Update control
   ipcMain.handle('update:check', async () => {
-    // TODO: Implement update check
-    return { available: false };
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.checkForUpdates();
   });
 
   ipcMain.handle('update:download', async () => {
-    // TODO: Implement update download
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.downloadUpdate();
   });
 
   ipcMain.handle('update:install', async () => {
-    // TODO: Implement update install
+    const autoUpdaterService = getAutoUpdaterService();
+    autoUpdaterService.installAndRestart();
+  });
+
+  ipcMain.handle('update:get-current-version', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.getCurrentVersion();
+  });
+
+  ipcMain.handle('update:is-available', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.isUpdateAvailable();
   });
 
   // System info

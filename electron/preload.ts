@@ -21,17 +21,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStatus: () => ipcRenderer.invoke('database:get-status'),
   },
 
-  // Update API (will be implemented in Phase 4)
+  // Update API (implemented in Phase 4)
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
+    getCurrentVersion: () => ipcRenderer.invoke('update:get-current-version'),
+    isAvailable: () => ipcRenderer.invoke('update:is-available'),
+    onEvent: (callback: (event: string, data: any) => void) => {
+      ipcRenderer.on('auto-updater-event', (_event, data) => callback(data.event, data.data));
+    },
+    onUpdateReady: (callback: (info: any) => void) => {
+      ipcRenderer.on('update-ready-to-install', (_event, info) => callback(info));
+    },
   },
 
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 
-  // Events
+  // Legacy event handlers (deprecated, use update.onEvent instead)
   onUpdateAvailable: (callback: (info: any) => void) => {
     ipcRenderer.on('update-available', (_event, info) => callback(info));
   },
@@ -62,9 +70,13 @@ export interface ElectronAPI {
   };
 
   update: {
-    check: () => Promise<{ available: boolean; version?: string }>;
+    check: () => Promise<UpdateStatus>;
     download: () => Promise<void>;
     install: () => Promise<void>;
+    getCurrentVersion: () => Promise<string>;
+    isAvailable: () => Promise<boolean>;
+    onEvent: (callback: (event: string, data: any) => void) => void;
+    onUpdateReady: (callback: (info: any) => void) => void;
   };
 
   getSystemInfo: () => Promise<{
@@ -75,6 +87,14 @@ export interface ElectronAPI {
 
   onUpdateAvailable: (callback: (info: any) => void) => void;
   onUpdateDownloaded: (callback: (info: any) => void) => void;
+}
+
+export interface UpdateStatus {
+  available: boolean;
+  version: string;
+  releaseDate: string;
+  downloaded: boolean;
+  error?: string;
 }
 
 declare global {

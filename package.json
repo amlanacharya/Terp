@@ -16,6 +16,7 @@
     "build:backend": "cd server && npm run build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "build:all": "npm run build:frontend && npm run build:backend && npm run build:electron",
+    "download:postgres": "node scripts/download-postgres.js",
     "electron:dev": "npm run build:electron && electron .",
     "electron:build": "electron-builder",
     "electron:build:win": "npm run build:all && electron-builder --win",

@@ -42,5 +42,11 @@ Thumbs.db
 # Git worktrees
 .worktrees/
 
+# Build dependencies
+build/postgres/bin/
+build/postgres/lib/
+build/postgres/share/
+build/postgres/*.zip
+
 # Misc
 *.local

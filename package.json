@@ -29,7 +29,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "beta-keys": "npx tsx server/src/license/beta-key-generator.ts"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",

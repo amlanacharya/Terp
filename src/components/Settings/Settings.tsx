@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { SystemSetting } from '../../lib/types';
 import { NetworkSettings } from './NetworkSettings';
 import { BackupRestore } from './BackupRestore';
+import FeedbackForm from './FeedbackForm';
 
 interface SettingsSection {
   title: string;
@@ -35,6 +36,7 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
   const [error, setError] = useState('');
+  const [showFeedback, setShowFeedback] = useState(false);
 
   async function loadSettings() {
     try {
@@ -79,9 +81,20 @@ export function Settings() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Settings</p>
-        <h2 className="mt-2 text-3xl font-semibold text-slate-900">System configuration</h2>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm uppercase tracking-[0.3em] text-sky-600">Settings</p>
+          <h2 className="mt-2 text-3xl font-semibold text-slate-900">System configuration</h2>
+        </div>
+        <button
+          onClick={() => setShowFeedback(true)}
+          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+          </svg>
+          Send Feedback
+        </button>
       </div>
 
       {/* Tabs */}
@@ -177,6 +190,9 @@ export function Settings() {
           </div>
         </>
       )}
+
+      {/* Feedback Form Modal */}
+      {showFeedback && <FeedbackForm onClose={() => setShowFeedback(false)} />}
     </section>
   );
 }

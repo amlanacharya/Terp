@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { SystemSetting } from '../../lib/types';
 import { NetworkSettings } from './NetworkSettings';
+import { BackupRestore } from './BackupRestore';
 
 interface SettingsSection {
   title: string;
@@ -28,7 +29,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 ];
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<'system' | 'network'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'network' | 'backup'>('system');
   const [settings, setSettings] = useState<SystemSetting[]>([]);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -106,12 +107,24 @@ export function Settings() {
           >
             Network Settings
           </button>
+          <button
+            onClick={() => setActiveTab('backup')}
+            className={`border-b-2 py-4 px-1 text-sm font-medium transition-colors ${
+              activeTab === 'backup'
+                ? 'border-sky-600 text-sky-600'
+                : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            Backup & Restore
+          </button>
         </nav>
       </div>
 
       {/* Tab Content */}
       {activeTab === 'network' ? (
         <NetworkSettings />
+      ) : activeTab === 'backup' ? (
+        <BackupRestore />
       ) : (
         <>
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}

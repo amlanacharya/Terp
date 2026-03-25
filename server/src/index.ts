@@ -5,6 +5,7 @@ import path from 'path';
 import { testConnection } from './config/db';
 import authRoutes from './routes/auth.routes';
 import annexuresRoutes from './routes/annexures.routes';
+import backupRoutes from './routes/backup.routes';
 import collectionsRoutes from './routes/collections.routes';
 import customersRoutes from './routes/customers.routes';
 import dashboardRoutes from './routes/dashboard.routes';
@@ -38,6 +39,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/import', importRoutes);
+app.use('/api/backup', backupRoutes);
 app.use('/api/network', networkRoutes);
 app.use('/api', annexuresRoutes);
 app.use('/api/dashboard', dashboardRoutes);

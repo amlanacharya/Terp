@@ -1,4 +1,5 @@
 
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import pool from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
@@ -16,6 +17,7 @@ import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 interface PgLikeError {
   code?: string;
   constraint?: string;
+  message?: string;
 }
 
 interface RateChartRow {
@@ -226,6 +228,14 @@ function getRateChartItemSaveErrorMessage(error: unknown): string {
     return 'Selected rate chart was not found.';
   }
 
+  if (pgError?.message?.includes('idx_rate_chart_items_unique_package')) {
+    return 'Package code already exists for this chart, vehicle category, and duty type.';
+  }
+
+  if (pgError?.message?.includes('idx_rate_chart_items_default_per_group')) {
+    return 'Only one default package is allowed for the same chart, vehicle category, and duty type.';
+  }
+
   return 'Unable to save rate chart item.';
 }
 
@@ -242,6 +252,10 @@ function getRateChartFixedRouteSaveErrorMessage(error: unknown): string {
 
   if (pgError?.code === '23503' && pgError.constraint?.includes('rate_chart_id')) {
     return 'Selected rate chart was not found.';
+  }
+
+  if (pgError?.message?.includes('idx_rate_chart_fixed_routes_unique')) {
+    return 'A fixed route for the same chart, vehicle category, duty type, and route already exists.';
   }
 
   return 'Unable to save fixed route.';
@@ -481,10 +495,10 @@ async function ensureNoOverlappingActiveChart(
       SELECT id
       FROM rate_charts
       WHERE customer_id = $1
-        AND is_active = true
-        AND ($2::uuid IS NULL OR id <> $2::uuid)
-        AND effective_from <= COALESCE($4::date, 'infinity'::date)
-        AND COALESCE(effective_to, 'infinity'::date) >= $3::date
+        AND is_active = 1
+        AND ($2 IS NULL OR id <> $2)
+        AND effective_from <= COALESCE($4, '9999-12-31')
+        AND COALESCE(effective_to, '9999-12-31') >= $3
       LIMIT 1
     `,
     [
@@ -514,7 +528,7 @@ async function clearDefaultItem(
       WHERE rate_chart_id = $1
         AND vehicle_category_id = $2
         AND duty_type = $3
-        AND ($4::uuid IS NULL OR id <> $4::uuid)
+        AND ($4 IS NULL OR id <> $4)
     `,
     [rateChartId, vehicleCategoryId, dutyType, excludeItemId ?? null]
   );
@@ -571,8 +585,8 @@ router.get('/rate-charts', authRequired, async (req, res) => {
 
     if (dateFilter) {
       values.push(dateFilter);
-      whereClauses.push(`rc.effective_from <= $${values.length}::date`);
-      whereClauses.push(`(rc.effective_to IS NULL OR rc.effective_to >= $${values.length}::date)`);
+      whereClauses.push(`rc.effective_from <= $${values.length}`);
+      whereClauses.push(`(rc.effective_to IS NULL OR rc.effective_to >= $${values.length})`);
     }
 
     const result = await pool.query(
@@ -580,17 +594,17 @@ router.get('/rate-charts', authRequired, async (req, res) => {
         SELECT
           rc.*,
           json_build_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer,
-          COALESCE(item_counts.item_count, 0)::int AS item_count,
-          COALESCE(route_counts.fixed_route_count, 0)::int AS fixed_route_count
+          COALESCE(item_counts.item_count, 0) AS item_count,
+          COALESCE(route_counts.fixed_route_count, 0) AS fixed_route_count
         FROM rate_charts rc
         INNER JOIN customers c ON c.id = rc.customer_id
         LEFT JOIN (
-          SELECT rate_chart_id, COUNT(*)::int AS item_count
+          SELECT rate_chart_id, COUNT(*) AS item_count
           FROM rate_chart_items
           GROUP BY rate_chart_id
         ) item_counts ON item_counts.rate_chart_id = rc.id
         LEFT JOIN (
-          SELECT rate_chart_id, COUNT(*)::int AS fixed_route_count
+          SELECT rate_chart_id, COUNT(*) AS fixed_route_count
           FROM rate_chart_fixed_routes
           GROUP BY rate_chart_id
         ) route_counts ON route_counts.rate_chart_id = rc.id
@@ -642,6 +656,8 @@ router.post('/rate-charts', authRequired, roleCheck(['admin', 'manager', 'operat
   }
 
   try {
+    const rateChartId = randomUUID();
+
     await ensureNoOverlappingActiveChart(pool, {
       customer_id: String(payload.customer_id),
       effective_from: String(payload.effective_from),
@@ -649,14 +665,14 @@ router.post('/rate-charts', authRequired, roleCheck(['admin', 'manager', 'operat
       is_active: payload.is_active !== undefined ? Boolean(payload.is_active) : true,
     });
 
-    const result = await pool.query<{ id: string }>(
+    await pool.query(
       `
         INSERT INTO rate_charts (
-          customer_id, name, effective_from, effective_to, is_active, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id
+          id, customer_id, name, effective_from, effective_to, is_active, notes, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `,
       [
+        rateChartId,
         payload.customer_id,
         payload.name,
         payload.effective_from,
@@ -667,7 +683,7 @@ router.post('/rate-charts', authRequired, roleCheck(['admin', 'manager', 'operat
       ]
     );
 
-    const rateChart = await loadRateChartDetail(result.rows[0].id);
+    const rateChart = await loadRateChartDetail(rateChartId);
     res.status(201).json(rateChart);
   } catch (error) {
     if (error instanceof Error && error.message === 'ACTIVE_CHART_OVERLAP') {
@@ -792,6 +808,7 @@ router.post('/rate-charts/:id/items', authRequired, roleCheck(['admin', 'manager
 
   try {
     await client.query('BEGIN');
+    const itemId = randomUUID();
 
     const chartResult = await client.query<{ id: string }>('SELECT id FROM rate_charts WHERE id = $1', [rateChartId]);
     if (!chartResult.rows[0]) {
@@ -812,20 +829,21 @@ router.post('/rate-charts/:id/items', authRequired, roleCheck(['admin', 'manager
     await client.query(
       `
         INSERT INTO rate_chart_items (
-          rate_chart_id, vehicle_category_id, duty_type, package_code, package_label,
+          id, rate_chart_id, vehicle_category_id, duty_type, package_code, package_label,
           sort_order, is_default, base_hours, base_km, base_amount, extra_km_rate,
           extra_hr_rate, fuel_divisor, fuel_price_per_unit, night_halt_rate, fixed_amount,
           use_higher_of_km_hr, per_km_rate, ot_rate, long_km_threshold, no_km_limit_cap_km,
           long_day_hours, long_night_halt_hours, notes
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, $8, $9, $10, $11,
-          $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21,
-          $22, $23, $24
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, $10, $11, $12,
+          $13, $14, $15, $16, $17,
+          $18, $19, $20, $21, $22,
+          $23, $24, $25
         )
       `,
       [
+        itemId,
         rateChartId,
         payload.vehicle_category_id,
         payload.duty_type,
@@ -996,6 +1014,7 @@ router.post('/rate-charts/:id/fixed-routes', authRequired, roleCheck(['admin', '
 
   try {
     await client.query('BEGIN');
+    const routeId = randomUUID();
 
     const chartResult = await client.query<{ id: string }>('SELECT id FROM rate_charts WHERE id = $1', [rateChartId]);
     if (!chartResult.rows[0]) {
@@ -1007,11 +1026,12 @@ router.post('/rate-charts/:id/fixed-routes', authRequired, roleCheck(['admin', '
     await client.query(
       `
         INSERT INTO rate_chart_fixed_routes (
-          rate_chart_id, vehicle_category_id, duty_type, from_location, to_location,
+          id, rate_chart_id, vehicle_category_id, duty_type, from_location, to_location,
           from_location_key, to_location_key, fixed_amount, description
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       `,
       [
+        routeId,
         rateChartId,
         payload.vehicle_category_id,
         payload.duty_type,
@@ -1197,14 +1217,15 @@ router.post('/rate-charts/:id/duplicate', authRequired, roleCheck(['admin', 'man
 
     await ensureNoOverlappingActiveChart(client as unknown as Queryable, nextRateChart);
 
-    const createResult = await client.query<{ id: string }>(
+    const duplicatedRateChartId = randomUUID();
+    await client.query(
       `
         INSERT INTO rate_charts (
-          customer_id, name, effective_from, effective_to, is_active, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id
+          id, customer_id, name, effective_from, effective_to, is_active, notes, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `,
       [
+        duplicatedRateChartId,
         nextRateChart.customer_id,
         nextRateChart.name,
         nextRateChart.effective_from,
@@ -1215,43 +1236,99 @@ router.post('/rate-charts/:id/duplicate', authRequired, roleCheck(['admin', 'man
       ]
     );
 
-    const duplicatedRateChartId = createResult.rows[0].id;
-
-    await client.query(
+    const sourceItemsResult = await client.query<Omit<RateChartItemRow, 'rate_chart_id'>>(
       `
-        INSERT INTO rate_chart_items (
-          id, rate_chart_id, vehicle_category_id, duty_type, package_code, package_label,
-          sort_order, is_default, base_hours, base_km, base_amount, extra_km_rate,
-          extra_hr_rate, fuel_divisor, fuel_price_per_unit, night_halt_rate, fixed_amount,
-          use_higher_of_km_hr, per_km_rate, ot_rate, long_km_threshold, no_km_limit_cap_km,
-          long_day_hours, long_night_halt_hours, notes, created_at, updated_at
-        )
         SELECT
-          uuid_generate_v4(), $2, vehicle_category_id, duty_type, package_code, package_label,
-          sort_order, is_default, base_hours, base_km, base_amount, extra_km_rate,
-          extra_hr_rate, fuel_divisor, fuel_price_per_unit, night_halt_rate, fixed_amount,
-          use_higher_of_km_hr, per_km_rate, ot_rate, long_km_threshold, no_km_limit_cap_km,
-          long_day_hours, long_night_halt_hours, notes, now(), now()
+          vehicle_category_id, duty_type, package_code, package_label, sort_order, is_default,
+          base_hours, base_km, base_amount, extra_km_rate, extra_hr_rate, fuel_divisor,
+          fuel_price_per_unit, night_halt_rate, fixed_amount, use_higher_of_km_hr, per_km_rate,
+          ot_rate, long_km_threshold, no_km_limit_cap_km, long_day_hours, long_night_halt_hours, notes
         FROM rate_chart_items
         WHERE rate_chart_id = $1
       `,
-      [sourceRateChartId, duplicatedRateChartId]
+      [sourceRateChartId]
     );
 
-    await client.query(
+    for (const item of sourceItemsResult.rows) {
+      await client.query(
+        `
+          INSERT INTO rate_chart_items (
+            id, rate_chart_id, vehicle_category_id, duty_type, package_code, package_label,
+            sort_order, is_default, base_hours, base_km, base_amount, extra_km_rate,
+            extra_hr_rate, fuel_divisor, fuel_price_per_unit, night_halt_rate, fixed_amount,
+            use_higher_of_km_hr, per_km_rate, ot_rate, long_km_threshold, no_km_limit_cap_km,
+            long_day_hours, long_night_halt_hours, notes
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11, $12,
+            $13, $14, $15, $16, $17,
+            $18, $19, $20, $21, $22,
+            $23, $24, $25
+          )
+        `,
+        [
+          randomUUID(),
+          duplicatedRateChartId,
+          item.vehicle_category_id,
+          item.duty_type,
+          item.package_code,
+          item.package_label,
+          item.sort_order,
+          item.is_default,
+          item.base_hours,
+          item.base_km,
+          item.base_amount,
+          item.extra_km_rate,
+          item.extra_hr_rate,
+          item.fuel_divisor,
+          item.fuel_price_per_unit,
+          item.night_halt_rate,
+          item.fixed_amount,
+          item.use_higher_of_km_hr,
+          item.per_km_rate,
+          item.ot_rate,
+          item.long_km_threshold,
+          item.no_km_limit_cap_km,
+          item.long_day_hours,
+          item.long_night_halt_hours,
+          item.notes,
+        ]
+      );
+    }
+
+    const sourceRoutesResult = await client.query<Omit<RateChartFixedRouteRow, 'rate_chart_id'>>(
       `
-        INSERT INTO rate_chart_fixed_routes (
-          id, rate_chart_id, vehicle_category_id, duty_type, from_location, to_location,
-          from_location_key, to_location_key, fixed_amount, description, created_at, updated_at
-        )
         SELECT
-          uuid_generate_v4(), $2, vehicle_category_id, duty_type, from_location, to_location,
-          from_location_key, to_location_key, fixed_amount, description, now(), now()
+          vehicle_category_id, duty_type, from_location, to_location, from_location_key,
+          to_location_key, fixed_amount, description
         FROM rate_chart_fixed_routes
         WHERE rate_chart_id = $1
       `,
-      [sourceRateChartId, duplicatedRateChartId]
+      [sourceRateChartId]
     );
+
+    for (const route of sourceRoutesResult.rows) {
+      await client.query(
+        `
+          INSERT INTO rate_chart_fixed_routes (
+            id, rate_chart_id, vehicle_category_id, duty_type, from_location, to_location,
+            from_location_key, to_location_key, fixed_amount, description
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `,
+        [
+          randomUUID(),
+          duplicatedRateChartId,
+          route.vehicle_category_id,
+          route.duty_type,
+          route.from_location,
+          route.to_location,
+          route.from_location_key,
+          route.to_location_key,
+          route.fixed_amount,
+          route.description,
+        ]
+      );
+    }
 
     const duplicatedRateChart = await loadRateChartDetail(
       duplicatedRateChartId,

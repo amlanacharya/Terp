@@ -1,5 +1,6 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
-import pool, { query } from '../config/db';
+import { getDb } from '../config/db-sqlite';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { generateNextCode } from '../utils/auto-code';
 import { getDeleteErrorMessage } from '../utils/db-errors';
@@ -8,6 +9,7 @@ import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
 interface PgLikeError {
   code?: string;
   constraint?: string;
+  message?: string;
 }
 
 const router = Router();
@@ -58,6 +60,13 @@ function validateDriverPayload(payload: Record<string, unknown>): string | null 
 
 function getDriverSaveErrorMessage(error: unknown): string {
   const pgError = error as PgLikeError | undefined;
+  const message = pgError?.message ?? '';
+
+  if (pgError?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || message.includes('FOREIGN KEY constraint failed')) {
+    if (message.includes('default_vehicle_id') || message.includes('vehicles')) {
+      return 'Selected default vehicle was not found.';
+    }
+  }
 
   if (pgError?.code === '23503' && pgError.constraint?.includes('default_vehicle_id')) {
     return 'Selected default vehicle was not found.';
@@ -66,10 +75,16 @@ function getDriverSaveErrorMessage(error: unknown): string {
   return 'Unable to save driver.';
 }
 
-router.get('/', authRequired, async (_req, res) => {
+function getDriverById(id: string) {
+  return getDb()
+    .prepare('SELECT * FROM drivers WHERE id = $id LIMIT 1')
+    .get({ id }) as Record<string, unknown> | undefined;
+}
+
+router.get('/', authRequired, (_req, res) => {
   try {
-    const result = await query('SELECT * FROM drivers ORDER BY created_at DESC');
-    res.json(result.rows);
+    const rows = getDb().prepare('SELECT * FROM drivers ORDER BY created_at DESC').all();
+    res.json(rows);
   } catch (error) {
     console.error('Fetching drivers failed:', error);
     res.status(500).json({ message: 'Unable to fetch drivers.' });
@@ -90,67 +105,67 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
     return;
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const driverCode = await generateNextCode(client, {
+    const db = getDb();
+    const driverCode = await generateNextCode(db, {
       table: 'drivers',
       column: 'driver_code',
       prefix: 'GT-DRV',
       padLength: 4,
     });
+    const driverId = randomUUID();
+    const now = new Date().toISOString();
 
-    const result = await client.query(
+    db.prepare(
       `
         INSERT INTO drivers (
-          driver_code, name, phone, email, address, city, state, license_number, license_expiry,
+          id, driver_code, name, phone, email, address, city, state, license_number, license_expiry,
           date_of_birth, blood_group, emergency_contact, emergency_phone, pan, aadhar_number,
-          bank_name, bank_account, ifsc_code, default_vehicle_id, night_halt_rate, ot_per_hour, is_active
+          bank_name, bank_account, ifsc_code, default_vehicle_id, night_halt_rate, ot_per_hour, is_active,
+          created_at, updated_at, version
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21, $22
+          $id, $driver_code, $name, $phone, $email, $address, $city, $state, $license_number, $license_expiry,
+          $date_of_birth, $blood_group, $emergency_contact, $emergency_phone, $pan, $aadhar_number,
+          $bank_name, $bank_account, $ifsc_code, $default_vehicle_id, $night_halt_rate, $ot_per_hour, $is_active,
+          $created_at, $updated_at, 1
         )
-        RETURNING *
       `,
-      [
-        driverCode,
-        payload.name,
-        payload.phone,
-        payload.email ?? null,
-        payload.address ?? null,
-        payload.city ?? null,
-        payload.state ?? null,
-        payload.license_number,
-        payload.license_expiry,
-        payload.date_of_birth ?? null,
-        payload.blood_group ?? null,
-        payload.emergency_contact ?? null,
-        payload.emergency_phone ?? null,
-        payload.pan ?? null,
-        payload.aadhar_number ?? null,
-        payload.bank_name ?? null,
-        payload.bank_account ?? null,
-        payload.ifsc_code ?? null,
-        payload.default_vehicle_id ?? null,
-        payload.night_halt_rate ?? null,
-        payload.ot_per_hour ?? null,
-        payload.is_active ?? true,
-      ]
-    );
+    ).run({
+      id: driverId,
+      driver_code: driverCode,
+      name: payload.name,
+      phone: payload.phone,
+      email: payload.email ?? null,
+      address: payload.address ?? null,
+      city: payload.city ?? null,
+      state: payload.state ?? null,
+      license_number: payload.license_number,
+      license_expiry: payload.license_expiry,
+      date_of_birth: payload.date_of_birth ?? null,
+      blood_group: payload.blood_group ?? null,
+      emergency_contact: payload.emergency_contact ?? null,
+      emergency_phone: payload.emergency_phone ?? null,
+      pan: payload.pan ?? null,
+      aadhar_number: payload.aadhar_number ?? null,
+      bank_name: payload.bank_name ?? null,
+      bank_account: payload.bank_account ?? null,
+      ifsc_code: payload.ifsc_code ?? null,
+      default_vehicle_id: payload.default_vehicle_id ?? null,
+      night_halt_rate: payload.night_halt_rate ?? null,
+      ot_per_hour: payload.ot_per_hour ?? null,
+      is_active: payload.is_active ?? true,
+      created_at: now,
+      updated_at: now,
+    });
 
-    await client.query('COMMIT');
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(getDriverById(driverId));
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Creating driver failed:', error);
     res.status(500).json({ message: getDriverSaveErrorMessage(error) });
-  } finally {
-    client.release();
   }
 });
 
-router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), async (req, res) => {
+router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), (req, res) => {
   const payload = pickDefinedFields(req.body as Record<string, unknown>, driverFields);
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No driver fields supplied for update.' });
@@ -163,29 +178,53 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), as
     return;
   }
 
-  try {
-    const update = buildUpdateClause(payload);
-    const result = await query(
-      `UPDATE drivers SET ${update.clause}, updated_at = now() WHERE id = $${update.values.length + 1} RETURNING *`,
-      [...update.values, req.params.id]
-    );
+  const clientVersion = Number((req.body as { version?: unknown }).version);
+  if (!Number.isInteger(clientVersion) || clientVersion < 1) {
+    res.status(400).json({ message: 'Driver version is required for updates.' });
+    return;
+  }
 
-    if (!result.rows[0]) {
+  try {
+    const db = getDb();
+    const current = db.prepare('SELECT id, version FROM drivers WHERE id = $id LIMIT 1').get({ id: req.params.id }) as
+      | { id: string; version: number }
+      | undefined;
+
+    if (!current) {
       res.status(404).json({ message: 'Driver not found.' });
       return;
     }
 
-    res.json(result.rows[0]);
+    if (current.version !== clientVersion) {
+      res.status(409).json({ message: 'Driver was updated by another user.' });
+      return;
+    }
+
+    const update = buildUpdateClause(payload);
+    const result = db.prepare(
+      `UPDATE drivers SET ${update.clause}, updated_at = datetime('now'), version = version + 1 WHERE id = $id AND version = $version`
+    ).run({
+      ...update.params,
+      id: req.params.id,
+      version: clientVersion,
+    });
+
+    if (result.changes === 0) {
+      res.status(409).json({ message: 'Driver was updated by another user.' });
+      return;
+    }
+
+    res.json(getDriverById(String(req.params.id)));
   } catch (error) {
     console.error('Updating driver failed:', error);
     res.status(500).json({ message: getDriverSaveErrorMessage(error) });
   }
 });
 
-router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
+router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), (req, res) => {
   try {
-    const result = await query('DELETE FROM drivers WHERE id = $1 RETURNING id', [req.params.id]);
-    if (!result.rows[0]) {
+    const result = getDb().prepare('DELETE FROM drivers WHERE id = $id').run({ id: req.params.id });
+    if (result.changes === 0) {
       res.status(404).json({ message: 'Driver not found.' });
       return;
     }

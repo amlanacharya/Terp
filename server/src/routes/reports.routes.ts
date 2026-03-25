@@ -54,16 +54,16 @@ function buildDateFilters(
 router.get('/', authRequired, async (_req, res) => {
   try {
     const [invoiceTotals, collectionTotals, driverTotals, ownerTotals, tripStatus] = await Promise.all([
-      query<{ total: string }>("SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'"),
+      query<{ total: string }>("SELECT COALESCE(SUM(total_amount), 0) AS total FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'"),
       query<{ total: string }>(`
-        SELECT COALESCE(SUM(col.amount), 0)::text AS total
+        SELECT COALESCE(SUM(col.amount), 0) AS total
         FROM collections col
         JOIN invoices inv ON inv.id = col.invoice_id
         WHERE inv.invoice_type = 'invoice'
       `),
-      query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0)::text AS total FROM driver_settlements'),
-      query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0)::text AS total FROM owner_settlements'),
-      query<{ status: string; count: string }>('SELECT status::text AS status, COUNT(*)::text AS count FROM trips GROUP BY status'),
+      query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0) AS total FROM driver_settlements'),
+      query<{ total: string }>('SELECT COALESCE(SUM(net_amount), 0) AS total FROM owner_settlements'),
+      query<{ status: string; count: string }>('SELECT status AS status, COUNT(*) AS count FROM trips GROUP BY status'),
     ]);
 
     const invoiceValue = Number(invoiceTotals.rows[0].total);
@@ -94,7 +94,7 @@ router.get('/customer-outstanding', authRequired, async (_req, res) => {
           c.id AS customer_id,
           c.name AS customer_name,
           c.customer_code,
-          COUNT(i.id)::int AS invoice_count,
+          COUNT(i.id) AS invoice_count,
           COALESCE(SUM(i.total_amount), 0) AS invoiced_amount,
           COALESCE(SUM(COALESCE(collections_by_invoice.collected_amount, 0)), 0) AS collected_amount,
           COALESCE(SUM(i.total_amount - COALESCE(collections_by_invoice.collected_amount, 0)), 0) AS outstanding_amount
@@ -124,7 +124,7 @@ router.get('/owner-settlements', authRequired, async (req, res) => {
   const dateTo = getQueryString(req.query.date_to);
   const status = getQueryString(req.query.status);
   const dateFilter = buildDateFilters(dateFrom, dateTo, 'os.period_from', 'os.period_to');
-  const statusFilter = buildWhereClause([{ column: 'os.status::text', value: status }], dateFilter.values.length);
+  const statusFilter = buildWhereClause([{ column: 'os.status', value: status }], dateFilter.values.length);
   const values = [...dateFilter.values, ...statusFilter.values];
   const conditions = [dateFilter.clause.replace(/^WHERE /, ''), statusFilter.clause.replace(/^WHERE /, '')].filter(Boolean);
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -153,18 +153,18 @@ router.get('/owner-settlements', authRequired, async (req, res) => {
         SELECT
           os.id,
           os.settlement_number,
-          os.period_from::text,
-          os.period_to::text,
+          os.period_from,
+          os.period_to,
           v.vehicle_number,
           os.total_trips,
-          os.total_km::text,
-          os.total_amount::text AS gross_amount,
-          os.tds_amount::text,
-          os.other_deductions::text,
-          os.net_amount::text AS net_paid,
-          os.payment_mode::text,
+          os.total_km,
+          os.total_amount AS gross_amount,
+          os.tds_amount,
+          os.other_deductions,
+          os.net_amount AS net_paid,
+          os.payment_mode,
           os.reference_number,
-          os.status::text,
+          os.status,
           o.id AS owner_id,
           o.name AS owner_name,
           o.code AS owner_code
@@ -274,7 +274,7 @@ router.get('/driver-settlements', authRequired, async (req, res) => {
   const dateTo = getQueryString(req.query.date_to);
   const status = getQueryString(req.query.status);
   const dateFilter = buildDateFilters(dateFrom, dateTo, 'ds.period_from', 'ds.period_to');
-  const statusFilter = buildWhereClause([{ column: 'ds.status::text', value: status }], dateFilter.values.length);
+  const statusFilter = buildWhereClause([{ column: 'ds.status', value: status }], dateFilter.values.length);
   const values = [...dateFilter.values, ...statusFilter.values];
   const conditions = [dateFilter.clause.replace(/^WHERE /, ''), statusFilter.clause.replace(/^WHERE /, '')].filter(Boolean);
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -302,17 +302,17 @@ router.get('/driver-settlements', authRequired, async (req, res) => {
         SELECT
           ds.id,
           ds.settlement_number,
-          ds.period_from::text,
-          ds.period_to::text,
+          ds.period_from,
+          ds.period_to,
           ds.total_trips,
-          ds.total_km::text,
-          ds.total_allowance::text,
-          ds.advances::text,
-          ds.deductions::text,
-          ds.net_amount::text AS net_paid,
-          ds.payment_mode::text,
+          ds.total_km,
+          ds.total_allowance,
+          ds.advances,
+          ds.deductions,
+          ds.net_amount AS net_paid,
+          ds.payment_mode,
           ds.reference_number,
-          ds.status::text,
+          ds.status,
           d.id AS driver_id,
           d.name AS driver_name,
           d.driver_code
@@ -414,7 +414,7 @@ router.get('/collections', authRequired, async (req, res) => {
   const dateTo = getQueryString(req.query.date_to);
   const paymentMode = getQueryString(req.query.payment_mode);
   const dateFilter = buildDateFilters(dateFrom, dateTo, 'col.collection_date');
-  const modeFilter = buildWhereClause([{ column: 'col.payment_mode::text', value: paymentMode }], dateFilter.values.length);
+  const modeFilter = buildWhereClause([{ column: 'col.payment_mode', value: paymentMode }], dateFilter.values.length);
   const values = [...dateFilter.values, ...modeFilter.values];
   const conditions = [dateFilter.clause.replace(/^WHERE /, ''), modeFilter.clause.replace(/^WHERE /, '')].filter(Boolean);
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -436,11 +436,11 @@ router.get('/collections', authRequired, async (req, res) => {
         SELECT
           col.id,
           col.collection_number,
-          col.collection_date::text,
+          col.collection_date,
           inv.invoice_number,
           cust.name AS customer_name,
-          col.amount::text,
-          col.payment_mode::text,
+          col.amount,
+          col.payment_mode,
           col.bank_name,
           col.reference_number,
           col.remarks
@@ -529,11 +529,11 @@ router.get('/customer-profitability', authRequired, async (req, res) => {
           c.id AS customer_id,
           c.name AS customer_name,
           c.customer_code,
-          COALESCE(it.total_invoiced, 0)::text AS total_invoiced,
-          COALESCE(ct.total_collected, 0)::text AS total_collected,
-          (COALESCE(it.total_invoiced, 0) - COALESCE(ct.total_collected, 0))::text AS outstanding,
-          COALESCE(et.total_expenses, 0)::text AS total_expenses,
-          (COALESCE(it.total_invoiced, 0) - COALESCE(et.total_expenses, 0))::text AS net_income
+          COALESCE(it.total_invoiced, 0) AS total_invoiced,
+          COALESCE(ct.total_collected, 0) AS total_collected,
+          (COALESCE(it.total_invoiced, 0) - COALESCE(ct.total_collected, 0)) AS outstanding,
+          COALESCE(et.total_expenses, 0) AS total_expenses,
+          (COALESCE(it.total_invoiced, 0) - COALESCE(et.total_expenses, 0)) AS net_income
         FROM customers c
         JOIN invoice_totals it ON it.customer_id = c.id
         LEFT JOIN collection_totals ct ON ct.customer_id = c.id

@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import http from 'http';
 import path from 'path';
-import { testConnection } from './config/db';
+import { initDb } from './config/db-sqlite';
 import authRoutes from './routes/auth.routes';
 import annexuresRoutes from './routes/annexures.routes';
 import collectionsRoutes from './routes/collections.routes';
@@ -22,8 +23,7 @@ import tripsRoutes from './routes/trips.routes';
 import vehicleCategoriesRoutes from './routes/vehicle-categories.routes';
 import vehiclesRoutes from './routes/vehicles.routes';
 
-const app = express();
-const port = Number(process.env.PORT || 3001);
+export const app = express();
 
 app.use(cors());
 app.use(express.json());
@@ -62,17 +62,25 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(staticPath, 'index.html'));
 });
 
-void testConnection()
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`TravelERP backend listening on http://localhost:${port}`);
+export const server = http.createServer(app);
+
+export function startServer(port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    initDb();
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`FleetSync Lite listening on port ${port}`);
+      resolve();
     });
-  })
-  .catch((error) => {
-    console.error('Database connection failed:', error);
+    server.once('error', reject);
+  });
+}
+
+if (require.main === module) {
+  const port = Number(process.env.PORT || 3000);
+  startServer(port).catch((error) => {
+    console.error('Server start failed:', error);
     process.exit(1);
   });
-
-
+}
 
 

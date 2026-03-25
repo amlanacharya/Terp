@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
-import { query } from '../config/db';
+import { getDb } from '../config/db-sqlite';
 import { authRequired, signToken, UserRole } from '../middleware/auth';
 
 interface ProfileRow {
@@ -9,7 +10,7 @@ interface ProfileRow {
   full_name: string;
   role: UserRole;
   phone: string | null;
-  is_active: boolean;
+  is_active: boolean | number;
   password_hash: string;
   created_at: string;
   updated_at: string;
@@ -17,13 +18,45 @@ interface ProfileRow {
 
 const router = Router();
 
-async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
-  if (await bcrypt.compare(password, passwordHash)) {
-    return true;
-  }
+function normalizeProfile(row: ProfileRow): ProfileRow {
+  return {
+    ...row,
+    is_active: Boolean(row.is_active),
+  };
+}
 
-  const legacyResult = await query<{ matches: boolean }>('SELECT crypt($1, $2) = $2 AS matches', [password, passwordHash]);
-  return legacyResult.rows[0]?.matches === true;
+function getProfileByEmail(email: string): ProfileRow | undefined {
+  const row = getDb()
+    .prepare(
+      `
+        SELECT id, email, full_name, role, phone, is_active, password_hash, created_at, updated_at
+        FROM profiles
+        WHERE email = $email
+        LIMIT 1
+      `
+    )
+    .get({ email }) as ProfileRow | undefined;
+
+  return row ? normalizeProfile(row) : undefined;
+}
+
+function getProfileById(id: string): ProfileRow | undefined {
+  const row = getDb()
+    .prepare(
+      `
+        SELECT id, email, full_name, role, phone, is_active, password_hash, created_at, updated_at
+        FROM profiles
+        WHERE id = $id
+        LIMIT 1
+      `
+    )
+    .get({ id }) as ProfileRow | undefined;
+
+  return row ? normalizeProfile(row) : undefined;
+}
+
+async function verifyPassword(password: string, passwordHash: string): Promise<boolean> {
+  return bcrypt.compare(password, passwordHash);
 }
 
 async function ensureBcryptPassword(profileId: string, password: string, passwordHash: string): Promise<void> {
@@ -32,7 +65,16 @@ async function ensureBcryptPassword(profileId: string, password: string, passwor
   }
 
   const nextHash = await bcrypt.hash(password, 10);
-  await query('UPDATE profiles SET password_hash = $1, updated_at = now() WHERE id = $2', [nextHash, profileId]);
+  getDb()
+    .prepare(
+      `
+        UPDATE profiles
+        SET password_hash = $password_hash,
+            updated_at = datetime('now')
+        WHERE id = $id
+      `
+    )
+    .run({ password_hash: nextHash, id: profileId });
 }
 
 router.post('/login', async (req, res) => {
@@ -44,17 +86,7 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const result = await query<ProfileRow>(
-      `
-        SELECT id, email, full_name, role, phone, is_active, password_hash, created_at, updated_at
-        FROM profiles
-        WHERE email = $1
-        LIMIT 1
-      `,
-      [email.toLowerCase()]
-    );
-
-    const profile = result.rows[0];
+    const profile = getProfileByEmail(email.toLowerCase());
 
     if (!profile || !profile.is_active) {
       res.status(401).json({ message: 'Invalid email or password.' });
@@ -118,26 +150,45 @@ router.post('/signup', async (req, res) => {
   }
 
   try {
-    const existing = await query<{ id: string }>('SELECT id FROM profiles WHERE email = $1 LIMIT 1', [
-      email.toLowerCase(),
-    ]);
+    const existing = getDb()
+      .prepare('SELECT id FROM profiles WHERE email = $email LIMIT 1')
+      .get({ email: email.toLowerCase() }) as { id: string } | undefined;
 
-    if (existing.rows[0]) {
+    if (existing) {
       res.status(409).json({ message: 'A user with this email already exists.' });
       return;
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const insertResult = await query<ProfileRow>(
-      `
-        INSERT INTO profiles (email, full_name, role, phone, password_hash)
-        VALUES ($1, $2, 'viewer', $3, $4)
-        RETURNING id, email, full_name, role, phone, is_active, password_hash, created_at, updated_at
-      `,
-      [email.toLowerCase(), fullName, phone ?? null, passwordHash]
-    );
+    const id = randomUUID();
+    const now = new Date().toISOString();
 
-    const profile = insertResult.rows[0];
+    getDb()
+      .prepare(
+        `
+          INSERT INTO profiles (
+            id, email, full_name, role, phone, password_hash, is_active, created_at, updated_at, version
+          ) VALUES (
+            $id, $email, $full_name, 'viewer', $phone, $password_hash, 1, $created_at, $updated_at, 1
+          )
+        `
+      )
+      .run({
+        id,
+        email: email.toLowerCase(),
+        full_name: fullName,
+        phone: phone ?? null,
+        password_hash: passwordHash,
+        created_at: now,
+        updated_at: now,
+      });
+
+    const profile = getProfileById(id);
+    if (!profile) {
+      res.status(500).json({ message: 'Unable to create the account.' });
+      return;
+    }
+
     const token = signToken({
       id: profile.id,
       email: profile.email,
@@ -170,17 +221,7 @@ router.post('/signup', async (req, res) => {
 
 router.get('/me', authRequired, async (req, res) => {
   try {
-    const result = await query<ProfileRow>(
-      `
-        SELECT id, email, full_name, role, phone, is_active, password_hash, created_at, updated_at
-        FROM profiles
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [req.user?.id]
-    );
-
-    const profile = result.rows[0];
+    const profile = req.user?.id ? getProfileById(req.user.id) : undefined;
     if (!profile || !profile.is_active) {
       res.status(404).json({ message: 'User profile not found.' });
       return;

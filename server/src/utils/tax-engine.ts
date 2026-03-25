@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Queryable } from './rate-engine';
 
 export type TaxApplicationScope = 'intra_state' | 'inter_state' | 'all';
@@ -83,6 +84,8 @@ async function loadConfiguredComponents(
   appliesTo: Exclude<TaxApplicationScope, 'all'>,
   hsnCode?: string | null
 ): Promise<TaxComponentRow[]> {
+  const allowedScopes = [appliesTo, 'all'];
+
   if (hsnCode) {
     const exactResult = await db.query<TaxComponentRow>(
       `
@@ -90,19 +93,19 @@ async function loadConfiguredComponents(
           id,
           component_code,
           name,
-          rate::text,
+          rate,
           is_percentage,
-          flat_amount::text,
+          flat_amount,
           applies_to,
           hsn_code,
           sort_order
         FROM tax_components
-        WHERE is_active = true
-          AND applies_to = ANY($1::tax_application_scope[])
-          AND hsn_code = $2
+        WHERE is_active = 1
+          AND applies_to IN ($1, $2)
+          AND hsn_code = $3
         ORDER BY sort_order ASC, component_code ASC
       `,
-      [[appliesTo, 'all'], hsnCode]
+      [allowedScopes[0], allowedScopes[1], hsnCode]
     );
 
     if (exactResult.rows.length > 0) {
@@ -111,24 +114,24 @@ async function loadConfiguredComponents(
   }
 
   const genericResult = await db.query<TaxComponentRow>(
-    `
-      SELECT
-        id,
-        component_code,
-        name,
-        rate::text,
-        is_percentage,
-        flat_amount::text,
-        applies_to,
-        hsn_code,
-        sort_order
+      `
+        SELECT
+          id,
+          component_code,
+          name,
+          rate,
+          is_percentage,
+          flat_amount,
+          applies_to,
+          hsn_code,
+          sort_order
       FROM tax_components
-      WHERE is_active = true
-        AND applies_to = ANY($1::tax_application_scope[])
+      WHERE is_active = 1
+        AND applies_to IN ($1, $2)
         AND hsn_code IS NULL
       ORDER BY sort_order ASC, component_code ASC
     `,
-    [[appliesTo, 'all']]
+    [allowedScopes[0], allowedScopes[1]]
   );
 
   return genericResult.rows;
@@ -140,7 +143,7 @@ async function loadLegacyFallbackComponents(
   hsnCode?: string | null
 ): Promise<TaxComponentRow[]> {
   const values: Array<string> = [];
-  let whereClause = 'WHERE is_active = true';
+  let whereClause = 'WHERE is_active = 1';
 
   if (hsnCode) {
     values.push(hsnCode);
@@ -154,7 +157,7 @@ async function loadLegacyFallbackComponents(
     igst_rate: string;
   }>(
     `
-      SELECT hsn_code, cgst_rate::text, sgst_rate::text, igst_rate::text
+      SELECT hsn_code, cgst_rate, sgst_rate, igst_rate
       FROM gst_rates
       ${whereClause}
       ORDER BY CASE WHEN hsn_code = '9964' THEN 0 ELSE 1 END, created_at DESC
@@ -376,14 +379,15 @@ export async function persistInvoiceTaxSnapshots(
       await db.query(
         `
           INSERT INTO invoice_item_tax_components (
-            invoice_item_id, invoice_id, tax_component_id, component_code, component_name,
+            id, invoice_item_id, invoice_id, tax_component_id, component_code, component_name,
             applies_to, hsn_code, taxable_base, rate, is_percentage, flat_amount, tax_amount, sort_order
           ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10, $11, $12, $13
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11, $12, $13, $14
           )
         `,
         [
+          randomUUID(),
           item.invoiceItemId,
           input.invoiceId,
           line.tax_component_id,
@@ -406,14 +410,15 @@ export async function persistInvoiceTaxSnapshots(
     await db.query(
       `
         INSERT INTO invoice_tax_components (
-          invoice_id, tax_component_id, component_code, component_name, applies_to,
+          id, invoice_id, tax_component_id, component_code, component_name, applies_to,
           hsn_code, taxable_base, rate, is_percentage, flat_amount, tax_amount, sort_order
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, $8, $9, $10, $11, $12
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, $10, $11, $12, $13
         )
       `,
       [
+        randomUUID(),
         input.invoiceId,
         line.tax_component_id,
         line.component_code,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   calculateInvoiceTaxes,
   persistInvoiceTaxSnapshots,
@@ -102,22 +103,23 @@ export function buildInterestNote(paymentTermsDays: number | null | undefined): 
 }
 
 export async function getGtInvoiceSettings(db: Queryable): Promise<GtInvoiceSettings> {
+  const settingKeys = [
+    'invoice_prefix',
+    'company_gstin',
+    'company_name',
+    'company_address',
+    'company_pan',
+    'bank_name',
+    'bank_account',
+    'bank_ifsc',
+  ];
   const result = await db.query<{ setting_key: string; setting_value: string }>(
     `
       SELECT setting_key, setting_value
       FROM system_settings
-      WHERE setting_key = ANY($1)
+      WHERE setting_key IN ($1, $2, $3, $4, $5, $6, $7, $8)
     `,
-    [[
-      'invoice_prefix',
-      'company_gstin',
-      'company_name',
-      'company_address',
-      'company_pan',
-      'bank_name',
-      'bank_account',
-      'bank_ifsc',
-    ]]
+    settingKeys
   );
 
   const settings = Object.fromEntries(result.rows.map((row) => [row.setting_key, row.setting_value]));
@@ -135,8 +137,8 @@ export async function getGtInvoiceSettings(db: Queryable): Promise<GtInvoiceSett
 }
 
 async function generateInvoiceNumber(db: Queryable, prefix: string): Promise<string> {
-  const result = await db.query<{ count: string }>(
-    "SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1 AND invoice_type = 'invoice'",
+  const result = await db.query<{ count: number | string }>(
+    "SELECT COUNT(*) AS count FROM invoices WHERE invoice_number LIKE $1 AND invoice_type = 'invoice'",
     [`${prefix}-%`]
   );
 
@@ -192,24 +194,25 @@ export async function createGtInvoice(
   const dueDate = addDays(header.invoice_date, paymentTermsDays);
   const interestNote = header.interest_note ?? buildInterestNote(paymentTermsDays);
 
-  const invoiceResult = await db.query<{ id: string }>(
+  const invoiceId = randomUUID();
+  await db.query(
     `
       INSERT INTO invoices (
-        invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
+        id, invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
         booking_date, duty_type_label, nature_of_journey, vehicle_number, vehicle_type_label,
         duty_slip_number, total_km, total_hours, payment_terms_days, interest_note,
         subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
         payment_status, due_date, remarks, created_by
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, $20,
-        $21, $22, $23, $24
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21,
+        $22, $23, $24, $25
       )
-      RETURNING id
     `,
     [
+      invoiceId,
       invoiceNumber,
       header.invoice_date,
       header.customer_id,
@@ -237,23 +240,23 @@ export async function createGtInvoice(
     ]
   );
 
-  const invoiceId = invoiceResult.rows[0].id;
   const createdItems: Array<{ invoiceItemId: string; tax: (typeof taxCalculation.items)[number] }> = [];
 
   for (const [index, item] of normalizedItems.entries()) {
     const taxItem = taxCalculation.items[index];
-    const itemResult = await db.query<{ id: string }>(
+    const invoiceItemId = randomUUID();
+    await db.query(
       `
         INSERT INTO invoice_items (
-          invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
+          id, invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
           cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13, $14, $15
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14, $15, $16
         )
-        RETURNING id
       `,
       [
+        invoiceItemId,
         invoiceId,
         item.trip_id,
         item.annexure_id ?? null,
@@ -272,7 +275,7 @@ export async function createGtInvoice(
       ]
     );
 
-    createdItems.push({ invoiceItemId: itemResult.rows[0].id, tax: taxItem });
+    createdItems.push({ invoiceItemId, tax: taxItem });
   }
 
   await persistInvoiceTaxSnapshots(db, {

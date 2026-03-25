@@ -27,6 +27,45 @@ If you already have an older `travelerp_pgdata` volume, `docker compose up` will
 - Backend: `http://localhost:3001`
 - PostgreSQL: `localhost:5432`
 
+## FleetSync Lite SQLite Test Run
+
+Use two terminals from the `fslite` worktree.
+
+Backend:
+
+```powershell
+cd C:\travelerp\.worktrees\fslite\server
+$env:FLEETSYNC_DB_PATH="C:\travelerp\.worktrees\fslite\.tmp\fslite-test.db"
+npm.cmd run build
+node .\dist\src\index.js
+```
+
+Frontend:
+
+```powershell
+cd C:\travelerp\.worktrees\fslite
+npm.cmd run dev
+```
+
+Then open the Vite URL, usually `http://127.0.0.1:5173`.
+
+Suggested test order:
+
+- Sign up
+- Log in
+- Open Settings
+- Open Customers, Drivers, Vehicles, Owners, Leads
+- Open Rate Charts, GST, Tax Components
+- Open Trips, Annexures, Invoices, Collections
+- Open Reports and Dashboard
+
+Current expectations on the `fslite` branch:
+
+- The app should load and authenticate
+- Pages through Task 14 should not crash the SQLite backend
+- Some deeper workflows may still need seed or manual validation data
+- Electron packaging and `.exe` testing are not ready yet
+
 ## Default Login
 
 - Email: `admin@travelerp.com`

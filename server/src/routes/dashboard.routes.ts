@@ -7,21 +7,21 @@ const router = Router();
 router.get('/stats', authRequired, async (_req, res) => {
   try {
     const [trips, drivers, vehicles, customers, invoices, financials, outstandingInvoices] = await Promise.all([
-      query<{ count: string }>('SELECT COUNT(*)::text AS count FROM trips'),
-      query<{ count: string }>('SELECT COUNT(*)::text AS count FROM drivers'),
-      query<{ count: string }>('SELECT COUNT(*)::text AS count FROM vehicles'),
-      query<{ count: string }>('SELECT COUNT(*)::text AS count FROM customers'),
-      query<{ count: string }>("SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'"),
-      query<{ invoiced_amount: string; collected_amount: string }>(
+      query<{ count: number | string }>('SELECT COUNT(*) AS count FROM trips'),
+      query<{ count: number | string }>('SELECT COUNT(*) AS count FROM drivers'),
+      query<{ count: number | string }>('SELECT COUNT(*) AS count FROM vehicles'),
+      query<{ count: number | string }>('SELECT COUNT(*) AS count FROM customers'),
+      query<{ count: number | string }>("SELECT COUNT(*) AS count FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'"),
+      query<{ invoiced_amount: number | string; collected_amount: number | string }>(
         `
           SELECT
-            COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'), 0)::text AS invoiced_amount,
+            COALESCE((SELECT SUM(total_amount) FROM invoices WHERE invoice_status = 'active' AND invoice_type = 'invoice'), 0) AS invoiced_amount,
             COALESCE((
               SELECT SUM(col.amount)
               FROM collections col
               JOIN invoices inv ON inv.id = col.invoice_id
               WHERE inv.invoice_type = 'invoice'
-            ), 0)::text AS collected_amount
+            ), 0) AS collected_amount
         `
       ),
       query(
@@ -33,7 +33,7 @@ router.get('/stats', authRequired, async (_req, res) => {
             i.due_date,
             i.total_amount,
             i.payment_status,
-            json_build_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer
+            json_object('id', c.id, 'name', c.name, 'customer_code', c.customer_code) AS customer
           FROM invoices i
           JOIN customers c ON c.id = i.customer_id
           WHERE i.invoice_status = 'active'

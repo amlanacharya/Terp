@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Queryable } from './rate-engine';
 
 export type FinancialLedgerEventType =
@@ -39,6 +40,7 @@ export async function writeLedgerEntry(db: Queryable, entry: LedgerEntry): Promi
   await db.query(
     `
       INSERT INTO financial_ledger (
+        id,
         event_type,
         customer_id,
         invoice_id,
@@ -48,9 +50,10 @@ export async function writeLedgerEntry(db: Queryable, entry: LedgerEntry): Promi
         direction,
         description,
         performed_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     `,
     [
+      randomUUID(),
       entry.event_type,
       entry.customer_id,
       entry.invoice_id,

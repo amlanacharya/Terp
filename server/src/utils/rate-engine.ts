@@ -1,12 +1,11 @@
-import { QueryResultRow } from 'pg';
-import { query } from '../config/db';
+import { query } from '../config/db-sqlite';
 
 export type DutyType = 'local' | 'outstation' | 'drop_pickup' | 'station_drop' | 'long';
 
 export interface Queryable {
-  query<T extends QueryResultRow = QueryResultRow>(
+  query<T = any>(
     text: string,
-    params?: unknown[]
+    params?: unknown[] | Record<string, unknown>
   ): Promise<{ rows: T[] }>;
 }
 
@@ -232,9 +231,9 @@ export async function findActiveRateChartIds(
       SELECT id
       FROM rate_charts
       WHERE customer_id = $1
-        AND is_active = true
-        AND effective_from <= $2::date
-        AND (effective_to IS NULL OR effective_to >= $2::date)
+        AND is_active = 1
+        AND effective_from <= $2
+        AND (effective_to IS NULL OR effective_to >= $2)
       ORDER BY effective_from DESC, created_at DESC
     `,
     [customerId, date]

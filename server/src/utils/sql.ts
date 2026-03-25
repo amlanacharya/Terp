@@ -13,11 +13,13 @@ export function pickDefinedFields(
 
 export function buildUpdateClause(fields: Record<string, unknown>): {
   clause: string;
+  params: Record<string, unknown>;
   values: unknown[];
 } {
   const entries = Object.entries(fields);
   return {
-    clause: entries.map(([key], index) => `${key} = $${index + 1}`).join(', '),
+    clause: entries.map(([key]) => `${key} = $${key}`).join(', '),
+    params: Object.fromEntries(entries),
     values: entries.map(([, value]) => value),
   };
 }

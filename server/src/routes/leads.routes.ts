@@ -1,5 +1,6 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
-import { query } from '../config/db';
+import { getDb } from '../config/db-sqlite';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
@@ -29,25 +30,50 @@ const leadFields = [
   'lost_reason',
   'remarks',
 ] as const;
-const followUpFields = [
-  'follow_up_date',
-  'next_follow_up',
-  'contact_mode',
-  'summary',
-  'quoted_amount',
-] as const;
+const followUpFields = ['follow_up_date', 'next_follow_up', 'contact_mode', 'summary', 'quoted_amount'] as const;
 
-async function generateLeadNumber(): Promise<string> {
-  const prefixResult = await query<{ setting_value: string }>(
-    `SELECT setting_value FROM system_settings WHERE setting_key = 'lead_prefix' LIMIT 1`
-  );
-  const prefix = prefixResult.rows[0]?.setting_value || 'LEAD';
-  const countResult = await query<{ count: string }>(
-    'SELECT COUNT(*)::text AS count FROM leads WHERE lead_number LIKE $1',
-    [`${prefix}%`]
-  );
+type JsonObject = Record<string, unknown> | null;
 
-  return `${prefix}${String(Number(countResult.rows[0]?.count || 0) + 1).padStart(4, '0')}`;
+function parseJsonObject(value: unknown): JsonObject {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function mapLeadRow(row: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    customer: parseJsonObject(row.customer),
+    assigned_user: parseJsonObject(row.assigned_user),
+    follow_up_count: Number(row.follow_up_count ?? 0),
+  };
+}
+
+function mapFollowUpRow(row: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+    created_by_user: parseJsonObject(row.created_by_user),
+  };
+}
+
+function isLeadRequiredFieldError(payload: Record<string, unknown>): boolean {
+  return Object.keys(payload).some((key) =>
+    ['source', 'prospect_phone', 'trip_type', 'from_location', 'travel_date', 'pax_count', 'customer_id', 'prospect_name'].includes(key)
+  );
 }
 
 function validateLeadPayload(payload: Record<string, unknown>): string | null {
@@ -66,100 +92,134 @@ function validateLeadPayload(payload: Record<string, unknown>): string | null {
   return null;
 }
 
-router.get('/meta', authRequired, async (_req, res) => {
+function getLeadPrefix(): string {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'lead_prefix' LIMIT 1")
+    .get() as { setting_value?: string } | undefined;
+
+  return row?.setting_value?.trim() || 'LEAD';
+}
+
+function generateLeadNumber(): string {
+  const db = getDb();
+  const prefix = getLeadPrefix();
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM leads WHERE lead_number LIKE $pattern')
+    .get({ pattern: `${prefix}%` }) as { count?: number } | undefined;
+
+  const nextValue = Number(row?.count ?? 0) + 1;
+  return `${prefix}${String(nextValue).padStart(4, '0')}`;
+}
+
+function getLeadListQuery() {
+  return getDb().prepare(`
+    SELECT
+      l.*,
+      CASE
+        WHEN c.id IS NULL THEN NULL
+        ELSE json_object('id', c.id, 'customer_code', c.customer_code, 'name', c.name)
+      END AS customer,
+      CASE
+        WHEN p.id IS NULL THEN NULL
+        ELSE json_object('id', p.id, 'full_name', p.full_name, 'role', p.role)
+      END AS assigned_user,
+      (
+        SELECT f.follow_up_date
+        FROM lead_follow_ups f
+        WHERE f.lead_id = l.id
+        ORDER BY f.follow_up_date DESC, f.created_at DESC
+        LIMIT 1
+      ) AS last_follow_up_date,
+      (
+        SELECT f.next_follow_up
+        FROM lead_follow_ups f
+        WHERE f.lead_id = l.id
+        ORDER BY f.follow_up_date DESC, f.created_at DESC
+        LIMIT 1
+      ) AS next_follow_up,
+      (
+        SELECT f.summary
+        FROM lead_follow_ups f
+        WHERE f.lead_id = l.id
+        ORDER BY f.follow_up_date DESC, f.created_at DESC
+        LIMIT 1
+      ) AS last_follow_up_summary,
+      (
+        SELECT COUNT(*)
+        FROM lead_follow_ups f
+        WHERE f.lead_id = l.id
+      ) AS follow_up_count
+    FROM leads l
+    LEFT JOIN customers c ON c.id = l.customer_id
+    LEFT JOIN profiles p ON p.id = l.assigned_to
+    ORDER BY l.lead_date DESC, l.created_at DESC
+  `);
+}
+
+router.get('/meta', authRequired, (_req, res) => {
   try {
-    const [customerResult, assigneeResult] = await Promise.all([
-      query(
+    const db = getDb();
+    const customers = db
+      .prepare(
         `
           SELECT id, customer_code, name
           FROM customers
-          WHERE is_active = true
+          WHERE is_active = 1
           ORDER BY name ASC
         `
-      ),
-      query(
+      )
+      .all();
+    const assignees = db
+      .prepare(
         `
           SELECT id, full_name, role
           FROM profiles
-          WHERE is_active = true
+          WHERE is_active = 1
           ORDER BY full_name ASC
         `
-      ),
-    ]);
+      )
+      .all();
 
-    res.json({
-      customers: customerResult.rows,
-      assignees: assigneeResult.rows,
-    });
+    res.json({ customers, assignees });
   } catch (error) {
     console.error('Fetching lead metadata failed:', error);
     res.status(500).json({ message: 'Unable to load lead form options.' });
   }
 });
 
-router.get('/', authRequired, async (_req, res) => {
+router.get('/', authRequired, (_req, res) => {
   try {
-    const result = await query(
-      `
-        SELECT
-          l.*,
-          CASE
-            WHEN c.id IS NULL THEN NULL
-            ELSE json_build_object('id', c.id, 'customer_code', c.customer_code, 'name', c.name)
-          END AS customer,
-          CASE
-            WHEN p.id IS NULL THEN NULL
-            ELSE json_build_object('id', p.id, 'full_name', p.full_name, 'role', p.role)
-          END AS assigned_user,
-          latest_follow_up.follow_up_date AS last_follow_up_date,
-          latest_follow_up.next_follow_up,
-          latest_follow_up.summary AS last_follow_up_summary,
-          COALESCE(follow_up_stats.follow_up_count, 0) AS follow_up_count
-        FROM leads l
-        LEFT JOIN customers c ON c.id = l.customer_id
-        LEFT JOIN profiles p ON p.id = l.assigned_to
-        LEFT JOIN LATERAL (
-          SELECT f.follow_up_date, f.next_follow_up, f.summary
-          FROM lead_follow_ups f
-          WHERE f.lead_id = l.id
-          ORDER BY f.follow_up_date DESC, f.created_at DESC
-          LIMIT 1
-        ) AS latest_follow_up ON true
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*)::int AS follow_up_count
-          FROM lead_follow_ups f
-          WHERE f.lead_id = l.id
-        ) AS follow_up_stats ON true
-        ORDER BY l.lead_date DESC, l.created_at DESC
-      `
-    );
-
-    res.json(result.rows);
+    const leads = (getLeadListQuery().all() as Record<string, unknown>[]).map((row) => mapLeadRow(row));
+    res.json(leads);
   } catch (error) {
     console.error('Fetching leads failed:', error);
     res.status(500).json({ message: 'Unable to fetch leads.' });
   }
 });
 
-router.get('/:id/follow-ups', authRequired, async (req, res) => {
+router.get('/:id/follow-ups', authRequired, (req, res) => {
   try {
-    const result = await query(
-      `
-        SELECT
-          f.*,
-          CASE
-            WHEN p.id IS NULL THEN NULL
-            ELSE json_build_object('id', p.id, 'full_name', p.full_name, 'role', p.role)
-          END AS created_by_user
-        FROM lead_follow_ups f
-        LEFT JOIN profiles p ON p.id = f.created_by
-        WHERE f.lead_id = $1
-        ORDER BY f.follow_up_date DESC, f.created_at DESC
-      `,
-      [req.params.id]
-    );
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            f.*,
+            CASE
+              WHEN p.id IS NULL THEN NULL
+              ELSE json_object('id', p.id, 'full_name', p.full_name, 'role', p.role)
+            END AS created_by_user
+          FROM lead_follow_ups f
+          LEFT JOIN profiles p ON p.id = f.created_by
+          WHERE f.lead_id = $lead_id
+          ORDER BY f.follow_up_date DESC, f.created_at DESC
+        `
+      )
+      .all({ lead_id: req.params.id } as Record<string, unknown>)
+      .map((row) => mapFollowUpRow(row as Record<string, unknown>));
 
-    res.json(result.rows);
+    res.json(rows);
   } catch (error) {
     console.error('Fetching lead follow-ups failed:', error);
     res.status(500).json({ message: 'Unable to fetch lead follow-ups.' });
@@ -176,51 +236,60 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
   }
 
   try {
-    const leadNumber = await generateLeadNumber();
-    const result = await query(
-      `
-        INSERT INTO leads (
-          lead_number, lead_date, source, customer_id, prospect_name, prospect_phone, prospect_email,
-          prospect_company, trip_type, from_location, to_location, travel_date, return_date, pax_count,
-          vehicle_preference, num_vehicles, special_requirements, estimated_amount, status, assigned_to,
-          priority, lost_reason, remarks, created_by
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20,
-          $21, $22, $23, $24
-        )
-        RETURNING *
-      `,
-      [
-        leadNumber,
-        payload.lead_date ?? new Date().toISOString(),
-        payload.source,
-        payload.customer_id || null,
-        payload.prospect_name ?? null,
-        payload.prospect_phone,
-        payload.prospect_email ?? null,
-        payload.prospect_company ?? null,
-        payload.trip_type,
-        payload.from_location,
-        payload.to_location ?? null,
-        payload.travel_date,
-        payload.return_date ?? null,
-        payload.pax_count,
-        payload.vehicle_preference ?? null,
-        payload.num_vehicles ?? 1,
-        payload.special_requirements ?? null,
-        payload.estimated_amount ?? null,
-        payload.status ?? 'new',
-        payload.assigned_to || null,
-        payload.priority ?? 'medium',
-        payload.lost_reason ?? null,
-        payload.remarks ?? null,
-        req.user?.id ?? null,
-      ]
-    );
+    const db = getDb();
+    const createdLead = db.transaction(() => {
+      const leadNumber = generateLeadNumber();
+      const id = randomUUID();
+      const now = new Date().toISOString();
 
-    res.status(201).json(result.rows[0]);
+      db.prepare(
+        `
+          INSERT INTO leads (
+            id, lead_number, lead_date, source, customer_id, prospect_name, prospect_phone, prospect_email,
+            prospect_company, trip_type, from_location, to_location, travel_date, return_date, pax_count,
+            vehicle_preference, num_vehicles, special_requirements, estimated_amount, status, assigned_to,
+            priority, lost_reason, remarks, created_by, created_at, updated_at, version
+          ) VALUES (
+            $id, $lead_number, $lead_date, $source, $customer_id, $prospect_name, $prospect_phone, $prospect_email,
+            $prospect_company, $trip_type, $from_location, $to_location, $travel_date, $return_date, $pax_count,
+            $vehicle_preference, $num_vehicles, $special_requirements, $estimated_amount, $status, $assigned_to,
+            $priority, $lost_reason, $remarks, $created_by, $created_at, $updated_at, 1
+          )
+        `
+      ).run({
+        id,
+        lead_number: leadNumber,
+        lead_date: payload.lead_date ?? now,
+        source: payload.source,
+        customer_id: payload.customer_id ?? null,
+        prospect_name: payload.prospect_name ?? null,
+        prospect_phone: payload.prospect_phone,
+        prospect_email: payload.prospect_email ?? null,
+        prospect_company: payload.prospect_company ?? null,
+        trip_type: payload.trip_type,
+        from_location: payload.from_location,
+        to_location: payload.to_location ?? null,
+        travel_date: payload.travel_date,
+        return_date: payload.return_date ?? null,
+        pax_count: payload.pax_count,
+        vehicle_preference: payload.vehicle_preference ?? null,
+        num_vehicles: payload.num_vehicles ?? 1,
+        special_requirements: payload.special_requirements ?? null,
+        estimated_amount: payload.estimated_amount ?? null,
+        status: payload.status ?? 'new',
+        assigned_to: payload.assigned_to ?? null,
+        priority: payload.priority ?? 'medium',
+        lost_reason: payload.lost_reason ?? null,
+        remarks: payload.remarks ?? null,
+        created_by: req.user?.id ?? null,
+        created_at: now,
+        updated_at: now,
+      });
+
+      return db.prepare('SELECT * FROM leads WHERE id = $id').get({ id });
+    })();
+
+    res.status(201).json(createdLead);
   } catch (error) {
     console.error('Creating lead failed:', error);
     res.status(500).json({ message: 'Unable to create lead.' });
@@ -236,34 +305,50 @@ router.post('/:id/follow-ups', authRequired, roleCheck(['admin', 'manager', 'ope
   }
 
   try {
-    const leadExists = await query<{ id: string }>('SELECT id FROM leads WHERE id = $1 LIMIT 1', [req.params.id]);
-    if (!leadExists.rows[0]) {
+    const db = getDb();
+    const createdFollowUp = db.transaction(() => {
+      const leadExists = db.prepare('SELECT id FROM leads WHERE id = $id LIMIT 1').get({ id: req.params.id });
+      if (!leadExists) {
+        return null;
+      }
+
+      const id = randomUUID();
+      const now = new Date().toISOString();
+
+      db.prepare(
+        `
+          INSERT INTO lead_follow_ups (
+            id, lead_id, follow_up_date, next_follow_up, contact_mode, summary, quoted_amount, created_by, created_at, version
+          ) VALUES (
+            $id, $lead_id, $follow_up_date, $next_follow_up, $contact_mode, $summary, $quoted_amount, $created_by, $created_at, 1
+          )
+        `
+      ).run({
+        id,
+        lead_id: req.params.id,
+        follow_up_date: payload.follow_up_date,
+        next_follow_up: payload.next_follow_up ?? null,
+        contact_mode: payload.contact_mode,
+        summary: payload.summary,
+        quoted_amount: payload.quoted_amount ?? null,
+        created_by: req.user?.id ?? null,
+        created_at: now,
+      });
+
+      db.prepare('UPDATE leads SET updated_at = $updated_at WHERE id = $id').run({
+        updated_at: now,
+        id: req.params.id,
+      });
+
+      return db.prepare('SELECT * FROM lead_follow_ups WHERE id = $id').get({ id });
+    })();
+
+    if (!createdFollowUp) {
       res.status(404).json({ message: 'Lead not found.' });
       return;
     }
 
-    const result = await query(
-      `
-        INSERT INTO lead_follow_ups (
-          lead_id, follow_up_date, next_follow_up, contact_mode, summary, quoted_amount, created_by
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7
-        )
-        RETURNING *
-      `,
-      [
-        req.params.id,
-        payload.follow_up_date,
-        payload.next_follow_up ?? null,
-        payload.contact_mode,
-        payload.summary,
-        payload.quoted_amount ?? null,
-        req.user?.id ?? null,
-      ]
-    );
-
-    await query('UPDATE leads SET updated_at = now() WHERE id = $1', [req.params.id]);
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(createdFollowUp);
   } catch (error) {
     console.error('Creating lead follow-up failed:', error);
     res.status(500).json({ message: 'Unable to record follow-up.' });
@@ -289,24 +374,65 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), as
     prospect_name: payload.prospect_name,
   });
 
-  if (validationError && Object.keys(payload).some((key) => ['source', 'prospect_phone', 'trip_type', 'from_location', 'travel_date', 'pax_count', 'customer_id', 'prospect_name'].includes(key))) {
+  if (validationError && isLeadRequiredFieldError(payload)) {
     res.status(400).json({ message: validationError });
     return;
   }
 
-  try {
-    const update = buildUpdateClause(payload);
-    const result = await query(
-      `UPDATE leads SET ${update.clause}, updated_at = now() WHERE id = $${update.values.length + 1} RETURNING *`,
-      [...update.values, req.params.id]
-    );
+  const clientVersion = Number((req.body as { version?: unknown }).version);
+  if (!Number.isInteger(clientVersion) || clientVersion < 1) {
+    res.status(400).json({ message: 'Lead version is required for updates.' });
+    return;
+  }
 
-    if (!result.rows[0]) {
+  try {
+    const db = getDb();
+    const updatedLead = db.transaction(() => {
+      const existing = db.prepare('SELECT id, version FROM leads WHERE id = $id LIMIT 1').get({
+        id: req.params.id,
+      }) as { id: string; version: number } | undefined;
+
+      if (!existing) {
+        return { status: 404 as const, lead: null };
+      }
+
+      if (Number(existing.version) !== clientVersion) {
+        return { status: 409 as const, lead: null };
+      }
+
+      const update = buildUpdateClause(payload);
+      const result = db
+        .prepare(
+          `
+            UPDATE leads
+            SET ${update.clause}, updated_at = datetime('now'), version = version + 1
+            WHERE id = $id AND version = $version
+          `
+        )
+        .run({
+          ...update.params,
+          id: req.params.id,
+          version: clientVersion,
+        });
+
+      if (result.changes === 0) {
+        return { status: 409 as const, lead: null };
+      }
+
+      return { status: 200 as const, lead: db.prepare('SELECT * FROM leads WHERE id = $id').get({ id: req.params.id }) };
+    })();
+
+    if (updatedLead.status === 404) {
       res.status(404).json({ message: 'Lead not found.' });
       return;
     }
 
-    res.json(result.rows[0]);
+    if (updatedLead.status === 409) {
+      res.status(409).json({ message: 'Lead was updated by another user. Reload and try again.' });
+      return;
+    }
+
+    res.json(updatedLead.lead);
   } catch (error) {
     console.error('Updating lead failed:', error);
     res.status(500).json({ message: 'Unable to update lead.' });
@@ -315,12 +441,11 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), as
 
 router.delete('/:id/follow-ups/:followUpId', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
   try {
-    const result = await query(
-      'DELETE FROM lead_follow_ups WHERE id = $1 AND lead_id = $2 RETURNING id',
-      [req.params.followUpId, req.params.id]
-    );
+    const result = getDb()
+      .prepare('DELETE FROM lead_follow_ups WHERE id = $followUpId AND lead_id = $leadId')
+      .run({ followUpId: req.params.followUpId, leadId: req.params.id });
 
-    if (!result.rows[0]) {
+    if (result.changes === 0) {
       res.status(404).json({ message: 'Lead follow-up not found.' });
       return;
     }
@@ -334,9 +459,9 @@ router.delete('/:id/follow-ups/:followUpId', authRequired, roleCheck(['admin', '
 
 router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req, res) => {
   try {
-    const result = await query('DELETE FROM leads WHERE id = $1 RETURNING id', [req.params.id]);
+    const result = getDb().prepare('DELETE FROM leads WHERE id = $id').run({ id: req.params.id });
 
-    if (!result.rows[0]) {
+    if (result.changes === 0) {
       res.status(404).json({ message: 'Lead not found.' });
       return;
     }

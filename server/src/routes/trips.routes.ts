@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { PoolClient } from 'pg';
 import pool, { query } from '../config/db';
@@ -336,7 +337,7 @@ function getTripDetailSelect(): string {
       END AS parent_trip,
       CASE
         WHEN rc.id IS NULL THEN NULL
-        ELSE json_build_object('id', rc.id, 'name', rc.name, 'effective_from', rc.effective_from::text, 'effective_to', rc.effective_to::text)
+        ELSE json_build_object('id', rc.id, 'name', rc.name, 'effective_from', rc.effective_from, 'effective_to', rc.effective_to)
       END AS rate_chart,
       CASE
         WHEN rci.id IS NULL THEN NULL
@@ -371,18 +372,27 @@ function getTripDetailSelect(): string {
       SELECT
         trip_id,
         COUNT(*) AS annexure_count,
-        COUNT(*) FILTER (WHERE is_billed = true) AS billed_annexure_count
+        SUM(CASE WHEN is_billed = 1 THEN 1 ELSE 0 END) AS billed_annexure_count
       FROM annexures
       GROUP BY trip_id
     ) AS annexure_summary ON annexure_summary.trip_id = t.id
     LEFT JOIN (
-      SELECT DISTINCT ON (ii.trip_id)
+      SELECT
         ii.trip_id,
         ii.invoice_id AS direct_invoice_id
       FROM invoice_items ii
       JOIN invoices inv ON inv.id = ii.invoice_id
       WHERE ii.trip_id IS NOT NULL AND ii.annexure_id IS NULL AND inv.invoice_status = 'active'
-      ORDER BY ii.trip_id, ii.created_at ASC, ii.invoice_id ASC
+        AND ii.id = (
+          SELECT ii2.id
+          FROM invoice_items ii2
+          JOIN invoices inv2 ON inv2.id = ii2.invoice_id
+          WHERE ii2.trip_id = ii.trip_id
+            AND ii2.annexure_id IS NULL
+            AND inv2.invoice_status = 'active'
+          ORDER BY ii2.created_at ASC, ii2.invoice_id ASC
+          LIMIT 1
+        )
     ) AS direct_invoice ON direct_invoice.trip_id = t.id
   `;
 }
@@ -479,9 +489,9 @@ async function getTripSettings(db: Queryable = { query }): Promise<Record<string
     `
       SELECT setting_key, setting_value
       FROM system_settings
-      WHERE setting_key = ANY($1)
+      WHERE setting_key IN ($1, $2, $3, $4)
     `,
-    [getTripSettingsKeys()]
+    getTripSettingsKeys()
   );
 
   return Object.fromEntries(result.rows.map((row) => [row.setting_key, row.setting_value])) as Record<string, string>;
@@ -741,10 +751,10 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
       SELECT
         t.id,
         t.trip_number,
-        t.trip_date::text,
+        t.trip_date,
         t.from_location,
         t.to_location,
-        t.trip_amount::text,
+        t.trip_amount,
         c.id AS customer_id,
         c.name AS customer_name,
         c.address AS customer_address,
@@ -754,7 +764,7 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
         t.duty_type,
         t.vehicle_category_id,
         t.rate_chart_id,
-        COALESCE((SELECT COUNT(*)::text FROM annexures a WHERE a.trip_id = t.id), '0') AS annexure_count
+        COALESCE((SELECT COUNT(*) FROM annexures a WHERE a.trip_id = t.id), 0) AS annexure_count
       FROM trips t
       JOIN customers c ON c.id = t.customer_id
       WHERE t.id = $1
@@ -781,25 +791,25 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
     `
       SELECT setting_key, setting_value
       FROM system_settings
-      WHERE setting_key = ANY($1)
+      WHERE setting_key IN ($1, $2)
     `,
-    [['invoice_prefix', 'company_gstin']]
+    ['invoice_prefix', 'company_gstin']
   );
   const settings = Object.fromEntries(settingRows.rows.map((row) => [row.setting_key, row.setting_value])) as Record<string, string>;
   const invoicePrefix = settings.invoice_prefix || 'INV';
 
   const gstRow = await client.query<{ hsn_code: string; cgst_rate: string; sgst_rate: string; igst_rate: string }>(
     `
-      SELECT hsn_code, cgst_rate::text, sgst_rate::text, igst_rate::text
+      SELECT hsn_code, cgst_rate, sgst_rate, igst_rate
       FROM gst_rates
-      WHERE hsn_code = '9964' AND is_active = true
+      WHERE hsn_code = '9964' AND is_active = 1
       ORDER BY created_at DESC
       LIMIT 1
     `
   );
 
   const gst = gstRow.rows[0] ?? { hsn_code: '9964', cgst_rate: '2.5', sgst_rate: '2.5', igst_rate: '5' };
-  const invoiceCount = await client.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM invoices WHERE invoice_number LIKE $1', [`${invoicePrefix}-%`]);
+  const invoiceCount = await client.query<{ count: number | string }>('SELECT COUNT(*) AS count FROM invoices WHERE invoice_number LIKE $1', [`${invoicePrefix}-%`]);
   const invoiceNumber = `${invoicePrefix}-${String(Number(invoiceCount.rows[0]?.count || 0) + 1).padStart(5, '0')}`;
   const subtotal = Number(trip.trip_amount || 0);
   const gstAmounts = calculateGst({
@@ -814,20 +824,23 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
   const dueDate = new Date(invoiceDate);
   dueDate.setDate(dueDate.getDate() + Number(trip.customer_credit_days || 0));
 
+  const invoiceId = randomUUID();
   const invoiceResult = await client.query<{ id: string }>(
     `
       INSERT INTO invoices (
+        id,
         invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
         subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
         payment_status, due_date, remarks, created_by
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9, $10,
-        $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13, $14, $15
       )
       RETURNING id
     `,
     [
+      invoiceId,
       invoiceNumber,
       trip.trip_date,
       trip.customer_id,
@@ -848,14 +861,15 @@ async function generateInvoiceForCompletedTrip(client: PoolClient, tripId: strin
   await client.query(
     `
       INSERT INTO invoice_items (
-        invoice_id, trip_id, description, hsn_code, quantity, rate, amount,
+        id, invoice_id, trip_id, description, hsn_code, quantity, rate, amount,
         cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15
       )
     `,
     [
+      randomUUID(),
       invoiceResult.rows[0].id,
       trip.id,
       `Trip ${trip.trip_number}: ${trip.from_location} to ${trip.to_location}`,
@@ -967,12 +981,12 @@ router.post('/:id/travel-metrics', authRequired, roleCheck(['admin', 'manager', 
     await client.query(
       `
         INSERT INTO trip_travel_metrics (
-          trip_id, seq, start_date, start_time, start_km, end_date, end_time, end_km
+          id, trip_id, seq, start_date, start_time, start_km, end_date, end_time, end_km
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8
+          $1, $2, $3, $4, $5, $6, $7, $8, $9
         )
       `,
-      [tripId, Number(payload.seq), payload.start_date, payload.start_time, payload.start_km, payload.end_date ?? null, payload.end_time ?? null, payload.end_km ?? null]
+      [randomUUID(), tripId, Number(payload.seq), payload.start_date, payload.start_time, payload.start_km, payload.end_date ?? null, payload.end_time ?? null, payload.end_km ?? null]
     );
 
     const aggregation = await syncTripMetricSnapshot(client as unknown as Queryable, tripId);
@@ -1097,11 +1111,12 @@ router.post('/:id/expenses', authRequired, roleCheck(['admin', 'manager', 'opera
   try {
     const result = await query<TripExpenseRow>(
       `
-        INSERT INTO trip_expenses (trip_id, expense_type, amount, description, receipt_number, is_billable_to_hirer)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO trip_expenses (id, trip_id, expense_type, amount, description, receipt_number, is_billable_to_hirer)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
       `,
       [
+        randomUUID(),
         req.params.id,
         payload.expense_type,
         payload.amount,
@@ -1183,11 +1198,12 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
   try {
     await client.query('BEGIN');
     const tripNumber = await generateNextTripNumber(client);
+    const tripId = randomUUID();
 
-    const result = await client.query<{ id: string }>(
+    await client.query(
       `
         INSERT INTO trips (
-          trip_number, customer_id, route_id, vehicle_id, driver_id, trip_date, duty_type, booked_by,
+          id, trip_number, customer_id, route_id, vehicle_id, driver_id, trip_date, duty_type, booked_by,
           report_to, vehicle_category_id, rate_chart_id, rate_chart_item_id, rate_chart_fixed_route_id,
           start_time, end_time, start_km, end_km, actual_km, total_hours, night_halts,
           from_location, to_location, purpose, passengers, status, trip_amount,
@@ -1197,20 +1213,19 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
           annexure_number, driver_allowance, toll_charges, parking_charges, other_charges,
           remarks, created_by
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18, $19, $20,
-          $21, $22, $23, $24, $25, $26,
-          $27, $28, $29, $30,
-          $31, $32, $33, $34, $35,
-          $36, $37, $38, $39, $40,
-          $41, $42, $43, $44, $45,
-          $46, $47
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19, $20, $21,
+          $22, $23, $24, $25, $26, $27,
+          $28, $29, $30, $31,
+          $32, $33, $34, $35, $36,
+          $37, $38, $39, $40, $41,
+          $42, $43, $44, $45, $46,
+          $47, $48
         )
-        RETURNING id
       `,
       [
-        tripNumber.trip_number, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
+        tripId, tripNumber.trip_number, payload.customer_id, payload.route_id ?? null, payload.vehicle_id, payload.driver_id,
         payload.trip_date, payload.duty_type ?? null, payload.booked_by ?? null, payload.report_to ?? null,
         payload.vehicle_category_id ?? null, payload.rate_chart_id ?? null, payload.rate_chart_item_id ?? null,
         payload.rate_chart_fixed_route_id ?? null, payload.start_time ?? null, payload.end_time ?? null,
@@ -1227,7 +1242,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'operator']), asyn
       ]
     );
 
-    const trip = await getTripById(client as unknown as Queryable, result.rows[0].id);
+    const trip = await getTripById(client as unknown as Queryable, tripId);
     await client.query('COMMIT');
     res.status(201).json(
       tripNumber.wrapped
@@ -1260,19 +1275,18 @@ router.post('/:id/calculate', authRequired, roleCheck(['admin', 'manager', 'oper
         SELECT
           t.id,
           t.customer_id,
-          t.trip_date::text,
+          t.trip_date,
           t.duty_type,
           t.vehicle_category_id,
           t.from_location,
           t.to_location,
           t.night_halts,
-          t.trip_amount::text,
-          t.calculated_amount::text,
+          t.trip_amount,
+          t.calculated_amount,
           rci.package_code AS current_package_code
         FROM trips t
         LEFT JOIN rate_chart_items rci ON rci.id = t.rate_chart_item_id
         WHERE t.id = $1
-        FOR UPDATE OF t
       `,
       [tripId]
     );
@@ -1405,20 +1419,20 @@ router.post('/:id/bill', authRequired, roleCheck(['admin', 'manager', 'accountan
           t.id,
           t.trip_number,
           t.parent_trip_id,
-          t.trip_date::text,
+          t.trip_date,
           t.duty_type,
           t.from_location,
           t.to_location,
-          t.trip_amount::text,
-          t.actual_km::text,
-          t.total_hours::text,
+          t.trip_amount,
+          t.actual_km,
+          t.total_hours,
           c.id AS customer_id,
           c.name AS customer_name,
           c.address AS customer_address,
           c.gstin AS customer_gstin,
           c.credit_days AS customer_credit_days,
           v.vehicle_number,
-          COALESCE(vc.name, v.vehicle_type::text) AS vehicle_type_label,
+          COALESCE(vc.name, v.vehicle_type) AS vehicle_type_label,
           EXISTS(SELECT 1 FROM annexures a WHERE a.trip_id = t.id) AS has_annexures,
           (
             SELECT ii.invoice_id
@@ -1632,7 +1646,7 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'operator']), as
   try {
     await client.query('BEGIN');
 
-    const existing = await client.query<{ status: string }>('SELECT status FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
+    const existing = await client.query<{ status: string }>('SELECT status FROM trips WHERE id = $1', [tripId]);
     if (!existing.rows[0]) {
       await client.query('ROLLBACK');
       res.status(404).json({ message: 'Trip not found.' });

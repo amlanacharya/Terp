@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { QueryResultRow } from 'pg';
 import { Router } from 'express';
 import pool, { query } from '../config/db';
@@ -168,7 +169,6 @@ async function loadInvoiceTarget(db: Queryable, invoiceId: string): Promise<Coll
       FROM invoices
       WHERE id = $1
       LIMIT 1
-      FOR UPDATE
     `,
     [invoiceId]
   );
@@ -190,26 +190,35 @@ async function ensureInvoiceSettleable(db: Queryable, invoiceId: string): Promis
 }
 
 async function syncInvoicePaymentStatus(db: Queryable, invoiceId: string): Promise<void> {
+  const invoiceResult = await db.query<{ total_amount: number | string }>(
+    'SELECT total_amount FROM invoices WHERE id = $1 LIMIT 1',
+    [invoiceId]
+  );
+  const totalAmount = Number(invoiceResult.rows[0]?.total_amount ?? 0);
+  const collectedResult = await db.query<{ collected_amount: number | string }>(
+    `
+      SELECT COALESCE(SUM(amount), 0) AS collected_amount
+      FROM collections
+      WHERE invoice_id = $1
+    `,
+    [invoiceId]
+  );
+  const collectedAmount = Number(collectedResult.rows[0]?.collected_amount ?? 0);
+  const paymentStatus = collectedAmount <= 0
+    ? 'pending'
+    : collectedAmount < totalAmount
+      ? 'partial'
+      : 'completed';
+
   await db.query(
     `
       UPDATE invoices
       SET
-        payment_status = CASE
-          WHEN summary.collected_amount <= 0 THEN 'pending'::payment_status
-          WHEN summary.collected_amount < invoices.total_amount THEN 'partial'::payment_status
-          ELSE 'completed'::payment_status
-        END,
+        payment_status = $1,
         updated_at = now()
-      FROM (
-        SELECT i.id, COALESCE(SUM(c.amount), 0) AS collected_amount
-        FROM invoices i
-        LEFT JOIN collections c ON c.invoice_id = i.id
-        WHERE i.id = $1
-        GROUP BY i.id
-      ) AS summary
-      WHERE invoices.id = summary.id AND invoices.invoice_status = 'active'
+      WHERE id = $2 AND invoice_status = 'active'
     `,
-    [invoiceId]
+    [paymentStatus, invoiceId]
   );
 }
 
@@ -220,7 +229,7 @@ async function loadCollectionLedgerRow(db: Queryable, collectionId: string): Pro
         col.id,
         col.collection_number,
         col.invoice_id,
-        col.amount::text AS amount,
+        col.amount AS amount,
         inv.invoice_number,
         inv.customer_id,
         inv.invoice_type
@@ -228,7 +237,6 @@ async function loadCollectionLedgerRow(db: Queryable, collectionId: string): Pro
       JOIN invoices inv ON inv.id = col.invoice_id
       WHERE col.id = $1
       LIMIT 1
-      FOR UPDATE OF col, inv
     `,
     [collectionId]
   );
@@ -276,6 +284,7 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
 
     const invoice = await ensureInvoiceSettleable(client, String(payload.invoice_id));
     const amount = Number(payload.amount);
+    const collectionId = randomUUID();
     const collectionNumber = await generateNextCode(client, {
       table: 'collections',
       column: 'collection_number',
@@ -285,15 +294,16 @@ router.post('/', authRequired, roleCheck(['admin', 'manager', 'accountant']), as
     const result = await client.query(
       `
         INSERT INTO collections (
-          collection_number, collection_date, invoice_id, amount, payment_mode,
+          id, collection_number, collection_date, invoice_id, amount, payment_mode,
           reference_number, bank_name, remarks, created_by
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, $8, $9
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, $10
         )
         RETURNING *
       `,
       [
+        collectionId,
         collectionNumber,
         payload.collection_date,
         payload.invoice_id,
@@ -342,7 +352,7 @@ router.put('/:id', authRequired, roleCheck(['admin', 'manager', 'accountant']), 
     return;
   }
 
-  const client = await pool.connect();
+    const client = await pool.connect();
   try {
     await client.query('BEGIN');
 

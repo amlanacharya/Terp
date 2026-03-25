@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { QueryResultRow } from 'pg';
 import { Router } from 'express';
 import pool, { query } from '../config/db';
@@ -365,24 +366,25 @@ async function createOrUpdateManualInvoice(
       [...update.values, invoiceId]
     );
   } else {
-    const result = await db.query<{ id: string }>(
+    invoiceId = randomUUID();
+    await db.query(
       `
         INSERT INTO invoices (
-          invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
+          id, invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
           booking_date, duty_type_label, nature_of_journey, vehicle_number, vehicle_type_label,
           duty_slip_number, total_km, total_hours, payment_terms_days, interest_note,
           subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
           payment_status, due_date, remarks, created_by
         ) VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20,
-          $21, $22, $23, $24
+          $1, $2, $3, $4, $5, $6,
+          $7, $8, $9, $10, $11,
+          $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21,
+          $22, $23, $24, $25
         )
-        RETURNING id
       `,
       [
+        invoiceId,
         payload.invoice_number,
         payload.invoice_date,
         payload.customer_id,
@@ -409,22 +411,21 @@ async function createOrUpdateManualInvoice(
         userId,
       ]
     );
-
-    invoiceId = result.rows[0].id;
   }
 
-  const itemResult = await db.query<{ id: string }>(
+  const invoiceItemId = randomUUID();
+  await db.query(
     `
       INSERT INTO invoice_items (
-        invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
+        id, invoice_id, trip_id, annexure_id, description, hsn_code, quantity, rate, amount,
         cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
       ) VALUES (
-        $1, NULL, NULL, $2, $3, 1, $4, $5,
-        $6, $7, $8, $9, $10, $11, $12
+        $1, $2, NULL, NULL, $3, $4, 1, $5, $6,
+        $7, $8, $9, $10, $11, $12, $13
       )
-      RETURNING id
     `,
     [
+      invoiceItemId,
       invoiceId,
       'Manual invoice amount',
       taxCalculation.items[0].hsn_code,
@@ -442,7 +443,7 @@ async function createOrUpdateManualInvoice(
 
   await persistInvoiceTaxSnapshots(db, {
     invoiceId,
-    items: [{ invoiceItemId: itemResult.rows[0].id, tax: taxCalculation.items[0] }],
+    items: [{ invoiceItemId, tax: taxCalculation.items[0] }],
     taxComponents: taxCalculation.tax_components,
   });
 
@@ -921,7 +922,7 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
               ), 0)::text AS total_collected
        FROM invoices i
        WHERE i.id = $1
-       FOR UPDATE OF i`,
+      `,
       [invoiceId]
     );
 
@@ -951,33 +952,34 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
     if (collectedAmount > 0) {
       creditNoteNumber = await generateCreditNoteNumber(client);
       const cnRemarks = `Credit note for refund received on voided invoice ${inv.invoice_number}.${reason ? ` Reason: ${reason}` : ''}`;
+      const nextCreditNoteId = randomUUID();
 
-      const cnResult = await client.query<{ id: string }>(
-        `INSERT INTO invoices (
-           invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
+      await client.query(
+         `INSERT INTO invoices (
+           id, invoice_number, invoice_date, customer_id, billing_address, customer_gstin,
            subtotal, cgst_amount, sgst_amount, igst_amount, total_amount,
            payment_status, due_date, remarks,
            invoice_type, reference_invoice_id, invoice_status, created_by
          ) SELECT
-           $2, CURRENT_DATE, customer_id, billing_address, customer_gstin,
+           $1, $2, CURRENT_DATE, customer_id, billing_address, customer_gstin,
            $3, 0, 0, 0, $3,
            'pending', CURRENT_DATE, $4,
            'credit_note', id, 'active', $5
-         FROM invoices WHERE id = $1
-         RETURNING id`,
-        [invoiceId, creditNoteNumber, collectedAmount, cnRemarks, req.user?.id ?? null]
+         FROM invoices WHERE id = $6
+        `,
+        [nextCreditNoteId, creditNoteNumber, collectedAmount, cnRemarks, req.user?.id ?? null, invoiceId]
       );
-      creditNoteId = cnResult.rows[0].id;
+      creditNoteId = nextCreditNoteId;
 
       await client.query(
         `INSERT INTO invoice_items (
-           invoice_id, description, hsn_code, quantity, rate, amount,
+           id, invoice_id, description, hsn_code, quantity, rate, amount,
            cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount
          ) VALUES (
-           $1, $2, NULL, 1, $3, $3,
-           0, 0, 0, 0, 0, 0, $3
+           $1, $2, $3, NULL, 1, $4, $4,
+           0, 0, 0, 0, 0, 0, $4
          )`,
-        [creditNoteId, `Refund credit for voided invoice ${inv.invoice_number}`, collectedAmount]
+        [randomUUID(), creditNoteId, `Refund credit for voided invoice ${inv.invoice_number}`, collectedAmount]
       );
     }
 
@@ -990,9 +992,10 @@ router.post('/:id/void', authRequired, roleCheck(['admin', 'manager']), async (r
       itemResult.rows.map((r) => r.annexure_id).filter((v): v is string => Boolean(v))
     ));
     if (annexureIds.length > 0) {
+      const placeholders = annexureIds.map((_, index) => `$${index + 1}`).join(', ');
       await client.query(
-        'UPDATE annexures SET is_billed = false, invoice_id = NULL, updated_at = now() WHERE id = ANY($1::uuid[])',
-        [annexureIds]
+        `UPDATE annexures SET is_billed = false, invoice_id = NULL, updated_at = now() WHERE id IN (${placeholders})`,
+        annexureIds
       );
     }
 
@@ -1085,7 +1088,6 @@ router.post('/:id/write-off', authRequired, roleCheck(['admin']), async (req, re
         FROM invoices i
         WHERE i.id = $1
         LIMIT 1
-        FOR UPDATE OF i
       `,
       [invoiceId]
     );
@@ -1178,7 +1180,7 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
       customer_id: string;
       invoice_number: string;
       total_amount: string;
-    }>('SELECT id, customer_id, invoice_number, total_amount::text AS total_amount FROM invoices WHERE id = $1 LIMIT 1 FOR UPDATE', [invoiceId]);
+    }>('SELECT id, customer_id, invoice_number, total_amount::text AS total_amount FROM invoices WHERE id = $1 LIMIT 1', [invoiceId]);
     const invoice = invoiceResult.rows[0];
     if (!invoice) {
       await client.query('ROLLBACK');
@@ -1186,8 +1188,8 @@ router.delete('/:id', authRequired, roleCheck(['admin', 'manager']), async (req,
       return;
     }
 
-    const collectionCheck = await client.query<{ count: string }>(
-      'SELECT COUNT(*)::text AS count FROM collections WHERE invoice_id = $1',
+    const collectionCheck = await client.query<{ count: number | string }>(
+      'SELECT COUNT(*) AS count FROM collections WHERE invoice_id = $1',
       [invoiceId]
     );
     if (Number(collectionCheck.rows[0]?.count) > 0) {

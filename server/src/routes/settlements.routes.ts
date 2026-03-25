@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { query } from '../config/db';
 import { authRequired, roleCheck } from '../middleware/auth';
@@ -48,9 +49,9 @@ async function getSettlementSettings(): Promise<Record<string, string>> {
     `
       SELECT setting_key, setting_value
       FROM system_settings
-      WHERE setting_key = ANY($1)
+      WHERE setting_key IN ($1, $2)
     `,
-    [['company_name', 'company_address']]
+    ['company_name', 'company_address']
   );
 
   return Object.fromEntries(result.rows.map((row) => [row.setting_key, row.setting_value])) as Record<string, string>;
@@ -86,15 +87,16 @@ router.post('/drivers', authRequired, roleCheck(['admin', 'manager', 'accountant
     const result = await query(
       `
         INSERT INTO driver_settlements (
-          settlement_number, driver_id, period_from, period_to, total_trips, total_km, total_allowance,
+          id, settlement_number, driver_id, period_from, period_to, total_trips, total_km, total_allowance,
           advances, deductions, net_amount, payment_mode, payment_date, reference_number, status, remarks, created_by
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11, $12, $13, $14, $15, $16
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13, $14, $15, $16, $17
         )
         RETURNING *
       `,
       [
+        randomUUID(),
         payload.settlement_number,
         payload.driver_id,
         payload.period_from,
@@ -304,15 +306,16 @@ router.post('/owners', authRequired, roleCheck(['admin', 'manager', 'accountant'
     const result = await query(
       `
         INSERT INTO owner_settlements (
-          settlement_number, owner_id, vehicle_id, period_from, period_to, total_trips, total_km, total_amount,
+          id, settlement_number, owner_id, vehicle_id, period_from, period_to, total_trips, total_km, total_amount,
           tds_amount, other_deductions, net_amount, payment_mode, payment_date, reference_number, status, remarks, created_by
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13, $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14, $15, $16, $17, $18
         )
         RETURNING *
       `,
       [
+        randomUUID(),
         payload.settlement_number,
         payload.owner_id,
         payload.vehicle_id ?? null,

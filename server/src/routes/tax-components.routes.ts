@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { query } from '../config/db';
+import { randomUUID } from 'crypto';
+import { getDb, query } from '../config/db-sqlite';
 import { authRequired, roleCheck } from '../middleware/auth';
 import { getDeleteErrorMessage } from '../utils/db-errors';
 import { buildUpdateClause, pickDefinedFields } from '../utils/sql';
@@ -45,6 +46,32 @@ function normalizeTaxComponentPayload(payload: Record<string, unknown>) {
   return normalized;
 }
 
+function getTaxComponentById(id: string) {
+  return getDb()
+    .prepare(
+      `
+        SELECT
+          id,
+          component_code,
+          name,
+          rate,
+          is_percentage,
+          flat_amount,
+          applies_to,
+          hsn_code,
+          is_active,
+          sort_order,
+          created_at,
+          updated_at,
+          version
+        FROM tax_components
+        WHERE id = $id
+        LIMIT 1
+      `
+    )
+    .get({ id }) as Record<string, unknown> | undefined;
+}
+
 async function loadCompanyGstin(): Promise<string | null> {
   const result = await query<{ setting_value: string }>(
     `
@@ -64,51 +91,48 @@ async function resolveCustomerGstin(body: Record<string, unknown>): Promise<stri
   }
 
   if (typeof body.customer_id === 'string' && body.customer_id.trim().length > 0) {
-    const result = await query<{ gstin: string | null }>('SELECT gstin FROM customers WHERE id = $1 LIMIT 1', [body.customer_id.trim()]);
+    const result = await query<{ gstin: string | null }>('SELECT gstin FROM customers WHERE id = $1 LIMIT 1', [
+      body.customer_id.trim(),
+    ]);
     return result.rows[0]?.gstin ?? null;
   }
 
   return null;
 }
 
-router.get('/', authRequired, async (req, res) => {
+router.get('/', authRequired, (req, res) => {
   try {
-    const includeInactive = req.query.include_inactive === 'true';
-    const values: unknown[] = [];
-    let whereClause = '';
-
-    if (!includeInactive) {
-      values.push(true);
-      whereClause = `WHERE is_active = $${values.length}`;
-    }
-
-    const result = await query(
-      `
-        SELECT
-          id,
-          component_code,
-          name,
-          rate,
-          is_percentage,
-          flat_amount,
-          applies_to,
-          hsn_code,
-          is_active,
-          sort_order,
-          created_at,
-          updated_at
-        FROM tax_components
-        ${whereClause}
-        ORDER BY sort_order ASC, component_code ASC
-      `,
-      values
-    );
+    const includeInactive = String(req.query.include_inactive ?? '') === 'true';
+    const rows = getDb()
+      .prepare(
+        `
+          SELECT
+            id,
+            component_code,
+            name,
+            rate,
+            is_percentage,
+            flat_amount,
+            applies_to,
+            hsn_code,
+            is_active,
+            sort_order,
+            created_at,
+            updated_at,
+            version
+          FROM tax_components
+          ${includeInactive ? '' : 'WHERE is_active = 1'}
+          ORDER BY sort_order ASC, component_code ASC
+        `
+      )
+      .all() as Array<Record<string, unknown>>;
 
     res.json(
-      result.rows.map((row) => ({
+      rows.map((row) => ({
         ...row,
         rate: row.rate == null ? null : Number(row.rate),
         flat_amount: row.flat_amount == null ? null : Number(row.flat_amount),
+        is_active: Boolean(row.is_active),
       }))
     );
   } catch (error) {
@@ -117,31 +141,9 @@ router.get('/', authRequired, async (req, res) => {
   }
 });
 
-router.get('/:id', authRequired, async (req, res) => {
+router.get('/:id', authRequired, (req, res) => {
   try {
-    const result = await query(
-      `
-        SELECT
-          id,
-          component_code,
-          name,
-          rate,
-          is_percentage,
-          flat_amount,
-          applies_to,
-          hsn_code,
-          is_active,
-          sort_order,
-          created_at,
-          updated_at
-        FROM tax_components
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [req.params.id]
-    );
-
-    const row = result.rows[0];
+    const row = getTaxComponentById(String(req.params.id));
     if (!row) {
       res.status(404).json({ message: 'Tax component not found.' });
       return;
@@ -151,6 +153,7 @@ router.get('/:id', authRequired, async (req, res) => {
       ...row,
       rate: row.rate == null ? null : Number(row.rate),
       flat_amount: row.flat_amount == null ? null : Number(row.flat_amount),
+      is_active: Boolean(row.is_active),
     });
   } catch (error) {
     console.error('Fetching tax component failed:', error);
@@ -188,7 +191,7 @@ router.post('/preview', authRequired, roleCheck(['admin', 'manager', 'accountant
   }
 });
 
-router.post('/', authRequired, roleCheck(['admin', 'accountant']), async (req, res) => {
+router.post('/', authRequired, roleCheck(['admin', 'accountant']), (req, res) => {
   const payload = normalizeTaxComponentPayload(pickDefinedFields(req.body as Record<string, unknown>, taxComponentFields));
   if (!payload.component_code || !payload.name || payload.is_percentage === undefined || !payload.applies_to) {
     res.status(400).json({ message: 'Missing required tax component fields.' });
@@ -196,32 +199,37 @@ router.post('/', authRequired, roleCheck(['admin', 'accountant']), async (req, r
   }
 
   try {
-    const result = await query(
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    getDb().prepare(
       `
         INSERT INTO tax_components (
-          component_code, name, rate, is_percentage, flat_amount, applies_to, hsn_code, is_active, sort_order
+          id, component_code, name, rate, is_percentage, flat_amount, applies_to, hsn_code, is_active, sort_order, created_at, updated_at, version
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9
+          $id, $component_code, $name, $rate, $is_percentage, $flat_amount, $applies_to, $hsn_code, $is_active, $sort_order, $created_at, $updated_at, 1
         )
-        RETURNING *
-      `,
-      [
-        payload.component_code,
-        payload.name,
-        payload.rate ?? null,
-        payload.is_percentage,
-        payload.flat_amount ?? null,
-        payload.applies_to,
-        payload.hsn_code ?? null,
-        payload.is_active ?? true,
-        payload.sort_order ?? 0,
-      ]
-    );
+      `
+    ).run({
+      id,
+      component_code: payload.component_code,
+      name: payload.name,
+      rate: payload.rate ?? null,
+      is_percentage: payload.is_percentage,
+      flat_amount: payload.flat_amount ?? null,
+      applies_to: payload.applies_to,
+      hsn_code: payload.hsn_code ?? null,
+      is_active: payload.is_active ?? true,
+      sort_order: payload.sort_order ?? 0,
+      created_at: now,
+      updated_at: now,
+    });
 
+    const result = getTaxComponentById(id);
     res.status(201).json({
-      ...result.rows[0],
-      rate: result.rows[0].rate == null ? null : Number(result.rows[0].rate),
-      flat_amount: result.rows[0].flat_amount == null ? null : Number(result.rows[0].flat_amount),
+      ...result,
+      rate: result?.rate == null ? null : Number(result.rate),
+      flat_amount: result?.flat_amount == null ? null : Number(result.flat_amount),
+      is_active: Boolean(result?.is_active),
     });
   } catch (error) {
     console.error('Creating tax component failed:', error);
@@ -229,34 +237,59 @@ router.post('/', authRequired, roleCheck(['admin', 'accountant']), async (req, r
   }
 });
 
-router.put('/:id', authRequired, roleCheck(['admin', 'accountant']), async (req, res) => {
+router.put('/:id', authRequired, roleCheck(['admin', 'accountant']), (req, res) => {
   const payload = normalizeTaxComponentPayload(pickDefinedFields(req.body as Record<string, unknown>, taxComponentFields));
   if (Object.keys(payload).length === 0) {
     res.status(400).json({ message: 'No tax component fields supplied for update.' });
     return;
   }
 
-  try {
-    const update = buildUpdateClause(payload);
-    const result = await query(
-      `
-        UPDATE tax_components
-        SET ${update.clause}, updated_at = now()
-        WHERE id = $${update.values.length + 1}
-        RETURNING *
-      `,
-      [...update.values, req.params.id]
-    );
+  const clientVersion = Number((req.body as { version?: unknown }).version);
+  if (!Number.isInteger(clientVersion) || clientVersion < 1) {
+    res.status(400).json({ message: 'version is required for updates.' });
+    return;
+  }
 
-    if (!result.rows[0]) {
+  try {
+    const db = getDb();
+    const existing = db
+      .prepare('SELECT id, version FROM tax_components WHERE id = $id LIMIT 1')
+      .get({ id: String(req.params.id) }) as { id: string; version: number } | undefined;
+
+    if (!existing) {
       res.status(404).json({ message: 'Tax component not found.' });
       return;
     }
 
+    if (existing.version !== clientVersion) {
+      res.status(409).json({ message: 'Tax component was updated by another user.' });
+      return;
+    }
+
+    const update = buildUpdateClause(payload);
+    const result = db.prepare(
+      `
+        UPDATE tax_components
+        SET ${update.clause}, updated_at = datetime('now'), version = version + 1
+        WHERE id = $id AND version = $version
+      `
+    ).run({
+      ...update.params,
+      id: String(req.params.id),
+      version: clientVersion,
+    });
+
+    if (result.changes === 0) {
+      res.status(409).json({ message: 'Tax component was updated by another user.' });
+      return;
+    }
+
+    const updated = getTaxComponentById(String(req.params.id));
     res.json({
-      ...result.rows[0],
-      rate: result.rows[0].rate == null ? null : Number(result.rows[0].rate),
-      flat_amount: result.rows[0].flat_amount == null ? null : Number(result.rows[0].flat_amount),
+      ...updated,
+      rate: updated?.rate == null ? null : Number(updated.rate),
+      flat_amount: updated?.flat_amount == null ? null : Number(updated.flat_amount),
+      is_active: Boolean(updated?.is_active),
     });
   } catch (error) {
     console.error('Updating tax component failed:', error);
@@ -264,10 +297,10 @@ router.put('/:id', authRequired, roleCheck(['admin', 'accountant']), async (req,
   }
 });
 
-router.delete('/:id', authRequired, roleCheck(['admin', 'accountant']), async (req, res) => {
+router.delete('/:id', authRequired, roleCheck(['admin', 'accountant']), (req, res) => {
   try {
-    const result = await query('DELETE FROM tax_components WHERE id = $1 RETURNING id', [req.params.id]);
-    if (!result.rows[0]) {
+    const result = getDb().prepare('DELETE FROM tax_components WHERE id = $id').run({ id: String(req.params.id) });
+    if (result.changes === 0) {
       res.status(404).json({ message: 'Tax component not found.' });
       return;
     }

@@ -42,7 +42,8 @@
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico",
     "perMachine": false,
-    "runAfterFinish": true
+    "runAfterFinish": true,
+    "installerScript": "build/installer.nsi"
   },
   "publish": {
     "provider": "generic",

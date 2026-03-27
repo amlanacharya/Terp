@@ -1,0 +1,50 @@
+{
+  "appId": "com.travelerp.lite",
+  "productName": "TravelERP Lite",
+  "copyright": "Copyright © 2026",
+  "directories": {
+    "output": "dist/installer",
+    "buildResources": "build"
+  },
+  "files": [
+    "electron/**/*",
+    "dist/**/*",
+    "server/dist/**/*",
+    "server/node_modules/pg/**/*",
+    "server/node_modules/pdfkit/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "resources/postgresql",
+      "to": "pgsql",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.ico",
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "TravelERP Lite",
+    "uninstallDisplayName": "TravelERP Lite",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "perMachine": false,
+    "runAfterFinish": true
+  },
+  "publish": {
+    "provider": "generic",
+    "url": "https://updates.travelerp.com/releases"
+  }
+}

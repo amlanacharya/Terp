@@ -1,7 +1,9 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "travelerp-lite",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "TravelERP Lite - Desktop Application for Travel Business Management",
+  "author": "TravelERP Team",
   "type": "module",
   "scripts": {
     "dev": "vite",

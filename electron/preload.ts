@@ -27,5 +27,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // License Management
   licenseValidate: () => ipcRenderer.invoke('license-validate'),
   licenseActivate: (productKey: string) => ipcRenderer.invoke('license-activate', productKey),
-  licenseInfo: () => ipcRenderer.invoke('license-info')
+  licenseInfo: () => ipcRenderer.invoke('license-info'),
+
+  // Auto-Updater Operations
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getCurrentVersion: () => ipcRenderer.invoke('get-current-version'),
+
+  // Update Event Listeners
+  onUpdateAvailable: (callback: (info: any) => void) => {
+    const handler = (_event: any, info: any) => callback(info);
+    ipcRenderer.on('update-available', handler);
+    return () => ipcRenderer.removeListener('update-available', handler);
+  },
+  onUpdateNotAvailable: (callback: (info: any) => void) => {
+    const handler = (_event: any, info: any) => callback(info);
+    ipcRenderer.on('update-not-available', handler);
+    return () => ipcRenderer.removeListener('update-not-available', handler);
+  },
+  onUpdateDownloadProgress: (callback: (progress: any) => void) => {
+    const handler = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on('update-download-progress', handler);
+    return () => ipcRenderer.removeListener('update-download-progress', handler);
+  },
+  onUpdateDownloaded: (callback: (info: any) => void) => {
+    const handler = (_event: any, info: any) => callback(info);
+    ipcRenderer.on('update-downloaded', handler);
+    return () => ipcRenderer.removeListener('update-downloaded', handler);
+  },
+  onUpdateError: (callback: (error: any) => void) => {
+    const handler = (_event: any, error: any) => callback(error);
+    ipcRenderer.on('update-error', handler);
+    return () => ipcRenderer.removeListener('update-error', handler);
+  }
 });

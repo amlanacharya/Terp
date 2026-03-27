@@ -3,6 +3,17 @@ import { BackupManager } from './backup-manager';
 import { PostgresService } from './postgres-service';
 import { LicenseManager } from './license-manager';
 
+// Global reference to auto-updater manager (set by main.ts)
+let autoUpdaterManager: any = null;
+
+/**
+ * Set the auto-updater manager instance
+ * Called from main.ts after creating the updater
+ */
+export function setAutoUpdaterManager(updater: any): void {
+  autoUpdaterManager = updater;
+}
+
 /**
  * Register IPC handlers for main-renderer communication
  *
@@ -276,6 +287,106 @@ export function registerIPCHandlers(): void {
       return { success: true, license };
     } catch (error) {
       console.error('[IPC] license-info failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  // ========================================
+  // Auto-Updater Handlers
+  // ========================================
+
+  /**
+   * Check for updates
+   * Returns: Success status
+   */
+  ipcMain.handle('check-for-updates', async () => {
+    if (!autoUpdaterManager) {
+      return {
+        success: false,
+        error: 'Auto-updater not initialized'
+      };
+    }
+
+    try {
+      await autoUpdaterManager.checkForUpdates();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] check-for-updates failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  /**
+   * Download available update
+   * Returns: Success status
+   */
+  ipcMain.handle('download-update', async () => {
+    if (!autoUpdaterManager) {
+      return {
+        success: false,
+        error: 'Auto-updater not initialized'
+      };
+    }
+
+    try {
+      await autoUpdaterManager.downloadUpdate();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] download-update failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  /**
+   * Install update and restart application
+   * Returns: Success status (though app will restart immediately)
+   */
+  ipcMain.handle('install-update', async () => {
+    if (!autoUpdaterManager) {
+      return {
+        success: false,
+        error: 'Auto-updater not initialized'
+      };
+    }
+
+    try {
+      await autoUpdaterManager.installAndRestart();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] install-update failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  /**
+   * Get current application version
+   * Returns: Version string
+   */
+  ipcMain.handle('get-current-version', async () => {
+    if (!autoUpdaterManager) {
+      return {
+        success: false,
+        error: 'Auto-updater not initialized'
+      };
+    }
+
+    try {
+      const version = autoUpdaterManager.getCurrentVersion();
+      return { success: true, version };
+    } catch (error) {
+      console.error('[IPC] get-current-version failed:', error);
       return {
         success: false,
         error: (error as Error).message

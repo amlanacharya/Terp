@@ -36,6 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const backend_manager_1 = require("./backend-manager");
+const postgres_service_1 = require("./postgres-service");
+const scheduled_backup_1 = require("./scheduled-backup");
+const auto_updater_1 = require("./auto-updater");
 const ipc_handlers_1 = require("./ipc-handlers");
 /**
  * TravelERP Lite - Electron Main Process
@@ -45,6 +48,9 @@ const ipc_handlers_1 = require("./ipc-handlers");
  */
 let mainWindow;
 let backendManager;
+let postgresService;
+let scheduledBackupService;
+let autoUpdaterManager;
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -52,14 +58,37 @@ process.on('unhandledRejection', (reason, promise) => {
 electron_1.app.on('ready', async () => {
     // Register IPC handlers for main-renderer communication
     (0, ipc_handlers_1.registerIPCHandlers)();
+    postgresService = new postgres_service_1.PostgresService();
     backendManager = new backend_manager_1.BackendManager();
+    scheduledBackupService = new scheduled_backup_1.ScheduledBackupService();
     try {
-        // Start backend first, wait for it to be ready
+        // Start PostgreSQL first, wait for it to be ready
+        console.log('[Main] Starting PostgreSQL service...');
+        await postgresService.start();
+        console.log('[Main] PostgreSQL started successfully');
+        // Start backend, wait for it to be ready
         console.log('[Main] Starting backend server...');
         await backendManager.start();
         console.log('[Main] Backend started successfully');
+        // Start scheduled backup service
+        console.log('[Main] Starting scheduled backup service...');
+        scheduledBackupService.start();
+        console.log('[Main] Scheduled backup service started');
         // Then create and show the main window
         createMainWindow();
+        // Initialize auto-updater after window is created
+        console.log('[Main] Initializing auto-updater...');
+        autoUpdaterManager = new auto_updater_1.AutoUpdaterManager(mainWindow);
+        // Set the auto-updater manager instance for IPC handlers
+        const { setAutoUpdaterManager } = require('./ipc-handlers');
+        setAutoUpdaterManager(autoUpdaterManager);
+        // Check for updates on startup (after a short delay to not slow down startup)
+        setTimeout(() => {
+            console.log('[Main] Checking for updates...');
+            autoUpdaterManager.checkForUpdates().catch(error => {
+                console.error('[Main] Failed to check for updates on startup:', error);
+            });
+        }, 5000);
     }
     catch (error) {
         console.error('[Main] Failed to start app:', error);
@@ -111,11 +140,19 @@ electron_1.app.on('activate', () => {
         }
     }
 });
-// Clean up backend before app quits
-electron_1.app.on('before-quit', () => {
+// Clean up backend, PostgreSQL, and scheduled backups before app quits
+electron_1.app.on('before-quit', async () => {
+    if (scheduledBackupService) {
+        console.log('[Main] App quitting - stopping scheduled backup service...');
+        scheduledBackupService.stop();
+    }
     if (backendManager) {
         console.log('[Main] App quitting - stopping backend...');
         backendManager.stop();
+    }
+    if (postgresService) {
+        console.log('[Main] App quitting - stopping PostgreSQL...');
+        await postgresService.stop();
     }
 });
 // Handle any uncaught exceptions in the main process

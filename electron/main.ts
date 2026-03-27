@@ -3,6 +3,7 @@ import * as path from 'path';
 import { BackendManager } from './backend-manager';
 import { PostgresService } from './postgres-service';
 import { ScheduledBackupService } from './scheduled-backup';
+import { AutoUpdaterManager } from './auto-updater';
 import { registerIPCHandlers } from './ipc-handlers';
 
 /**
@@ -16,6 +17,7 @@ let mainWindow: BrowserWindow;
 let backendManager: BackendManager;
 let postgresService: PostgresService;
 let scheduledBackupService: ScheduledBackupService;
+let autoUpdaterManager: AutoUpdaterManager;
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -48,6 +50,22 @@ app.on('ready', async () => {
 
     // Then create and show the main window
     createMainWindow();
+
+    // Initialize auto-updater after window is created
+    console.log('[Main] Initializing auto-updater...');
+    autoUpdaterManager = new AutoUpdaterManager(mainWindow);
+
+    // Set the auto-updater manager instance for IPC handlers
+    const { setAutoUpdaterManager } = require('./ipc-handlers');
+    setAutoUpdaterManager(autoUpdaterManager);
+
+    // Check for updates on startup (after a short delay to not slow down startup)
+    setTimeout(() => {
+      console.log('[Main] Checking for updates...');
+      autoUpdaterManager.checkForUpdates().catch(error => {
+        console.error('[Main] Failed to check for updates on startup:', error);
+      });
+    }, 5000);
   } catch (error) {
     console.error('[Main] Failed to start app:', error);
     app.quit();

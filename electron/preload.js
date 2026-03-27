@@ -25,5 +25,36 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     // License Management
     licenseValidate: () => electron_1.ipcRenderer.invoke('license-validate'),
     licenseActivate: (productKey) => electron_1.ipcRenderer.invoke('license-activate', productKey),
-    licenseInfo: () => electron_1.ipcRenderer.invoke('license-info')
+    licenseInfo: () => electron_1.ipcRenderer.invoke('license-info'),
+    // Auto-Updater Operations
+    checkForUpdates: () => electron_1.ipcRenderer.invoke('check-for-updates'),
+    downloadUpdate: () => electron_1.ipcRenderer.invoke('download-update'),
+    installUpdate: () => electron_1.ipcRenderer.invoke('install-update'),
+    getCurrentVersion: () => electron_1.ipcRenderer.invoke('get-current-version'),
+    // Update Event Listeners
+    onUpdateAvailable: (callback) => {
+        const handler = (_event, info) => callback(info);
+        electron_1.ipcRenderer.on('update-available', handler);
+        return () => electron_1.ipcRenderer.removeListener('update-available', handler);
+    },
+    onUpdateNotAvailable: (callback) => {
+        const handler = (_event, info) => callback(info);
+        electron_1.ipcRenderer.on('update-not-available', handler);
+        return () => electron_1.ipcRenderer.removeListener('update-not-available', handler);
+    },
+    onUpdateDownloadProgress: (callback) => {
+        const handler = (_event, progress) => callback(progress);
+        electron_1.ipcRenderer.on('update-download-progress', handler);
+        return () => electron_1.ipcRenderer.removeListener('update-download-progress', handler);
+    },
+    onUpdateDownloaded: (callback) => {
+        const handler = (_event, info) => callback(info);
+        electron_1.ipcRenderer.on('update-downloaded', handler);
+        return () => electron_1.ipcRenderer.removeListener('update-downloaded', handler);
+    },
+    onUpdateError: (callback) => {
+        const handler = (_event, error) => callback(error);
+        electron_1.ipcRenderer.on('update-error', handler);
+        return () => electron_1.ipcRenderer.removeListener('update-error', handler);
+    }
 });

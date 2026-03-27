@@ -2,43 +2,144 @@
   "name": "travelerp-lite",
   "private": true,
   "version": "1.0.0",
-  "description": "TravelERP Lite - Desktop Application for Travel Business Management",
-  "author": "TravelERP Team",
+  "description": "TravelERP Lite - Desktop ERP for Travel Agencies",
+  "author": {
+    "name": "Intelligrip",
+    "email": "info@intelligrup.com"
+  },
+  "main": "dist/electron/main.js",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:frontend": "vite build",
+    "build:backend": "cd server && npm run build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:all": "npm run build:frontend && npm run build:backend && npm run build:electron",
+    "download:postgres": "node scripts/download-postgres.js",
+    "electron:dev": "npm run build:electron && electron .",
+    "electron:build": "electron-builder",
+    "electron:build:win": "npm run build:all && electron-builder --win",
+    "electron:build:linux": "npm run build:all && electron-builder --linux",
+    "electron:build:mac": "npm run build:all && electron-builder --mac",
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "electron:dev": "electron electron/main.js",
-    "electron:build": "cd electron && tsc",
-    "dist": "npm run build && electron-builder"
+    "typecheck:electron": "tsc --noEmit -p electron/tsconfig.json",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:run": "vitest run",
+    "beta-keys": "npx tsx server/src/license/beta-key-generator.ts"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "lucide-react": "^0.577.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "xlsx": "^0.18.5"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
-    "@types/node": "^20.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.10.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "@types/xlsx": "^0.0.35",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^4.1.1",
+    "@vitest/ui": "^4.1.1",
     "autoprefixer": "^10.4.18",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.13.3",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-reload": "^1.5.0",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
+    "jsdom": "^29.0.1",
     "postcss": "^8.4.35",
+    "supertest": "^7.2.2",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "^4.1.1"
+  },
+  "build": {
+    "appId": "com.intelligrip.travelerp-lite",
+    "productName": "TravelERP Lite",
+    "directories": {
+      "output": "dist/installers",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "server/dist/**/*",
+      "build/postgres/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/postgres",
+        "to": "postgres",
+        "filter": [
+          "**/*",
+          "!pgAdmin 4/**",
+          "!StackBuilder/**",
+          "!docs/**",
+          "!include/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeader": "build/header.bmp",
+      "installerSidebar": "build/sidebar.bmp",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.business",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://updates.intelligrip.com/travelerp-lite"
+    }
   }
 }

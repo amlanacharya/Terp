@@ -1,64 +1,104 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-/**
- * Electron API exposed to renderer process
- *
- * This API provides secure communication between the renderer process
- * and the main process for backup, restore, and system operations.
- */
+// Expose protected methods that allow the renderer process to use
+// the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  // App Information
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
-  getAppPaths: () => ipcRenderer.invoke('get-app-paths'),
+  // App info
+  getVersion: () => ipcRenderer.invoke('get-version'),
+  getPath: (name: string) => ipcRenderer.invoke('get-path', name),
 
-  // Backup Operations
-  backupDatabase: () => ipcRenderer.invoke('backup-database'),
-  restoreDatabase: (filePath: string) => ipcRenderer.invoke('restore-database', filePath),
-  listBackups: () => ipcRenderer.invoke('list-backups'),
-  deleteOldBackups: (keepCount?: number) => ipcRenderer.invoke('delete-old-backups', keepCount),
-  getBackupDirectory: () => ipcRenderer.invoke('get-backup-directory'),
+  // License API (will be implemented in Phase 2)
+  license: {
+    validate: (productKey: string) => ipcRenderer.invoke('license:validate', productKey),
+    activate: (productKey: string) => ipcRenderer.invoke('license:activate', productKey),
+    getStatus: () => ipcRenderer.invoke('license:get-status'),
+  },
 
-  // PostgreSQL Service Operations
-  postgresStatus: () => ipcRenderer.invoke('postgres-status'),
-  postgresStart: () => ipcRenderer.invoke('postgres-start'),
-  postgresStop: () => ipcRenderer.invoke('postgres-stop'),
-  postgresRestart: () => ipcRenderer.invoke('postgres-restart'),
+  // Database API (will be implemented in Phase 1)
+  database: {
+    start: () => ipcRenderer.invoke('database:start'),
+    stop: () => ipcRenderer.invoke('database:stop'),
+    getStatus: () => ipcRenderer.invoke('database:get-status'),
+  },
 
-  // License Management
-  licenseValidate: () => ipcRenderer.invoke('license-validate'),
-  licenseActivate: (productKey: string) => ipcRenderer.invoke('license-activate', productKey),
-  licenseInfo: () => ipcRenderer.invoke('license-info'),
+  // Update API (implemented in Phase 4)
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    getCurrentVersion: () => ipcRenderer.invoke('update:get-current-version'),
+    isAvailable: () => ipcRenderer.invoke('update:is-available'),
+    onEvent: (callback: (event: string, data: any) => void) => {
+      ipcRenderer.on('auto-updater-event', (_event, data) => callback(data.event, data.data));
+    },
+    onUpdateReady: (callback: (info: any) => void) => {
+      ipcRenderer.on('update-ready-to-install', (_event, info) => callback(info));
+    },
+  },
 
-  // Auto-Updater Operations
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-  downloadUpdate: () => ipcRenderer.invoke('download-update'),
-  installUpdate: () => ipcRenderer.invoke('install-update'),
-  getCurrentVersion: () => ipcRenderer.invoke('get-current-version'),
+  // System info
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 
-  // Update Event Listeners
+  // Legacy event handlers (deprecated, use update.onEvent instead)
   onUpdateAvailable: (callback: (info: any) => void) => {
-    const handler = (_event: any, info: any) => callback(info);
-    ipcRenderer.on('update-available', handler);
-    return () => ipcRenderer.removeListener('update-available', handler);
-  },
-  onUpdateNotAvailable: (callback: (info: any) => void) => {
-    const handler = (_event: any, info: any) => callback(info);
-    ipcRenderer.on('update-not-available', handler);
-    return () => ipcRenderer.removeListener('update-not-available', handler);
-  },
-  onUpdateDownloadProgress: (callback: (progress: any) => void) => {
-    const handler = (_event: any, progress: any) => callback(progress);
-    ipcRenderer.on('update-download-progress', handler);
-    return () => ipcRenderer.removeListener('update-download-progress', handler);
+    ipcRenderer.on('update-available', (_event, info) => callback(info));
   },
   onUpdateDownloaded: (callback: (info: any) => void) => {
-    const handler = (_event: any, info: any) => callback(info);
-    ipcRenderer.on('update-downloaded', handler);
-    return () => ipcRenderer.removeListener('update-downloaded', handler);
+    ipcRenderer.on('update-downloaded', (_event, info) => callback(info));
   },
-  onUpdateError: (callback: (error: any) => void) => {
-    const handler = (_event: any, error: any) => callback(error);
-    ipcRenderer.on('update-error', handler);
-    return () => ipcRenderer.removeListener('update-error', handler);
-  }
 });
+
+// Type definitions for the exposed API
+export interface ElectronAPI {
+  getVersion: () => Promise<string>;
+  getPath: (name: string) => Promise<string>;
+
+  license: {
+    validate: (productKey: string) => Promise<{ valid: boolean; type?: string; error?: string }>;
+    activate: (productKey: string) => Promise<{ success: boolean; expiryDate?: string; error?: string }>;
+    getStatus: () => Promise<{
+      status: 'active' | 'grace' | 'readonly' | 'expired';
+      expiryDate: string;
+      daysRemaining: number;
+    }>;
+  };
+
+  database: {
+    start: () => Promise<boolean>;
+    stop: () => Promise<boolean>;
+    getStatus: () => Promise<{ running: boolean; port: number }>;
+  };
+
+  update: {
+    check: () => Promise<UpdateStatus>;
+    download: () => Promise<void>;
+    install: () => Promise<void>;
+    getCurrentVersion: () => Promise<string>;
+    isAvailable: () => Promise<boolean>;
+    onEvent: (callback: (event: string, data: any) => void) => void;
+    onUpdateReady: (callback: (info: any) => void) => void;
+  };
+
+  getSystemInfo: () => Promise<{
+    platform: string;
+    arch: string;
+    version: string;
+  }>;
+
+  onUpdateAvailable: (callback: (info: any) => void) => void;
+  onUpdateDownloaded: (callback: (info: any) => void) => void;
+}
+
+export interface UpdateStatus {
+  available: boolean;
+  version: string;
+  releaseDate: string;
+  downloaded: boolean;
+  error?: string;
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}

@@ -1,143 +1,172 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
-import { BackendManager } from './backend-manager';
-import { PostgresService } from './postgres-service';
-import { ScheduledBackupService } from './scheduled-backup';
-import { AutoUpdaterManager } from './auto-updater';
-import { registerIPCHandlers } from './ipc-handlers';
+import { fileURLToPath } from 'url';
+import { ServerManager } from './server-manager.js';
+import { WindowManager } from './window-manager.js';
+import { getAutoUpdaterService } from './auto-updater.js';
 
-/**
- * TravelERP Lite - Electron Main Process
- *
- * This is the main entry point for the Electron application.
- * It creates the main window and manages the application lifecycle.
- */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-let mainWindow: BrowserWindow;
-let backendManager: BackendManager;
-let postgresService: PostgresService;
-let scheduledBackupService: ScheduledBackupService;
-let autoUpdaterManager: AutoUpdaterManager;
+const isProduction = process.env.NODE_ENV === 'production';
+const serverManager = new ServerManager(isProduction);
+const windowManager = new WindowManager();
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
+// Prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock();
 
-app.on('ready', async () => {
-  // Register IPC handlers for main-renderer communication
-  registerIPCHandlers();
-
-  postgresService = new PostgresService();
-  backendManager = new BackendManager();
-  scheduledBackupService = new ScheduledBackupService();
-
-  try {
-    // Start PostgreSQL first, wait for it to be ready
-    console.log('[Main] Starting PostgreSQL service...');
-    await postgresService.start();
-    console.log('[Main] PostgreSQL started successfully');
-
-    // Start backend, wait for it to be ready
-    console.log('[Main] Starting backend server...');
-    await backendManager.start();
-    console.log('[Main] Backend started successfully');
-
-    // Start scheduled backup service
-    console.log('[Main] Starting scheduled backup service...');
-    scheduledBackupService.start();
-    console.log('[Main] Scheduled backup service started');
-
-    // Then create and show the main window
-    createMainWindow();
-
-    // Initialize auto-updater after window is created
-    console.log('[Main] Initializing auto-updater...');
-    autoUpdaterManager = new AutoUpdaterManager(mainWindow);
-
-    // Set the auto-updater manager instance for IPC handlers
-    const { setAutoUpdaterManager } = require('./ipc-handlers');
-    setAutoUpdaterManager(autoUpdaterManager);
-
-    // Check for updates on startup (after a short delay to not slow down startup)
-    setTimeout(() => {
-      console.log('[Main] Checking for updates...');
-      autoUpdaterManager.checkForUpdates().catch(error => {
-        console.error('[Main] Failed to check for updates on startup:', error);
-      });
-    }, 5000);
-  } catch (error) {
-    console.error('[Main] Failed to start app:', error);
-    app.quit();
-  }
-});
-
-function createMainWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    title: 'TravelERP Lite',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Someone tried to run a second instance
+    const mainWindow = windowManager.getMainWindow();
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
-  });
-
-  // Load React app
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools();
-  } else {
-    // Note: This path will be updated in Task 1.2 when electron-builder is configured
-    // The packaged app will use a different path structure
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
-
-  // Handle window closed errors
-  mainWindow.on('unresponsive', () => {
-    console.error('Main window became unresponsive');
   });
 }
 
-app.on('window-all-closed', () => {
-  // On Windows/Linux, quit when all windows closed
-  // On macOS, keep app running (standard macOS behavior)
-  if (process.platform !== 'darwin') {
+// This method will be called when Electron has finished initialization
+app.whenReady().then(async () => {
+  try {
+    // Start Express server first
+    console.log('Starting TravelERP Lite...');
+    const serverStarted = await serverManager.start();
+
+    if (!serverStarted) {
+      console.error('Failed to start Express server');
+      // Show error dialog
+      app.quit();
+      return;
+    }
+
+    // Create main window after server is ready
+    const mainWindow = windowManager.createMainWindow();
+
+    // Initialize auto-updater
+    const autoUpdaterService = getAutoUpdaterService();
+    autoUpdaterService.setMainWindow(mainWindow);
+
+    // Setup IPC handlers
+    setupIpcHandlers();
+
+    // Check for updates on startup (only in production)
+    if (isProduction) {
+      // Delay check to avoid slowing down app startup
+      setTimeout(() => {
+        autoUpdaterService.checkForUpdates().catch(console.error);
+      }, 30000); // Check after 30 seconds
+    }
+
+    app.on('activate', () => {
+      // On macOS, re-create window when dock icon is clicked
+      if (BrowserWindow.getAllWindows().length === 0) {
+        windowManager.createMainWindow();
+      }
+    });
+  } catch (error) {
+    console.error('Error during app startup:', error);
     app.quit();
   }
 });
 
-// Handle macOS dock click (recreate window if all windows closed)
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    try {
-      createMainWindow();
-    } catch (error) {
-      console.error('Failed to recreate window on activate:', error);
-    }
+// Quit when all windows are closed
+app.on('window-all-closed', async () => {
+  // On macOS, keep app running even when all windows are closed
+  if (process.platform !== 'darwin') {
+    // Stop server before quitting
+    await serverManager.stop();
+    app.quit();
   }
 });
 
-// Clean up backend, PostgreSQL, and scheduled backups before app quits
 app.on('before-quit', async () => {
-  if (scheduledBackupService) {
-    console.log('[Main] App quitting - stopping scheduled backup service...');
-    scheduledBackupService.stop();
-  }
-  if (backendManager) {
-    console.log('[Main] App quitting - stopping backend...');
-    backendManager.stop();
-  }
-  if (postgresService) {
-    console.log('[Main] App quitting - stopping PostgreSQL...');
-    await postgresService.stop();
-  }
+  // Stop server before quitting
+  await serverManager.stop();
 });
 
-// Handle any uncaught exceptions in the main process
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  // Log but don't crash - let the app try to continue
-});
+function setupIpcHandlers(): void {
+  // Version info
+  ipcMain.handle('get-version', () => {
+    return app.getVersion();
+  });
+
+  // Path info
+  ipcMain.handle('get-path', async (_event, name: string) => {
+    return app.getPath(name as any);
+  });
+
+  // Database control (placeholder for Phase 1 Day 3)
+  ipcMain.handle('database:start', async () => {
+    // TODO: Implement PostgreSQL service management
+    return true;
+  });
+
+  ipcMain.handle('database:stop', async () => {
+    // TODO: Implement PostgreSQL service management
+    return true;
+  });
+
+  ipcMain.handle('database:get-status', async () => {
+    // TODO: Implement PostgreSQL service status check
+    return { running: false, port: 5432 };
+  });
+
+  // License control (placeholder for Phase 2)
+  ipcMain.handle('license:validate', async (_event, productKey: string) => {
+    // TODO: Implement license validation
+    return { valid: false, error: 'Not implemented yet' };
+  });
+
+  ipcMain.handle('license:activate', async (_event, productKey: string) => {
+    // TODO: Implement license activation
+    return { success: false, error: 'Not implemented yet' };
+  });
+
+  ipcMain.handle('license:get-status', async () => {
+    // TODO: Implement license status check
+    return {
+      status: 'active',
+      expiryDate: new Date().toISOString(),
+      daysRemaining: 30,
+    };
+  });
+
+  // Update control
+  ipcMain.handle('update:check', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.checkForUpdates();
+  });
+
+  ipcMain.handle('update:download', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.downloadUpdate();
+  });
+
+  ipcMain.handle('update:install', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    autoUpdaterService.installAndRestart();
+  });
+
+  ipcMain.handle('update:get-current-version', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.getCurrentVersion();
+  });
+
+  ipcMain.handle('update:is-available', async () => {
+    const autoUpdaterService = getAutoUpdaterService();
+    return autoUpdaterService.isUpdateAvailable();
+  });
+
+  // System info
+  ipcMain.handle('get-system-info', async () => {
+    return {
+      platform: process.platform,
+      arch: process.arch,
+      version: process.version,
+      electronVersion: process.versions.electron,
+    };
+  });
+}

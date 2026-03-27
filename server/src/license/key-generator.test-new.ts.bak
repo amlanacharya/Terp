@@ -1,0 +1,122 @@
+import { describe, it, expect } from 'vitest';
+import {
+  generateProductKey,
+  validateProductKey,
+  extractSubscriptionType,
+} from './key-generator';
+
+describe('Key Generator', () => {
+  describe('generateProductKey', () => {
+    it('should generate valid monthly key', () => {
+      const key = generateProductKey('monthly');
+
+      expect(key).toMatch(/^GT01-\d{4}-\d{4}-\d{4}-\d{4}$/);
+    });
+
+    it('should generate valid quarterly key', () => {
+      const key = generateProductKey('quarterly');
+
+      expect(key).toMatch(/^GT02-\d{4}-\d{4}-\d{4}-\d{4}$/);
+    });
+
+    it('should generate valid annual key', () => {
+      const key = generateProductKey('annual');
+
+      expect(key).toMatch(/^GT03-\d{4}-\d{4}-\d{4}-\d{4}$/);
+    });
+
+    it('should generate unique keys', () => {
+      const keys = new Set();
+
+      for (let i = 0; i < 100; i++) {
+        keys.add(generateProductKey('monthly'));
+      }
+
+      expect(keys.size).toBe(100);
+    });
+
+    it('should extract correct subscription type from key', () => {
+      const monthlyKey = generateProductKey('monthly');
+      const quarterlyKey = generateProductKey('quarterly');
+      const annualKey = generateProductKey('annual');
+
+      expect(extractSubscriptionType(monthlyKey).type).toBe('monthly');
+      expect(extractSubscriptionType(quarterlyKey).type).toBe('quarterly');
+      expect(extractSubscriptionType(annualKey).type).toBe('annual');
+    });
+  });
+
+  describe('validateProductKey', () => {
+    it('should validate correct key format', () => {
+      const key = generateProductKey('monthly');
+      const result = validateProductKey(key);
+
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should reject invalid format', () => {
+      const result = validateProductKey('INVALID-KEY');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it('should reject wrong prefix', () => {
+      const result = validateProductKey('GT02-1234-5678-9012-34');
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('should validate checksum', () => {
+      const validKey = generateProductKey('monthly');
+      const result = validateProductKey(validKey);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject tampered checksum', () => {
+      const validKey = generateProductKey('monthly');
+      const tamperedKey = validKey.replace(/.$/, 'X');
+      const result = validateProductKey(tamperedKey);
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('checksum');
+    });
+
+    it('should reject empty key', () => {
+      const result = validateProductKey('');
+
+      expect(result.valid).toBe(false);
+    });
+  });
+
+  describe('extractSubscriptionType', () => {
+    it('should extract monthly type', () => {
+      const result = extractSubscriptionType('GT01-1234-5678-9012-34');
+
+      expect(result.type).toBe('monthly');
+      expect(result.months).toBe(1);
+    });
+
+    it('should extract quarterly type', () => {
+      const result = extractSubscriptionType('GT02-1234-5678-9012-34');
+
+      expect(result.type).toBe('quarterly');
+      expect(result.months).toBe(3);
+    });
+
+    it('should extract annual type', () => {
+      const result = extractSubscriptionType('GT03-1234-5678-9012-34');
+
+      expect(result.type).toBe('annual');
+      expect(result.months).toBe(12);
+    });
+
+    it('should throw on invalid prefix', () => {
+      expect(() => {
+        extractSubscriptionType('GT99-1234-5678-9012-34');
+      }).toThrow();
+    });
+  });
+});

@@ -1,0 +1,43 @@
+appId: 'com.intelligrup.travelerp-lite'
+productName: 'TravelERP Lite'
+copyright: 'Copyright © 2026 Intelligrip'
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - dist/**/*
+  - server/dist/**/*
+  - node_modules/**/*
+  - package.json
+
+extraMetadata:
+  main: dist/electron/main.js
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeader: build/installer-header.bmp
+  installerSidebar: build/installer-sidebar.bmp
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+
+portable:
+  artifactName: ${productName}-${version}-portable.exe
+
+publish:
+  provider: generic
+  url: 'https://releases.intelligrup.com/travelerp-lite/'

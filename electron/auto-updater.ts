@@ -1,94 +1,179 @@
-import { autoUpdater } from 'electron-updater';
-import { BrowserWindow } from 'electron';
+import { autoUpdater, UpdateInfo } from 'electron-updater';
+import { BrowserWindow, app } from 'electron';
+import path from 'path';
 
-export class AutoUpdaterManager {
-  private mainWindow: BrowserWindow;
+export interface UpdateStatus {
+  available: boolean;
+  version: string;
+  releaseDate: string;
+  downloaded: boolean;
+  error?: string;
+}
 
-  constructor(mainWindow: BrowserWindow) {
-    this.mainWindow = mainWindow;
-    this.configure();
-    this.setupEventHandlers();
+export class AutoUpdaterService {
+  private mainWindow: BrowserWindow | null = null;
+  private updateAvailable = false;
+
+  constructor() {
+    this.configureAutoUpdater();
   }
 
-  private configure() {
+  setMainWindow(window: BrowserWindow) {
+    this.mainWindow = window;
+  }
+
+  private configureAutoUpdater() {
+    // Configure auto updater settings
     autoUpdater.setFeedURL({
       provider: 'generic',
-      url: 'https://updates.travelerp.com/releases'
+      url: 'https://updates.intelligrip.com/travelerp-lite', // Replace with actual update server
     });
 
     autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = false;
-  }
+    autoUpdater.autoInstallOnAppQuit = false; // We'll handle install manually
 
-  private setupEventHandlers() {
-    autoUpdater.on('update-available', (info) => {
-      console.log('Update available:', info);
-      this.mainWindow.webContents.send('update-available', {
+    // Event handlers
+    autoUpdater.on('checking-for-update', () => {
+      this.sendStatus('checking-for-update');
+    });
+
+    autoUpdater.on('update-available', (info: UpdateInfo) => {
+      this.updateAvailable = true;
+      this.sendStatus('update-available', {
         version: info.version,
-        releaseNotes: info.releaseNotes
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
       });
     });
 
-    autoUpdater.on('update-not-available', (info) => {
-      console.log('Update not available:', info);
-      this.mainWindow.webContents.send('update-not-available', {
-        version: info.version
+    autoUpdater.on('update-not-available', (info: UpdateInfo) => {
+      this.updateAvailable = false;
+      this.sendStatus('update-not-available', {
+        version: info.version,
+      });
+    });
+
+    autoUpdater.on('error', (error: Error) => {
+      this.sendStatus('error', {
+        error: error.message,
       });
     });
 
     autoUpdater.on('download-progress', (progress) => {
-      console.log('Download progress:', progress.percent);
-      this.mainWindow.webContents.send('update-download-progress', {
-        percent: progress.percent,
-        bytesPerSecond: progress.bytesPerSecond,
+      this.sendStatus('download-progress', {
+        percent: Math.floor(progress.percent),
         transferred: progress.transferred,
-        total: progress.total
+        total: progress.total,
+        bytesPerSecond: progress.bytesPerSecond,
       });
     });
 
-    autoUpdater.on('update-downloaded', (info) => {
-      console.log('Update downloaded:', info);
-      this.mainWindow.webContents.send('update-downloaded', {
-        version: info.version
+    autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+      this.sendStatus('update-downloaded', {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
       });
-    });
 
-    autoUpdater.on('error', (error) => {
-      console.error('Update error:', error);
-      this.mainWindow.webContents.send('update-error', {
-        message: error.message
-      });
+      // Notify user and prompt for install
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send('update-ready-to-install', {
+          version: info.version,
+          releaseNotes: info.releaseNotes,
+        });
+      }
     });
   }
 
-  async checkForUpdates(): Promise<void> {
+  /**
+   * Check for updates
+   */
+  async checkForUpdates(): Promise<UpdateStatus> {
     try {
-      await autoUpdater.checkForUpdates();
-    } catch (error) {
-      console.error('Update check failed:', error);
-      throw error;
+      const result = await autoUpdater.checkForUpdates();
+
+      if (result === null) {
+        return {
+          available: false,
+          version: app.getVersion(),
+          releaseDate: new Date().toISOString(),
+          downloaded: false,
+        };
+      }
+
+      return {
+        available: result.downloadPromise !== undefined,
+        version: result.updateInfo.version,
+        releaseDate: result.updateInfo.releaseDate,
+        downloaded: false,
+      };
+    } catch (error: any) {
+      return {
+        available: false,
+        version: app.getVersion(),
+        releaseDate: new Date().toISOString(),
+        downloaded: false,
+        error: error.message,
+      };
     }
   }
 
+  /**
+   * Download update
+   */
   async downloadUpdate(): Promise<void> {
-    try {
-      await autoUpdater.downloadUpdate();
-    } catch (error) {
-      console.error('Update download failed:', error);
-      throw error;
-    }
+    await autoUpdater.downloadUpdate();
   }
 
-  async installAndRestart(): Promise<void> {
-    try {
+  /**
+   * Install update and restart
+   */
+  installAndRestart(): void {
+    setImmediate(() => {
       autoUpdater.quitAndInstall();
-    } catch (error) {
-      console.error('Install and restart failed:', error);
-      throw error;
+    });
+  }
+
+  /**
+   * Get current version
+   */
+  getCurrentVersion(): string {
+    return app.getVersion();
+  }
+
+  /**
+   * Check if update is available
+   */
+  isUpdateAvailable(): boolean {
+    return this.updateAvailable;
+  }
+
+  /**
+   * Send status to renderer process
+   */
+  private sendStatus(event: string, data?: any) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('auto-updater-event', {
+        event,
+        data,
+      });
     }
   }
 
-  getCurrentVersion(): string {
-    return autoUpdater.currentVersion.version;
+  /**
+   * Disable auto-updater (for development)
+   */
+  disable(): void {
+    autoUpdater.autoDownload = false;
   }
+}
+
+// Singleton instance
+let autoUpdaterService: AutoUpdaterService | null = null;
+
+export function getAutoUpdaterService(): AutoUpdaterService {
+  if (!autoUpdaterService) {
+    autoUpdaterService = new AutoUpdaterService();
+  }
+  return autoUpdaterService;
 }

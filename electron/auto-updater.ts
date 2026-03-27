@@ -122,7 +122,7 @@ export class AutoUpdaterService {
    * Download update
    */
   async downloadUpdate(): Promise<void> {
-    return autoUpdater.downloadUpdate();
+    await autoUpdater.downloadUpdate();
   }
 
   /**

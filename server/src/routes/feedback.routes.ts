@@ -202,12 +202,21 @@ router.get('/stats', async (req, res) => {
       const content = await fs.readFile(filepath, 'utf-8');
       const feedback = JSON.parse(content);
 
-      stats.byCategory[feedback.category]++;
+      const category = feedback.category as keyof typeof stats.byCategory;
+      if (category in stats.byCategory) {
+        stats.byCategory[category]++;
+      }
       if (feedback.severity) {
-        stats.bySeverity[feedback.severity]++;
+        const severity = feedback.severity as keyof typeof stats.bySeverity;
+        if (severity in stats.bySeverity) {
+          stats.bySeverity[severity]++;
+        }
       }
       if (feedback.status) {
-        stats.byStatus[feedback.status]++;
+        const status = feedback.status as keyof typeof stats.byStatus;
+        if (status in stats.byStatus) {
+          stats.byStatus[status]++;
+        }
       }
     }
 

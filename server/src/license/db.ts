@@ -1,4 +1,4 @@
-import { Pool } from '../config/db.js';
+import { getPool } from '../config/db.js';
 
 /**
  * License Database Operations
@@ -58,7 +58,7 @@ export async function addToLicensePool(
   keys: string[],
   subscriptionType: 'monthly' | 'quarterly' | 'annual'
 ): Promise<number> {
-  const client = await Pool.connect();
+  const client = await getPool().connect();
 
   try {
     await client.query('BEGIN');
@@ -95,7 +95,7 @@ export async function addToLicensePool(
 export async function getAvailableKey(
   subscriptionType: 'monthly' | 'quarterly' | 'annual'
 ): Promise<string | null> {
-  const result = await Pool.query(
+  const result = await getPool().query(
     `SELECT product_key
      FROM license_pool
      WHERE subscription_type = $1
@@ -112,7 +112,7 @@ export async function getAvailableKey(
   const key = result.rows[0].product_key;
 
   // Mark as unavailable
-  await Pool.query(
+  await getPool().query(
     `UPDATE license_pool
      SET is_available = false, updated_at = now()
      WHERE product_key = $1`,
@@ -130,7 +130,7 @@ export async function activateLicense(
   hardwareFingerprint: string,
   subscriptionType: 'monthly' | 'quarterly' | 'annual'
 ): Promise<License> {
-  const client = await Pool.connect();
+  const client = await getPool().connect();
 
   try {
     await client.query('BEGIN');
@@ -169,7 +169,7 @@ export async function activateLicense(
     await client.query('COMMIT');
 
     // Log activation
-    await logLicenseEvent(result.rows[0].id, 'activation', hardwareFingerprint, null, {
+    await logLicenseEvent(result.rows[0].id, 'activation', hardwareFingerprint, {
       product_key: productKey,
       subscription_type: subscriptionType,
     });
@@ -187,7 +187,7 @@ export async function activateLicense(
  * Get current license
  */
 export async function getCurrentLicense(): Promise<License | null> {
-  const result = await Pool.query(
+  const result = await getPool().query(
     `SELECT * FROM licenses
      WHERE is_active = true
      ORDER BY activation_date DESC
@@ -201,7 +201,7 @@ export async function getCurrentLicense(): Promise<License | null> {
  * Update license last verified timestamp
  */
 export async function updateLicenseLastVerified(licenseId: string): Promise<void> {
-  await Pool.query(
+  await getPool().query(
     `UPDATE licenses
      SET last_verified = now(), updated_at = now()
      WHERE id = $1`,
@@ -213,7 +213,7 @@ export async function updateLicenseLastVerified(licenseId: string): Promise<void
  * Get company settings
  */
 export async function getCompanySettings(): Promise<CompanySettings | null> {
-  const result = await Pool.query('SELECT * FROM company_settings LIMIT 1');
+  const result = await getPool().query('SELECT * FROM company_settings LIMIT 1');
 
   if (result.rows.length === 0) {
     return null;
@@ -228,7 +228,7 @@ export async function getCompanySettings(): Promise<CompanySettings | null> {
 export async function saveCompanySettings(
   settings: Omit<CompanySettings, 'id' | 'created_at' | 'updated_at'>
 ): Promise<CompanySettings> {
-  const client = await Pool.connect();
+  const client = await getPool().connect();
 
   try {
     await client.query('BEGIN');
@@ -376,7 +376,7 @@ async function logLicenseEvent(
   metadata: Record<string, any> | null,
   message?: string
 ): Promise<void> {
-  await Pool.query(
+  await getPool().query(
     `INSERT INTO license_activation_logs (
       license_id, action, hardware_fingerprint, metadata, message
     ) VALUES ($1, $2, $3, $4, $5)`,

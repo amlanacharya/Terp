@@ -7,7 +7,7 @@
  * Usage: npx tsx server/src/license/beta-key-generator.ts [options]
  */
 
-import { generateProductKey, verifyProductKey, extractSubscriptionType } from './key-generator';
+import { generateProductKey, validateProductKey, extractSubscriptionType } from './key-generator';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -36,7 +36,7 @@ async function generateBetaKeys(options: GenerationOptions): Promise<void> {
     keyDetails.push({
       key,
       type: options.type,
-      valid: verifyProductKey(key),
+      valid: validateProductKey(key).valid,
     });
     console.log(`  ${i + 1}. ${key}`);
   }

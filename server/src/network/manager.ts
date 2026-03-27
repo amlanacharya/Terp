@@ -54,7 +54,7 @@ export class NetworkManager {
       const initdbExe = path.join(postgresDir, 'initdb.exe');
       if (!fs.existsSync(path.join(dataDir, 'PG_VERSION'))) {
         console.log('Initializing PostgreSQL database...');
-        await this.runCommand(initdbExe, [`-D`, dataDir, `-U`, postgres, `-W`, `-E`, UTF8]);
+        await this.runCommand(initdbExe, [`-D`, dataDir, `-U`, 'postgres', `-W`, `-E`, 'UTF8']);
       }
 
       // Configure PostgreSQL for network access

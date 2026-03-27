@@ -321,8 +321,10 @@ export class ImportService {
           ) RETURNING id`,
           [customerId, chart.name]
         );
-        rateChartId = chartResult.rows[0].id;
-        chartMap.set(key, rateChartId);
+        rateChartId = chartResult.rows[0]?.id;
+        if (rateChartId) {
+          chartMap.set(key, rateChartId);
+        }
       }
 
       // Get vehicle category ID

@@ -3,7 +3,7 @@ import {
   generateProductKey,
   validateProductKey,
   extractSubscriptionType,
-} from '../key-generator';
+} from './key-generator';
 
 describe('Key Generator', () => {
   describe('generateProductKey', () => {

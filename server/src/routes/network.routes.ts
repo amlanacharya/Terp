@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { getNetworkConfigService, getNetworkManager } from '../network/manager.js';
+import { getNetworkConfigService } from '../network/config.js';
+import { getNetworkManager } from '../network/manager.js';
 
 const router = Router();
 

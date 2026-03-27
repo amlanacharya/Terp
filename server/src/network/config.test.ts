@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { NetworkConfigService } from '../config';
+import { NetworkConfigService } from './config';
 
 describe('NetworkConfigService', () => {
   let service: NetworkConfigService;

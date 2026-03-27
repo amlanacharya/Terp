@@ -73,4 +73,106 @@ router.put('/:key', authRequired, roleCheck(['admin']), async (req, res) => {
   }
 });
 
+// Check if this is first run
+router.get('/first-run', async (_req, res) => {
+  try {
+    // Check if any users exist
+    const result = await query('SELECT COUNT(*) as count FROM profiles', []);
+
+    const firstRun = parseInt(result.rows[0].count) === 0;
+    res.json({ firstRun });
+  } catch (error) {
+    console.error('Error checking first run status:', error);
+    res.status(500).json({ error: 'Failed to check first run status' });
+  }
+});
+
+// Complete first-run setup
+router.post('/setup', async (req, res) => {
+  const { companyInfo, licenseKey, adminUser } = req.body;
+
+  try {
+    // Start a transaction
+    await query('BEGIN', []);
+
+    try {
+      // Insert company settings
+      await query(
+        `INSERT INTO system_settings (setting_key, setting_value, description)
+         VALUES ('company_name', $1, 'Company name'),
+                ('company_address', $2, 'Company address'),
+                ('company_city', $3, 'Company city'),
+                ('company_state', $4, 'Company state'),
+                ('company_pincode', $5, 'Company PIN code'),
+                ('company_phone', $6, 'Company phone'),
+                ('company_email', $7, 'Company email'),
+                ('company_gstin', $8, 'Company GSTIN')
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+        [
+          companyInfo.name,
+          companyInfo.address,
+          companyInfo.city,
+          companyInfo.state,
+          companyInfo.pincode,
+          companyInfo.phone,
+          companyInfo.email,
+          companyInfo.gstin || null
+        ]
+      );
+
+      // Insert admin user
+      const bcrypt = require('bcryptjs');
+      const hashedPassword = await bcrypt.hash(adminUser.password, 10);
+
+      const userResult = await query(
+        `INSERT INTO users (email, password_hash, created_at, updated_at)
+         VALUES ($1, $2, NOW(), NOW())
+         RETURNING id`,
+        [adminUser.email, hashedPassword]
+      );
+
+      const userId = userResult.rows[0].id;
+
+      await query(
+        `INSERT INTO profiles (user_id, full_name, email, role, phone, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, 'admin', $4, true, NOW(), NOW())`,
+        [userId, adminUser.name, adminUser.email, adminUser.phone]
+      );
+
+      // Activate license if provided
+      if (licenseKey) {
+        // This would typically call the license manager
+        // For now, we'll store it in settings
+        await query(
+          `INSERT INTO system_settings (setting_key, setting_value, description)
+           VALUES ('license_key', $1, 'Product key')
+           ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+          [licenseKey]
+        );
+      }
+
+      // Commit the transaction
+      await query('COMMIT', []);
+
+      res.json({
+        success: true,
+        message: 'Setup completed successfully',
+        userId
+      });
+
+    } catch (innerError) {
+      // Rollback on error
+      await query('ROLLBACK', []);
+      throw innerError;
+    }
+
+  } catch (error) {
+    console.error('Setup error:', error);
+    res.status(500).json({
+      error: 'Setup failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 export default router;

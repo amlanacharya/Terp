@@ -102,18 +102,13 @@
             "x64"
           ]
         }
-      ],
-      "icon": "build/icon.ico"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeader": "build/header.bmp",
-      "installerSidebar": "build/sidebar.bmp",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
     },

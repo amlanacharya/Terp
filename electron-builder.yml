@@ -18,9 +18,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: portable
-      arch: [x64]
-  icon: build/icon.ico
+  sign: null
+  signingHashAlgorithms: []
 
 nsis:
   oneClick: false
@@ -28,10 +27,6 @@ nsis:
   allowElevation: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
-  installerHeader: build/installer-header.bmp
-  installerSidebar: build/installer-sidebar.bmp
   deleteAppDataOnUninstall: false
   runAfterFinish: true
 

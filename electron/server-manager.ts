@@ -18,26 +18,28 @@ export class ServerManager {
         return true;
       }
 
+      // In development, assume backend is already running
+      if (!this.isProduction) {
+        console.log('Development mode: Assuming backend is already running on port 3001');
+        await this.delay(1000);
+        return true;
+      }
+
       console.log('Starting Express server...');
 
-      // In development, use tsx watch mode
       // In production, run compiled JS
       const serverDir = path.join(process.cwd(), 'server');
-      const entryPoint = this.isProduction
-        ? 'dist/index.js'
-        : 'src/index.ts';
+      const entryPoint = 'dist/index.js';
 
-      const command = this.isProduction ? 'node' : 'npx';
-      const args = this.isProduction
-        ? [path.join(serverDir, entryPoint)]
-        : ['tsx', path.join(serverDir, entryPoint)];
+      const command = 'node';
+      const args = [path.join(serverDir, entryPoint)];
 
       this.serverProcess = spawn(command, args, {
         cwd: process.cwd(),
         stdio: 'pipe',
         env: {
           ...process.env,
-          NODE_ENV: this.isProduction ? 'production' : 'development',
+          NODE_ENV: 'production',
           PORT: this.serverPort.toString(),
         },
       });

@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
+import { BackendManager } from './backend-manager';
 
 /**
  * TravelERP Lite - Electron Main Process
@@ -9,17 +10,26 @@ import * as path from 'path';
  */
 
 let mainWindow: BrowserWindow;
+let backendManager: BackendManager;
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-app.on('ready', () => {
+app.on('ready', async () => {
+  backendManager = new BackendManager();
+
   try {
+    // Start backend first, wait for it to be ready
+    console.log('[Main] Starting backend server...');
+    await backendManager.start();
+    console.log('[Main] Backend started successfully');
+
+    // Then create and show the main window
     createMainWindow();
   } catch (error) {
-    console.error('Failed to create main window:', error);
+    console.error('[Main] Failed to start app:', error);
     app.quit();
   }
 });
@@ -54,6 +64,8 @@ function createMainWindow() {
 }
 
 app.on('window-all-closed', () => {
+  // On Windows/Linux, quit when all windows closed
+  // On macOS, keep app running (standard macOS behavior)
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -67,6 +79,14 @@ app.on('activate', () => {
     } catch (error) {
       console.error('Failed to recreate window on activate:', error);
     }
+  }
+});
+
+// Clean up backend before app quits
+app.on('before-quit', () => {
+  if (backendManager) {
+    console.log('[Main] App quitting - stopping backend...');
+    backendManager.stop();
   }
 });
 

@@ -21,5 +21,9 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     postgresStatus: () => electron_1.ipcRenderer.invoke('postgres-status'),
     postgresStart: () => electron_1.ipcRenderer.invoke('postgres-start'),
     postgresStop: () => electron_1.ipcRenderer.invoke('postgres-stop'),
-    postgresRestart: () => electron_1.ipcRenderer.invoke('postgres-restart')
+    postgresRestart: () => electron_1.ipcRenderer.invoke('postgres-restart'),
+    // License Management
+    licenseValidate: () => electron_1.ipcRenderer.invoke('license-validate'),
+    licenseActivate: (productKey) => electron_1.ipcRenderer.invoke('license-activate', productKey),
+    licenseInfo: () => electron_1.ipcRenderer.invoke('license-info')
 });

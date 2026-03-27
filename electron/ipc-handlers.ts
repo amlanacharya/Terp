@@ -1,6 +1,7 @@
 import { ipcMain, app } from 'electron';
 import { BackupManager } from './backup-manager';
 import { PostgresService } from './postgres-service';
+import { LicenseManager } from './license-manager';
 
 /**
  * Register IPC handlers for main-renderer communication
@@ -12,6 +13,7 @@ export function registerIPCHandlers(): void {
   // Create service instances
   const backupManager = new BackupManager();
   const postgresService = new PostgresService();
+  const licenseManager = new LicenseManager();
 
   // ========================================
   // Backup Handlers
@@ -218,6 +220,62 @@ export function registerIPCHandlers(): void {
       };
     } catch (error) {
       console.error('[IPC] get-app-paths failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  // ========================================
+  // License Management Handlers
+  // ========================================
+
+  /**
+   * Validate current license status
+   * Returns: License status (active, grace, readonly, expired)
+   */
+  ipcMain.handle('license-validate', async () => {
+    try {
+      const status = await licenseManager.validateLicense();
+      return { success: true, status };
+    } catch (error) {
+      console.error('[IPC] license-validate failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  /**
+   * Activate a product key
+   * Parameters: productKey (string) - Product key to activate
+   * Returns: Success status
+   */
+  ipcMain.handle('license-activate', async (_event, productKey: string) => {
+    try {
+      await licenseManager.activateProductKey(productKey);
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] license-activate failed:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
+  });
+
+  /**
+   * Get current license information
+   * Returns: License object or null
+   */
+  ipcMain.handle('license-info', async () => {
+    try {
+      const license = await licenseManager.getLicenseInfo();
+      return { success: true, license };
+    } catch (error) {
+      console.error('[IPC] license-info failed:', error);
       return {
         success: false,
         error: (error as Error).message

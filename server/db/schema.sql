@@ -742,3 +742,33 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
   ('financial_year_start', '04', 'Financial Year Start Month')
 ON CONFLICT (setting_key) DO NOTHING;
 
+-- ========================================
+-- License Management Tables
+-- ========================================
+
+CREATE TABLE IF NOT EXISTS licenses (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_key_hash text NOT NULL UNIQUE,
+  subscription_type text NOT NULL CHECK (subscription_type IN ('monthly', 'quarterly', 'annual')),
+  activation_date timestamptz NOT NULL,
+  expiry_date timestamptz NOT NULL,
+  hardware_fingerprint text NOT NULL,
+  activation_signature text NOT NULL,
+  last_verified timestamptz DEFAULT now(),
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS license_logs (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  license_id uuid REFERENCES licenses(id) ON DELETE CASCADE,
+  event_type text NOT NULL CHECK (event_type IN ('activation', 'verification', 'expiry', 'tamper_detected')),
+  event_time timestamptz DEFAULT now(),
+  system_time text NOT NULL,
+  ip_address text,
+  details jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_logs_event_type ON license_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_license_logs_event_time ON license_logs(event_time DESC);
+

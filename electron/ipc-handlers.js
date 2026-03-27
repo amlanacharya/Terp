@@ -4,6 +4,7 @@ exports.registerIPCHandlers = registerIPCHandlers;
 const electron_1 = require("electron");
 const backup_manager_1 = require("./backup-manager");
 const postgres_service_1 = require("./postgres-service");
+const license_manager_1 = require("./license-manager");
 /**
  * Register IPC handlers for main-renderer communication
  *
@@ -14,6 +15,7 @@ function registerIPCHandlers() {
     // Create service instances
     const backupManager = new backup_manager_1.BackupManager();
     const postgresService = new postgres_service_1.PostgresService();
+    const licenseManager = new license_manager_1.LicenseManager();
     // ========================================
     // Backup Handlers
     // ========================================
@@ -114,13 +116,14 @@ function registerIPCHandlers() {
     electron_1.ipcMain.handle('postgres-status', async () => {
         try {
             const status = await postgresService.getStatus();
-            return { success: true, ...status };
+            return { success: true, running: status === 'running', status };
         }
         catch (error) {
             console.error('[IPC] postgres-status failed:', error);
             return {
                 success: false,
                 running: false,
+                status: 'unknown',
                 error: error.message
             };
         }
@@ -131,8 +134,8 @@ function registerIPCHandlers() {
      */
     electron_1.ipcMain.handle('postgres-start', async () => {
         try {
-            const result = await postgresService.start();
-            return result;
+            await postgresService.start();
+            return { success: true };
         }
         catch (error) {
             console.error('[IPC] postgres-start failed:', error);
@@ -148,8 +151,8 @@ function registerIPCHandlers() {
      */
     electron_1.ipcMain.handle('postgres-stop', async () => {
         try {
-            const result = await postgresService.stop();
-            return result;
+            await postgresService.stop();
+            return { success: true };
         }
         catch (error) {
             console.error('[IPC] postgres-stop failed:', error);
@@ -165,8 +168,11 @@ function registerIPCHandlers() {
      */
     electron_1.ipcMain.handle('postgres-restart', async () => {
         try {
-            const result = await postgresService.restart();
-            return result;
+            await postgresService.stop();
+            // Wait a moment for stop to complete
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await postgresService.start();
+            return { success: true };
         }
         catch (error) {
             console.error('[IPC] postgres-restart failed:', error);
@@ -213,6 +219,61 @@ function registerIPCHandlers() {
         }
         catch (error) {
             console.error('[IPC] get-app-paths failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    });
+    // ========================================
+    // License Management Handlers
+    // ========================================
+    /**
+     * Validate current license status
+     * Returns: License status (active, grace, readonly, expired)
+     */
+    electron_1.ipcMain.handle('license-validate', async () => {
+        try {
+            const status = await licenseManager.validateLicense();
+            return { success: true, status };
+        }
+        catch (error) {
+            console.error('[IPC] license-validate failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    });
+    /**
+     * Activate a product key
+     * Parameters: productKey (string) - Product key to activate
+     * Returns: Success status
+     */
+    electron_1.ipcMain.handle('license-activate', async (_event, productKey) => {
+        try {
+            await licenseManager.activateProductKey(productKey);
+            return { success: true };
+        }
+        catch (error) {
+            console.error('[IPC] license-activate failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    });
+    /**
+     * Get current license information
+     * Returns: License object or null
+     */
+    electron_1.ipcMain.handle('license-info', async () => {
+        try {
+            const license = await licenseManager.getLicenseInfo();
+            return { success: true, license };
+        }
+        catch (error) {
+            console.error('[IPC] license-info failed:', error);
             return {
                 success: false,
                 error: error.message

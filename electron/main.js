@@ -35,6 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
+const backend_manager_1 = require("./backend-manager");
+const ipc_handlers_1 = require("./ipc-handlers");
 /**
  * TravelERP Lite - Electron Main Process
  *
@@ -42,16 +44,25 @@ const path = __importStar(require("path"));
  * It creates the main window and manages the application lifecycle.
  */
 let mainWindow;
+let backendManager;
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
-electron_1.app.on('ready', () => {
+electron_1.app.on('ready', async () => {
+    // Register IPC handlers for main-renderer communication
+    (0, ipc_handlers_1.registerIPCHandlers)();
+    backendManager = new backend_manager_1.BackendManager();
     try {
+        // Start backend first, wait for it to be ready
+        console.log('[Main] Starting backend server...');
+        await backendManager.start();
+        console.log('[Main] Backend started successfully');
+        // Then create and show the main window
         createMainWindow();
     }
     catch (error) {
-        console.error('Failed to create main window:', error);
+        console.error('[Main] Failed to start app:', error);
         electron_1.app.quit();
     }
 });
@@ -83,6 +94,8 @@ function createMainWindow() {
     });
 }
 electron_1.app.on('window-all-closed', () => {
+    // On Windows/Linux, quit when all windows closed
+    // On macOS, keep app running (standard macOS behavior)
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
@@ -96,6 +109,13 @@ electron_1.app.on('activate', () => {
         catch (error) {
             console.error('Failed to recreate window on activate:', error);
         }
+    }
+});
+// Clean up backend before app quits
+electron_1.app.on('before-quit', () => {
+    if (backendManager) {
+        console.log('[Main] App quitting - stopping backend...');
+        backendManager.stop();
     }
 });
 // Handle any uncaught exceptions in the main process

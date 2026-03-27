@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { BackendManager } from './backend-manager';
+import { registerIPCHandlers } from './ipc-handlers';
 
 /**
  * TravelERP Lite - Electron Main Process
@@ -18,6 +19,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 app.on('ready', async () => {
+  // Register IPC handlers for main-renderer communication
+  registerIPCHandlers();
+
   backendManager = new BackendManager();
 
   try {

@@ -31,7 +31,7 @@ export class WindowManager {
       mainWindow.loadURL('http://localhost:5173');
       mainWindow.webContents.openDevTools();
     } else {
-      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+      mainWindow.loadFile(path.join(__dirname, '../index.html'));
     }
 
     mainWindow.once('ready-to-show', () => {
@@ -73,7 +73,7 @@ export class WindowManager {
       wizardWindow.loadURL(`http://localhost:5173/wizard/${wizardType}`);
       wizardWindow.webContents.openDevTools();
     } else {
-      wizardWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+      wizardWindow.loadFile(path.join(__dirname, '../index.html'), {
         hash: `/wizard/${wizardType}`,
       });
     }

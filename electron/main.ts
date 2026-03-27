@@ -1,14 +1,16 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { ServerManager } from './server-manager.js';
 import { WindowManager } from './window-manager.js';
 import { getAutoUpdaterService } from './auto-updater.js';
+import { PostgresService } from './postgres-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = app.isPackaged;
+const postgresService = new PostgresService();
 const serverManager = new ServerManager(isProduction);
 const windowManager = new WindowManager();
 
@@ -31,13 +33,31 @@ if (!gotTheLock) {
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
   try {
-    // Start Express server first
     console.log('Starting TravelERP Lite...');
+
+    // Start PostgreSQL first (only in production)
+    if (isProduction) {
+      try {
+        await postgresService.initializeDatabase();
+      } catch (pgError) {
+        await dialog.showErrorBox(
+          'Database Error',
+          `Failed to start PostgreSQL:\n${(pgError as Error).message}\n\nPlease contact support.`
+        );
+        app.quit();
+        return;
+      }
+    }
+
+    // Start Express server
     const serverStarted = await serverManager.start();
 
     if (!serverStarted) {
-      console.error('Failed to start Express server');
-      // Show error dialog
+      const details = serverManager.getLastError();
+      await dialog.showErrorBox(
+        'Server Error',
+        `Failed to start the application server.\n\n${details ? 'Details:\n' + details + '\n\n' : ''}Please try restarting the application or contact support.`
+      );
       app.quit();
       return;
     }
@@ -68,23 +88,28 @@ app.whenReady().then(async () => {
     });
   } catch (error) {
     console.error('Error during app startup:', error);
+    try {
+      await dialog.showErrorBox(
+        'Startup Error',
+        `TravelERP Lite failed to start:\n${(error as Error).message}\n\nPlease contact support.`
+      );
+    } catch {}
     app.quit();
   }
 });
 
 // Quit when all windows are closed
-app.on('window-all-closed', async () => {
-  // On macOS, keep app running even when all windows are closed
+app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    // Stop server before quitting
-    await serverManager.stop();
     app.quit();
   }
 });
 
 app.on('before-quit', async () => {
-  // Stop server before quitting
   await serverManager.stop();
+  if (isProduction) {
+    await postgresService.stop();
+  }
 });
 
 function setupIpcHandlers(): void {

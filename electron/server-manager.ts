@@ -6,6 +6,7 @@ export class ServerManager {
   private serverProcess: ChildProcess | null = null;
   private serverPort: number = 3001;
   private isProduction: boolean;
+  private lastError: string = '';
 
   constructor(isProduction: boolean = false) {
     this.isProduction = isProduction;
@@ -27,15 +28,25 @@ export class ServerManager {
 
       console.log('Starting Express server...');
 
-      // In production, run compiled JS
-      const serverDir = path.join(process.cwd(), 'server');
-      const entryPoint = 'dist/index.js';
+      // In production, server is in extraResources → resources/server/
+      const serverDir = process.resourcesPath
+        ? path.join(process.resourcesPath, 'server')
+        : path.join(process.cwd(), 'server');
+      const entryPoint = path.join(serverDir, 'dist', 'index.js');
+
+      // Validate server entry point exists
+      if (!fs.existsSync(entryPoint)) {
+        this.lastError = `Server entry point not found: ${entryPoint}`;
+        console.error(this.lastError);
+        return false;
+      }
 
       const command = 'node';
-      const args = [path.join(serverDir, entryPoint)];
+      const args = [entryPoint];
+      this.lastError = '';
 
       this.serverProcess = spawn(command, args, {
-        cwd: process.cwd(),
+        cwd: serverDir,
         stdio: 'pipe',
         env: {
           ...process.env,
@@ -44,27 +55,61 @@ export class ServerManager {
         },
       });
 
+      // Collect stderr for diagnostics
+      let stderrOutput = '';
+
       this.serverProcess.stdout?.on('data', (data) => {
         console.log(`[Server] ${data}`);
       });
 
       this.serverProcess.stderr?.on('data', (data) => {
-        console.error(`[Server Error] ${data}`);
+        const msg = data.toString();
+        stderrOutput += msg;
+        console.error(`[Server Error] ${msg}`);
       });
 
       this.serverProcess.on('error', (error) => {
-        console.error('Failed to start server:', error);
+        this.lastError = `Failed to spawn server: ${error.message}`;
+        console.error(this.lastError);
       });
 
       this.serverProcess.on('exit', (code, signal) => {
         console.log(`Server process exited with code ${code} and signal ${signal}`);
+        if (code !== 0 && code !== null) {
+          this.lastError = stderrOutput || `Server exited with code ${code}`;
+        }
         this.serverProcess = null;
       });
 
-      // Wait a bit for server to start
-      await this.delay(2000);
+      // Wait for server to start (up to 5 seconds)
+      for (let i = 0; i < 10; i++) {
+        await this.delay(500);
+        if (!this.serverProcess || this.serverProcess.killed) {
+          // Process already died
+          return false;
+        }
+        // Try to connect to the server
+        if (i >= 3) {
+          try {
+            const http = await import('http');
+            const ok = await new Promise<boolean>((resolve) => {
+              const req = http.default.get(`http://localhost:${this.serverPort}/api/health`, (res) => {
+                resolve(res.statusCode === 200);
+              });
+              req.on('error', () => resolve(false));
+              req.setTimeout(1000, () => { req.destroy(); resolve(false); });
+            });
+            if (ok) {
+              console.log(`Express server started on port ${this.serverPort}`);
+              return true;
+            }
+          } catch {
+            // Continue waiting
+          }
+        }
+      }
 
-      // Verify server is running by checking if process exists
+      // Final check
       if (this.serverProcess && !this.serverProcess.killed) {
         console.log(`Express server started on port ${this.serverPort}`);
         return true;
@@ -72,9 +117,14 @@ export class ServerManager {
 
       return false;
     } catch (error) {
-      console.error('Error starting server:', error);
+      this.lastError = `Error starting server: ${(error as Error).message}`;
+      console.error(this.lastError);
       return false;
     }
+  }
+
+  getLastError(): string {
+    return this.lastError;
   }
 
   async stop(): Promise<boolean> {

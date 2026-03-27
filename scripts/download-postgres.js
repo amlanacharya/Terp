@@ -64,14 +64,14 @@ function extractZip(zipFile, targetDir) {
   log('Extracting ZIP file...');
 
   try {
-    // Try using unzip (available on Git Bash / WSL)
-    execSync(`unzip -q "${zipFile}" -d "${targetDir}"`, { stdio: 'inherit' });
+    if (process.platform === 'win32') {
+      execSync(`powershell -Command "Expand-Archive -Path '${zipFile}' -DestinationPath '${targetDir}' -Force"`, { stdio: 'inherit' });
+    } else {
+      execSync(`unzip -q "${zipFile}" -d "${targetDir}"`, { stdio: 'inherit' });
+    }
     log('Extraction complete!');
   } catch (error) {
-    log('Error: unzip command not found.');
-    log('Please extract the ZIP manually or install unzip:');
-    log('  - Windows (Git Bash): Already installed');
-    log('  - Windows (PowerShell): Use Expand-Archive cmdlet');
+    log('Error extracting ZIP file.');
     throw error;
   }
 }

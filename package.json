@@ -35,8 +35,10 @@
   "dependencies": {
     "electron-updater": "^6.8.3",
     "lucide-react": "^0.577.0",
+    "node-cron": "^4.2.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "systeminformation": "^5.31.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
@@ -44,6 +46,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.10.1",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@types/supertest": "^7.2.0",
@@ -76,12 +79,36 @@
     },
     "files": [
       "dist/**/*",
-      "server/dist/**/*",
       "build/postgres/**/*",
       "node_modules/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/**/*"
+    ],
     "extraResources": [
+      {
+        "from": "server/dist",
+        "to": "server/dist",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "server/node_modules",
+        "to": "server/node_modules",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "server/package.json",
+        "to": "server/package.json"
+      },
+      {
+        "from": "server/db/schema.sql",
+        "to": "db/schema.sql"
+      },
+      {
+        "from": "server/db/seed.sql",
+        "to": "db/seed.sql"
+      },
       {
         "from": "build/postgres",
         "to": "postgres",

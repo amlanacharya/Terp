@@ -1,4 +1,10 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// In packaged Electron the page loads via file:// so relative /api won't work.
+// Detect file:// protocol and point to the Express server directly.
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && window.location.protocol === 'file:'
+    ? 'http://localhost:3001/api'
+    : '/api');
 
 export const TOKEN_STORAGE_KEY = 'travelerp_token';
 export const UNAUTHORIZED_EVENT = 'travelerp:unauthorized';

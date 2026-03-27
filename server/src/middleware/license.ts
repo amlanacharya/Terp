@@ -13,8 +13,13 @@ export async function licenseCheck(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  // Allow license verification endpoint
-  if (req.path === '/api/license/validate' || req.path === '/api/license/info') {
+  // Allow auth, license, and health endpoints without license check
+  // Note: middleware is mounted at /api, so req.path is relative (e.g. /auth/login)
+  if (
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/license') ||
+    req.path === '/health'
+  ) {
     return next();
   }
 

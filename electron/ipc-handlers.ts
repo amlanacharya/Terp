@@ -115,12 +115,13 @@ export function registerIPCHandlers(): void {
   ipcMain.handle('postgres-status', async () => {
     try {
       const status = await postgresService.getStatus();
-      return { success: true, ...status };
+      return { success: true, running: status === 'running', status };
     } catch (error) {
       console.error('[IPC] postgres-status failed:', error);
       return {
         success: false,
         running: false,
+        status: 'unknown',
         error: (error as Error).message
       };
     }
@@ -132,8 +133,8 @@ export function registerIPCHandlers(): void {
    */
   ipcMain.handle('postgres-start', async () => {
     try {
-      const result = await postgresService.start();
-      return result;
+      await postgresService.start();
+      return { success: true };
     } catch (error) {
       console.error('[IPC] postgres-start failed:', error);
       return {
@@ -149,8 +150,8 @@ export function registerIPCHandlers(): void {
    */
   ipcMain.handle('postgres-stop', async () => {
     try {
-      const result = await postgresService.stop();
-      return result;
+      await postgresService.stop();
+      return { success: true };
     } catch (error) {
       console.error('[IPC] postgres-stop failed:', error);
       return {
@@ -166,8 +167,11 @@ export function registerIPCHandlers(): void {
    */
   ipcMain.handle('postgres-restart', async () => {
     try {
-      const result = await postgresService.restart();
-      return result;
+      await postgresService.stop();
+      // Wait a moment for stop to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await postgresService.start();
+      return { success: true };
     } catch (error) {
       console.error('[IPC] postgres-restart failed:', error);
       return {

@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { BackendManager } from './backend-manager';
+import { PostgresService } from './postgres-service';
 import { registerIPCHandlers } from './ipc-handlers';
 
 /**
@@ -12,6 +13,7 @@ import { registerIPCHandlers } from './ipc-handlers';
 
 let mainWindow: BrowserWindow;
 let backendManager: BackendManager;
+let postgresService: PostgresService;
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -22,10 +24,16 @@ app.on('ready', async () => {
   // Register IPC handlers for main-renderer communication
   registerIPCHandlers();
 
+  postgresService = new PostgresService();
   backendManager = new BackendManager();
 
   try {
-    // Start backend first, wait for it to be ready
+    // Start PostgreSQL first, wait for it to be ready
+    console.log('[Main] Starting PostgreSQL service...');
+    await postgresService.start();
+    console.log('[Main] PostgreSQL started successfully');
+
+    // Start backend, wait for it to be ready
     console.log('[Main] Starting backend server...');
     await backendManager.start();
     console.log('[Main] Backend started successfully');
@@ -86,11 +94,15 @@ app.on('activate', () => {
   }
 });
 
-// Clean up backend before app quits
-app.on('before-quit', () => {
+// Clean up backend and PostgreSQL before app quits
+app.on('before-quit', async () => {
   if (backendManager) {
     console.log('[Main] App quitting - stopping backend...');
     backendManager.stop();
+  }
+  if (postgresService) {
+    console.log('[Main] App quitting - stopping PostgreSQL...');
+    await postgresService.stop();
   }
 });
 

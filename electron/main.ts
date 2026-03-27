@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { BackendManager } from './backend-manager';
 import { PostgresService } from './postgres-service';
+import { ScheduledBackupService } from './scheduled-backup';
 import { registerIPCHandlers } from './ipc-handlers';
 
 /**
@@ -14,6 +15,7 @@ import { registerIPCHandlers } from './ipc-handlers';
 let mainWindow: BrowserWindow;
 let backendManager: BackendManager;
 let postgresService: PostgresService;
+let scheduledBackupService: ScheduledBackupService;
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -26,6 +28,7 @@ app.on('ready', async () => {
 
   postgresService = new PostgresService();
   backendManager = new BackendManager();
+  scheduledBackupService = new ScheduledBackupService();
 
   try {
     // Start PostgreSQL first, wait for it to be ready
@@ -37,6 +40,11 @@ app.on('ready', async () => {
     console.log('[Main] Starting backend server...');
     await backendManager.start();
     console.log('[Main] Backend started successfully');
+
+    // Start scheduled backup service
+    console.log('[Main] Starting scheduled backup service...');
+    scheduledBackupService.start();
+    console.log('[Main] Scheduled backup service started');
 
     // Then create and show the main window
     createMainWindow();
@@ -94,8 +102,12 @@ app.on('activate', () => {
   }
 });
 
-// Clean up backend and PostgreSQL before app quits
+// Clean up backend, PostgreSQL, and scheduled backups before app quits
 app.on('before-quit', async () => {
+  if (scheduledBackupService) {
+    console.log('[Main] App quitting - stopping scheduled backup service...');
+    scheduledBackupService.stop();
+  }
   if (backendManager) {
     console.log('[Main] App quitting - stopping backend...');
     backendManager.stop();

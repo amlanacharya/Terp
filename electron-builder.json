@@ -6,6 +6,7 @@
     "output": "dist/installer",
     "buildResources": "build"
   },
+  "main": "electron/main.js",
   "files": [
     "electron/**/*",
     "dist/**/*",

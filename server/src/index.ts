@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import path from 'path';
 import { testConnection } from './config/db';
+import { licenseCheck } from './middleware/license';
 import authRoutes from './routes/auth.routes';
 import annexuresRoutes from './routes/annexures.routes';
 import collectionsRoutes from './routes/collections.routes';
@@ -12,6 +13,7 @@ import driversRoutes from './routes/drivers.routes';
 import gstRoutes from './routes/gst.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import leadsRoutes from './routes/leads.routes';
+import licenseRoutes from './routes/license.routes';
 import ownersRoutes from './routes/owners.routes';
 import rateChartsRoutes from './routes/rate-charts.routes';
 import reportsRoutes from './routes/reports.routes';
@@ -31,6 +33,12 @@ app.use(express.json());
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Mount license routes before middleware so they always work
+app.use('/api/license', licenseRoutes);
+
+// Add license middleware to all API routes (except login)
+app.use('/api', licenseCheck);
 
 app.use('/api/auth', authRoutes);
 app.use('/api', annexuresRoutes);

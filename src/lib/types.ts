@@ -1,3 +1,59 @@
+// Electron API types
+export interface UpdateInfo {
+  version: string;
+  releaseNotes?: string;
+}
+
+export interface DownloadProgress {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface ElectronAPI {
+  // App Information
+  getAppVersion: () => Promise<{ success: boolean; version?: string; error?: string }>;
+  getAppPaths: () => Promise<{ success: boolean; paths?: any; error?: string }>;
+
+  // Backup Operations
+  backupDatabase: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  restoreDatabase: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  listBackups: () => Promise<{ success: boolean; backups?: string[]; error?: string }>;
+  deleteOldBackups: (keepCount?: number) => Promise<{ success: boolean; error?: string }>;
+  getBackupDirectory: () => Promise<{ success: boolean; path?: string; error?: string }>;
+
+  // PostgreSQL Service Operations
+  postgresStatus: () => Promise<{ success: boolean; running?: boolean; status?: string; error?: string }>;
+  postgresStart: () => Promise<{ success: boolean; error?: string }>;
+  postgresStop: () => Promise<{ success: boolean; error?: string }>;
+  postgresRestart: () => Promise<{ success: boolean; error?: string }>;
+
+  // License Management
+  licenseValidate: () => Promise<{ success: boolean; status?: string; error?: string }>;
+  licenseActivate: (productKey: string) => Promise<{ success: boolean; error?: string }>;
+  licenseInfo: () => Promise<{ success: boolean; license?: any; error?: string }>;
+
+  // Auto-Updater Operations
+  checkForUpdates: () => Promise<{ success: boolean; error?: string }>;
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+  installUpdate: () => Promise<{ success: boolean; error?: string }>;
+  getCurrentVersion: () => Promise<{ success: boolean; version?: string; error?: string }>;
+
+  // Update Event Listeners
+  onUpdateAvailable?: (callback: (info: UpdateInfo) => void) => () => void;
+  onUpdateNotAvailable?: (callback: (info: any) => void) => () => void;
+  onUpdateDownloadProgress?: (callback: (progress: DownloadProgress) => void) => () => void;
+  onUpdateDownloaded?: (callback: (info: any) => void) => () => void;
+  onUpdateError?: (callback: (error: any) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
+
 export type UserRole = 'admin' | 'manager' | 'accountant' | 'operator' | 'viewer';
 
 export type DutyType = 'local' | 'outstation' | 'drop_pickup' | 'station_drop' | 'long';

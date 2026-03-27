@@ -4,7 +4,7 @@ import { WizardState } from '../../lib/wizard-state';
 interface Props {
   data: WizardState;
   onNext: (data: Partial<WizardState>) => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export function CompanySetup({ data, onNext, onBack }: Props) {

@@ -11,8 +11,6 @@ export function DataImportWizard() {
     { component: SetupComplete, title: 'Setup Complete' }
   ];
 
-  const CurrentStep = steps[currentStep].component;
-
   const handleNext = (data?: any) => {
     if (data) {
       setImportData(data);
@@ -31,7 +29,7 @@ export function DataImportWizard() {
         {/* Progress indicator */}
         <div className="mb-8">
           <div className="flex justify-between items-center px-4">
-            {steps.map((step, index) => (
+            {steps.map((_step, index) => (
               <div key={index} className="flex items-center flex-1">
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full text-sm font-semibold ${
                   index < currentStep

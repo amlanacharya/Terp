@@ -125,13 +125,13 @@ export function ExcelImport({ onNext, onSkip }: Props) {
             </p>
           )}
 
-          {validationResults?.errors[entity.key] && validationResults.errors[entity.key].length > 0 && (
+          {validationResults && validationResults.summary[entity.key] && !validationResults.summary[entity.key].valid && validationResults.summary[entity.key].errors && validationResults.summary[entity.key].errors.length > 0 && (
             <div className="mt-2 text-sm text-red-600">
-              {validationResults.errors[entity.key].length} error(s) found
+              {validationResults.summary[entity.key].errors.length} error(s) found
             </div>
           )}
 
-          {validationResults?.summary[entity.key] && validationResults.summary[entity.key].valid && (
+          {validationResults && validationResults.summary[entity.key] && validationResults.summary[entity.key].valid && (
             <div className="mt-2 text-sm text-green-600">
               Valid: {validationResults.summary[entity.key].count} records
             </div>

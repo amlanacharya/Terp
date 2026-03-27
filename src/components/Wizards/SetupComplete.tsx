@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { WizardState } from '../../lib/wizard-state';
 
 interface Props {
-  data: WizardState;
-  onNext: () => void;
+  data?: WizardState;
+  onNext: (data?: Partial<WizardState>) => void;
 }
 
 export function SetupComplete({ data }: Props) {
@@ -23,9 +23,9 @@ export function SetupComplete({ data }: Props) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          companyInfo: data.companyInfo,
-          licenseKey: data.licenseKey,
-          adminUser: data.adminUser
+          companyInfo: data?.companyInfo,
+          licenseKey: data?.licenseKey,
+          adminUser: data?.adminUser
         }),
       });
 
@@ -49,6 +49,26 @@ export function SetupComplete({ data }: Props) {
       setIsCompleting(false);
     }
   };
+
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Setup Complete!</h3>
+          <p className="text-sm text-gray-600">
+            Your TravelERP Lite system is ready to use.
+          </p>
+        </div>
+        <button
+          onClick={handleCompleteSetup}
+          disabled={isCompleting || completed}
+          className="w-full px-4 py-3 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+        >
+          {isCompleting ? 'Completing Setup...' : completed ? 'Setup Complete!' : 'Start Using TravelERP Lite'}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

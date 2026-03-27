@@ -17,12 +17,17 @@ export function FirstRunWizard() {
 
   const CurrentStep = steps[wizardState.currentStep].component;
 
-  const handleNext = (data: Partial<WizardState>) => {
-    setWizardState(prev => ({
-      ...prev,
-      ...data,
-      currentStep: prev.currentStep + 1
-    }));
+  const handleNext = (data?: Partial<WizardState>) => {
+    if (wizardState.currentStep < steps.length - 1) {
+      setWizardState(prev => ({
+        ...prev,
+        ...(data || {}),
+        currentStep: prev.currentStep + 1
+      }));
+    } else {
+      // Last step - just reload
+      window.location.reload();
+    }
   };
 
   const handleBack = () => {
@@ -38,7 +43,7 @@ export function FirstRunWizard() {
         {/* Progress indicator */}
         <div className="mb-8">
           <div className="flex justify-between items-center px-4">
-            {steps.map((step, index) => (
+            {steps.map((_step, index) => (
               <div key={index} className="flex items-center flex-1">
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full text-sm font-semibold ${
                   index < wizardState.currentStep
@@ -75,7 +80,7 @@ export function FirstRunWizard() {
         <CurrentStep
           data={wizardState}
           onNext={handleNext}
-          onBack={handleBack}
+          onBack={wizardState.currentStep < steps.length - 1 ? handleBack : undefined}
         />
       </div>
     </div>

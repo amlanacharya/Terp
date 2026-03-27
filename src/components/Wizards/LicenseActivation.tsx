@@ -4,7 +4,7 @@ import { WizardState } from '../../lib/wizard-state';
 interface Props {
   data: WizardState;
   onNext: (data: Partial<WizardState>) => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export function LicenseActivation({ data, onNext, onBack }: Props) {
@@ -44,7 +44,7 @@ export function LicenseActivation({ data, onNext, onBack }: Props) {
       // Check if electronAPI is available
       if (window.electronAPI && window.electronAPI.licenseActivate) {
         const result = await window.electronAPI.licenseActivate(licenseKey);
-        setValidationResult({ success: true, ...result });
+        setValidationResult({ success: true, ...(result as any) });
       } else {
         // For development/testing without electron
         console.log('License key (dev mode):', licenseKey);

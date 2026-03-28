@@ -30,13 +30,71 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 ];
 
 export function Settings() {
-  const [activeTab, setActiveTab] = useState<'system' | 'network' | 'backup'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'network' | 'backup' | 'license'>('system');
   const [settings, setSettings] = useState<SystemSetting[]>([]);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState('');
   const [error, setError] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
+
+  // License state
+  const [licenseStatus, setLicenseStatus] = useState<any>(null);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [licenseMsg, setLicenseMsg] = useState('');
+  const [licenseLoading, setLicenseLoading] = useState(false);
+
+  async function loadLicenseStatus() {
+    try {
+      const res = await fetch('http://localhost:3001/api/license/status');
+      if (res.ok) setLicenseStatus(await res.json());
+    } catch {}
+  }
+
+  async function activateLicense() {
+    if (!licenseKey.trim()) return;
+    setLicenseLoading(true);
+    setLicenseMsg('');
+    try {
+      const res = await fetch('http://localhost:3001/api/license/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productKey: licenseKey.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLicenseMsg('License activated successfully.');
+        setLicenseKey('');
+        await loadLicenseStatus();
+      } else {
+        setLicenseMsg(data.error || 'Activation failed.');
+      }
+    } catch {
+      setLicenseMsg('Could not connect to server.');
+    } finally {
+      setLicenseLoading(false);
+    }
+  }
+
+  async function resetLicense() {
+    if (!confirm('This will deactivate the current license. You will need a new key to continue. Proceed?')) return;
+    setLicenseLoading(true);
+    setLicenseMsg('');
+    try {
+      const res = await fetch('http://localhost:3001/api/license/reset', { method: 'POST' });
+      const data = await res.json();
+      setLicenseMsg(data.message || 'License reset.');
+      await loadLicenseStatus();
+    } catch {
+      setLicenseMsg('Reset failed.');
+    } finally {
+      setLicenseLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'license') void loadLicenseStatus();
+  }, [activeTab]);
 
   async function loadSettings() {
     try {
@@ -130,6 +188,16 @@ export function Settings() {
           >
             Backup & Restore
           </button>
+          <button
+            onClick={() => setActiveTab('license')}
+            className={`border-b-2 py-4 px-1 text-sm font-medium transition-colors ${
+              activeTab === 'license'
+                ? 'border-sky-600 text-sky-600'
+                : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            License
+          </button>
         </nav>
       </div>
 
@@ -138,6 +206,78 @@ export function Settings() {
         <NetworkSettings />
       ) : activeTab === 'backup' ? (
         <BackupRestore />
+      ) : activeTab === 'license' ? (
+        <div className="space-y-6">
+          {/* Current status */}
+          <div className="rounded-3xl border border-slate-200 p-6">
+            <h3 className="mb-4 text-lg font-semibold text-slate-900">License Status</h3>
+            {licenseStatus ? (
+              <div className="space-y-2 text-sm text-slate-700">
+                <div className="flex gap-2">
+                  <span className="font-medium w-36">Status:</span>
+                  <span className={
+                    licenseStatus.status === 'active' ? 'text-green-600 font-semibold' :
+                    licenseStatus.status === 'grace' ? 'text-amber-600 font-semibold' :
+                    'text-rose-600 font-semibold'
+                  }>{licenseStatus.status?.toUpperCase()}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-medium w-36">Expiry:</span>
+                  <span>{licenseStatus.expiryDate ? new Date(licenseStatus.expiryDate).toLocaleDateString() : '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-medium w-36">Days remaining:</span>
+                  <span>{licenseStatus.daysRemaining ?? '—'}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-medium w-36">Type:</span>
+                  <span className="capitalize">{licenseStatus.subscriptionType || '—'}</span>
+                </div>
+                {licenseStatus.warningMessage && (
+                  <p className="mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">{licenseStatus.warningMessage}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Loading status...</p>
+            )}
+          </div>
+
+          {/* Activate new key */}
+          <div className="rounded-3xl border border-slate-200 p-6">
+            <h3 className="mb-4 text-lg font-semibold text-slate-900">Activate License Key</h3>
+            <div className="flex gap-2">
+              <input
+                value={licenseKey}
+                onChange={e => setLicenseKey(e.target.value)}
+                placeholder="GT01-XXXX-XXXX-XXXX-XXXX"
+                className="flex-1 rounded-2xl border border-slate-300 px-3 py-2 text-sm font-mono"
+              />
+              <button
+                onClick={activateLicense}
+                disabled={licenseLoading || !licenseKey.trim()}
+                className="rounded-2xl bg-slate-900 px-5 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {licenseLoading ? 'Activating...' : 'Activate'}
+              </button>
+            </div>
+            {licenseMsg && (
+              <p className={`mt-3 text-sm ${licenseMsg.includes('success') ? 'text-green-600' : 'text-rose-600'}`}>{licenseMsg}</p>
+            )}
+          </div>
+
+          {/* Reset license */}
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6">
+            <h3 className="mb-2 text-lg font-semibold text-rose-900">Reset License</h3>
+            <p className="mb-4 text-sm text-rose-700">Deactivates the current license so you can activate a new key. Use this if your license is expired or you are reinstalling on the same machine.</p>
+            <button
+              onClick={resetLicense}
+              disabled={licenseLoading}
+              className="rounded-2xl bg-rose-600 px-5 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60"
+            >
+              Reset License
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">{error}</div> : null}

@@ -136,7 +136,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": false,
+      "deleteAppDataOnUninstall": true,
       "runAfterFinish": true
     },
     "linux": {

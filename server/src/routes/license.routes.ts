@@ -132,4 +132,19 @@ router.post('/company', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/license/reset
+ * Deactivate all licenses (admin use — allows re-activation with a new key)
+ */
+router.post('/reset', async (req, res) => {
+  try {
+    const pool = (await import('../config/db.js')).getPool();
+    await pool.query('UPDATE licenses SET is_active = false WHERE is_active = true');
+    res.json({ success: true, message: 'License reset. You can now activate a new key.' });
+  } catch (error: any) {
+    console.error('License reset error:', error);
+    res.status(500).json({ error: 'Failed to reset license' });
+  }
+});
+
 export default router;

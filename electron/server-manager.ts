@@ -52,6 +52,10 @@ export class ServerManager {
           ...process.env,
           NODE_ENV: 'production',
           PORT: this.serverPort.toString(),
+          // PG_PORT is set by main.ts after postgres resolves its port (may be
+          // 5432 or fallback 5433). The Express server reads this env var to
+          // build its DATABASE_URL / connection string.
+          PG_PORT: process.env.PG_PORT ?? '5432',
         },
       });
 

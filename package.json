@@ -79,7 +79,6 @@
     },
     "files": [
       "dist/**/*",
-      "build/postgres/**/*",
       "node_modules/**/*",
       "package.json"
     ],
@@ -129,15 +128,21 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "requestedExecutionLevel": "asInvoker",
+      "signingHashAlgorithms": ["sha256"],
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": true,
-      "runAfterFinish": true
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "perMachine": false,
+      "installerLanguages": ["en_US"],
+      "warningsAsErrors": false
     },
     "linux": {
       "target": [

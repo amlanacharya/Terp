@@ -39,6 +39,9 @@ app.whenReady().then(async () => {
     if (isProduction) {
       try {
         await postgresService.initializeDatabase();
+        // Propagate the resolved port to the server manager so Express connects
+        // to the correct port even when 5432 was taken and we fell back to 5433.
+        process.env.PG_PORT = String(postgresService.getPort());
       } catch (pgError) {
         await dialog.showErrorBox(
           'Database Error',
@@ -123,20 +126,24 @@ function setupIpcHandlers(): void {
     return app.getPath(name as any);
   });
 
-  // Database control (placeholder for Phase 1 Day 3)
+  // Database control
   ipcMain.handle('database:start', async () => {
-    // TODO: Implement PostgreSQL service management
+    if (isProduction) {
+      await postgresService.start();
+    }
     return true;
   });
 
   ipcMain.handle('database:stop', async () => {
-    // TODO: Implement PostgreSQL service management
+    if (isProduction) {
+      await postgresService.stop();
+    }
     return true;
   });
 
   ipcMain.handle('database:get-status', async () => {
-    // TODO: Implement PostgreSQL service status check
-    return { running: false, port: 5432 };
+    const status = isProduction ? await postgresService.getStatus() : 'running';
+    return { running: status === 'running', port: postgresService.getPort() };
   });
 
   // License control (placeholder for Phase 2)
